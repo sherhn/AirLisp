@@ -1,0 +1,15 @@
+[package]
+name = "lispcraft-cli"
+description = "Headless command line interface to the Lispcraft engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lispcraft-cli"
+path = "src/main.rs"
+
+[dependencies]
+lisp-syntax.workspace = true
+ide-core.workspace = true
+lisp-runtime.workspace = true

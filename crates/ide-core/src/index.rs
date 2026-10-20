@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use lisp_syntax::outline::{Definition, outline};
 use lisp_syntax::{Dialect, symbols};
 
-use crate::search::{self, FuzzyMatch, TextQuery, FileHit};
+use crate::search::{self, FileHit, FuzzyMatch};
 
 #[derive(Clone, Debug)]
 pub struct IndexedSymbol {
@@ -82,9 +82,56 @@ fn normalize(name: &str) -> String {
     symbols::strip_package(name).trim_start_matches(['#', '\'', ':']).to_ascii_lowercase()
 }
 
-/// Whole-symbol usages of `name` across the project (text search, whole word).
+/// Byte ranges of every code occurrence of the symbol `name` in `text` (strings and comments are
+/// ignored; a package prefix is kept out of the range: `pkg:foo` -> the `foo` part).
+pub fn symbol_ranges(text: &str, d: Dialect, name: &str) -> Vec<(usize, usize)> {
+    use lisp_syntax::TokenKind;
+    let want = normalize(name);
+    if want.is_empty() {
+        return vec![];
+    }
+    let p = lisp_syntax::parse(text, d);
+    let mut out = Vec::new();
+    for t in &p.tokens {
+        if !matches!(t.kind, TokenKind::Symbol | TokenKind::Keyword) {
+            continue;
+        }
+        let tok = t.text(text);
+        // `#:foo` / `:foo` / `pkg:foo` / `pkg::foo`
+        let name_start = match tok.rfind(':') {
+            Some(i) if i + 1 < tok.len() => i + 1,
+            _ => 0,
+        };
+        let part = &tok[name_start..];
+        if part.eq_ignore_ascii_case(&want) || part.to_ascii_lowercase() == want {
+            out.push((t.start + name_start, t.end));
+        }
+    }
+    out
+}
+
+/// Usages of `name` across the project's Lisp files (token based, so strings/comments don't count).
 pub fn find_usages(root: &Path, name: &str, limit: usize) -> Vec<FileHit> {
-    search::find_in_files(root, name, TextQuery { case_sensitive: false, whole_word: true }, limit)
+    let mut hits = Vec::new();
+    for path in search::walk_files(root) {
+        let Some(d) = Dialect::from_path(&path) else { continue };
+        let Ok(text) = fs::read_to_string(&path) else { continue };
+        for (s, e) in symbol_ranges(&text, d, name) {
+            let line_start = text[..s].rfind('\n').map_or(0, |i| i + 1);
+            let line_end = text[s..].find('\n').map_or(text.len(), |i| s + i);
+            hits.push(FileHit {
+                path: path.clone(),
+                line: text[..s].matches('\n').count(),
+                col: text[line_start..s].chars().count(),
+                len: text[s..e].chars().count(),
+                line_text: text[line_start..line_end].trim_end().to_string(),
+            });
+            if hits.len() >= limit {
+                return hits;
+            }
+        }
+    }
+    hits
 }
 
 #[cfg(test)]
@@ -135,12 +182,24 @@ mod tests {
     }
 
     #[test]
-    fn usages_are_whole_word() {
+    fn usages_are_token_based() {
         let d = project();
         let hits = find_usages(d.path(), "greet", 100);
-        // a.lisp def, b.lisp call, b.lisp defmethod, notes.txt
-        assert_eq!(hits.len(), 4);
-        fs::write(d.path().join("src/c.lisp"), "(greeting)").unwrap();
-        assert_eq!(find_usages(d.path(), "greet", 100).len(), 4);
+        // a.lisp defun, b.lisp call, b.lisp defmethod; notes.txt is not a Lisp file
+        assert_eq!(hits.len(), 3, "{hits:#?}");
+        fs::write(d.path().join("src/c.lisp"), "(greeting) \"greet\" ; greet
+(pkg:greet) #'greet").unwrap();
+        let hits = find_usages(d.path(), "greet", 100);
+        assert_eq!(hits.len(), 5, "string and comment occurrences are not usages: {hits:#?}");
+    }
+
+    #[test]
+    fn symbol_ranges_handle_prefixes_and_case() {
+        let t = "(Foo :foo pkg:FOO pkg::foo #:foo 'foo foo-bar \"foo\" ; foo
+)";
+        let r = symbol_ranges(t, Dialect::CommonLisp, "foo");
+        let got: Vec<&str> = r.iter().map(|&(s, e)| &t[s..e]).collect();
+        assert_eq!(got, vec!["Foo", "foo", "FOO", "foo", "foo", "foo"]);
+        assert!(symbol_ranges(t, Dialect::CommonLisp, "").is_empty());
     }
 }

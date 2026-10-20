@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod editor;
+pub mod exec;
 pub mod index;
 pub mod search;
 pub mod settings;

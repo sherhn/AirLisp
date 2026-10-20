@@ -8,9 +8,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Theme {
+    /// JetBrains "New UI" dark.
     #[default]
-    Darcula,
+    #[serde(alias = "Darcula")]
+    Dark,
     Light,
+}
+
+impl Theme {
+    pub fn toggled(self) -> Theme {
+        match self {
+            Theme::Dark => Theme::Light,
+            Theme::Light => Theme::Dark,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -22,6 +33,8 @@ pub struct Settings {
     pub show_whitespace: bool,
     pub rainbow_brackets: bool,
     pub auto_save_on_focus_loss: bool,
+    /// Show the completion popup automatically while typing.
+    pub auto_popup: bool,
     pub recent_projects: Vec<String>,
     pub last_project: Option<String>,
     /// Explicit path to the Lisp binary; empty = auto-detect.
@@ -35,12 +48,13 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            theme: Theme::Darcula,
+            theme: Theme::Dark,
             font_size: 14.0,
             show_line_numbers: true,
             show_whitespace: false,
             rainbow_brackets: true,
             auto_save_on_focus_loss: true,
+            auto_popup: true,
             recent_projects: vec![],
             last_project: None,
             lisp_path: String::new(),
@@ -117,9 +131,7 @@ mod tests {
     fn roundtrip_and_defaults() {
         let d = TempDir::new("settings");
         let f = d.path().join("cfg/settings.json");
-        let mut s = Settings::default();
-        s.theme = Theme::Light;
-        s.font_size = 17.0;
+        let mut s = Settings { theme: Theme::Light, font_size: 17.0, ..Settings::default() };
         s.push_recent_project("E:/p");
         s.save_to(&f).unwrap();
         let back = Settings::load_from(&f);
