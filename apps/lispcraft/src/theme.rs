@@ -1,0 +1,259 @@
+//! Colour schemes modelled on JetBrains "New UI" Dark and Light.
+
+use eframe::egui::{self, Color32};
+use ide_core::settings::Theme;
+use lisp_syntax::highlight::Class;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Palette {
+    pub dark: bool,
+    // chrome
+    pub window_bg: Color32,   // main window / tool windows
+    pub panel_bg: Color32,    // side panels
+    pub editor_bg: Color32,
+    pub gutter_bg: Color32,
+    pub border: Color32,
+    pub hover: Color32,
+    pub selected: Color32,    // selected row in lists / trees
+    pub accent: Color32,
+    pub text: Color32,
+    pub text_dim: Color32,
+    pub text_on_accent: Color32,
+    pub tab_active_bg: Color32,
+    pub popup_bg: Color32,
+    pub input_bg: Color32,
+    // editor
+    pub caret: Color32,
+    pub line_number: Color32,
+    pub line_number_active: Color32,
+    pub current_line: Color32,
+    pub selection: Color32,
+    pub match_bracket: Color32,
+    pub find_match: Color32,
+    pub find_current: Color32,
+    pub indent_guide: Color32,
+    pub whitespace: Color32,
+    // semantic
+    pub error: Color32,
+    pub warning: Color32,
+    pub weak_warning: Color32,
+    pub ok: Color32,
+    pub modified: Color32,
+    // syntax
+    pub plain: Color32,
+    pub comment: Color32,
+    pub string: Color32,
+    pub number: Color32,
+    pub keyword_form: Color32,
+    pub builtin: Color32,
+    pub definition: Color32,
+    pub keyword_arg: Color32,
+    pub constant: Color32,
+    pub special_var: Color32,
+    pub prefix: Color32,
+    pub rainbow: [Color32; 6],
+}
+
+const fn c(hex: u32) -> Color32 {
+    Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+}
+
+impl Palette {
+    pub fn dark() -> Palette {
+        Palette {
+            dark: true,
+            window_bg: c(0x2B2D30),
+            panel_bg: c(0x2B2D30),
+            editor_bg: c(0x1E1F22),
+            gutter_bg: c(0x1E1F22),
+            border: c(0x393B40),
+            hover: c(0x393B40),
+            selected: c(0x2E436E),
+            accent: c(0x3574F0),
+            text: c(0xDFE1E5),
+            text_dim: c(0x868A91),
+            text_on_accent: c(0xFFFFFF),
+            tab_active_bg: c(0x1E1F22),
+            popup_bg: c(0x2B2D30),
+            input_bg: c(0x1E1F22),
+            caret: c(0xCED0D6),
+            line_number: c(0x4B5059),
+            line_number_active: c(0xA1A3AB),
+            current_line: c(0x26282E),
+            selection: c(0x214283),
+            match_bracket: c(0x43494A),
+            find_match: c(0x32593D),
+            find_current: c(0x3D6C4A),
+            indent_guide: c(0x2E3033),
+            whitespace: c(0x45484D),
+            error: c(0xF75464),
+            warning: c(0xF2C55C),
+            weak_warning: c(0x6F7A8C),
+            ok: c(0x5FB865),
+            modified: c(0x3574F0),
+            plain: c(0xBCBEC4),
+            comment: c(0x7A7E85),
+            string: c(0x6AAB73),
+            number: c(0x2AACB8),
+            keyword_form: c(0xCF8E6D),
+            builtin: c(0x56A8F5),
+            definition: c(0xFFC66D),
+            keyword_arg: c(0xC77DBB),
+            constant: c(0xCF8E6D),
+            special_var: c(0xC77DBB),
+            prefix: c(0xCF8E6D),
+            rainbow: [c(0xE8BA36), c(0xC77DBB), c(0x56A8F5), c(0x6AAB73), c(0xCF8E6D), c(0x2AACB8)],
+        }
+    }
+
+    pub fn light() -> Palette {
+        Palette {
+            dark: false,
+            window_bg: c(0xF7F8FA),
+            panel_bg: c(0xF7F8FA),
+            editor_bg: c(0xFFFFFF),
+            gutter_bg: c(0xFFFFFF),
+            border: c(0xEBECF0),
+            hover: c(0xDFE1E5),
+            selected: c(0xD4E2FF),
+            accent: c(0x3574F0),
+            text: c(0x000000),
+            text_dim: c(0x6C707E),
+            text_on_accent: c(0xFFFFFF),
+            tab_active_bg: c(0xFFFFFF),
+            popup_bg: c(0xFFFFFF),
+            input_bg: c(0xFFFFFF),
+            caret: c(0x000000),
+            line_number: c(0xAEB3C2),
+            line_number_active: c(0x6C707E),
+            current_line: c(0xFCFAED),
+            selection: c(0xA6D2FF),
+            match_bracket: c(0xC8E0FF),
+            find_match: c(0xCDEBC9),
+            find_current: c(0xA9DBA3),
+            indent_guide: c(0xEBECF0),
+            whitespace: c(0xD1D3DA),
+            error: c(0xDB3B4B),
+            warning: c(0xC29E0B),
+            weak_warning: c(0x8C8C8C),
+            ok: c(0x208A3C),
+            modified: c(0x3574F0),
+            plain: c(0x080808),
+            comment: c(0x8C8C8C),
+            string: c(0x067D17),
+            number: c(0x1750EB),
+            keyword_form: c(0x0033B3),
+            builtin: c(0x00627A),
+            definition: c(0x00627A),
+            keyword_arg: c(0x871094),
+            constant: c(0x0033B3),
+            special_var: c(0x871094),
+            prefix: c(0x0033B3),
+            rainbow: [c(0xB8860B), c(0x9B2D9B), c(0x1F6FBF), c(0x2E8B3D), c(0xC25E00), c(0x00808A)],
+        }
+    }
+
+    pub fn for_theme(t: Theme) -> Palette {
+        match t {
+            Theme::Dark => Palette::dark(),
+            Theme::Light => Palette::light(),
+        }
+    }
+
+    pub fn syntax(&self, class: Class, depth: u32, rainbow: bool) -> Color32 {
+        match class {
+            Class::Plain => self.plain,
+            Class::Comment => self.comment,
+            Class::String | Class::Char => self.string,
+            Class::Number => self.number,
+            Class::Keyword => self.keyword_arg,
+            Class::SpecialForm => self.keyword_form,
+            Class::Builtin => self.builtin,
+            Class::Constant => self.constant,
+            Class::SpecialVar | Class::ConstName => self.special_var,
+            Class::Definition => self.definition,
+            Class::Prefix => self.prefix,
+            Class::Bracket => {
+                if rainbow {
+                    self.rainbow[depth as usize % self.rainbow.len()]
+                } else {
+                    self.plain
+                }
+            }
+            Class::Error => self.error,
+        }
+    }
+
+    /// Apply the palette to egui's global style.
+    pub fn apply(&self, ctx: &egui::Context) {
+        let mut v = if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+        v.panel_fill = self.panel_bg;
+        v.window_fill = self.popup_bg;
+        v.extreme_bg_color = self.input_bg;
+        v.text_edit_bg_color = Some(self.input_bg);
+        v.faint_bg_color = self.hover;
+        v.window_stroke = egui::Stroke::new(1.0, self.border);
+        v.override_text_color = Some(self.text);
+        v.selection.bg_fill = self.selection;
+        v.selection.stroke = egui::Stroke::new(1.0, self.accent);
+        v.hyperlink_color = self.accent;
+        v.window_corner_radius = egui::CornerRadius::same(8);
+        v.menu_corner_radius = egui::CornerRadius::same(6);
+        let r = egui::CornerRadius::same(4);
+        for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+            w.corner_radius = r;
+        }
+        for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+            w.fg_stroke = egui::Stroke::new(1.0, self.text);
+        }
+        v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, self.border);
+        v.widgets.noninteractive.bg_fill = self.panel_bg;
+        v.widgets.inactive.bg_fill = self.hover;
+        v.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+        v.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+        v.widgets.hovered.bg_fill = self.hover;
+        v.widgets.hovered.weak_bg_fill = self.hover;
+        v.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+        v.widgets.active.bg_fill = self.selected;
+        v.widgets.active.weak_bg_fill = self.selected;
+        v.widgets.open.bg_fill = self.hover;
+        v.widgets.open.weak_bg_fill = self.hover;
+        ctx.set_theme(if self.dark { egui::ThemePreference::Dark } else { egui::ThemePreference::Light });
+        ctx.set_visuals_of(if self.dark { egui::Theme::Dark } else { egui::Theme::Light }, v);
+        ctx.global_style_mut(|style| {
+            style.spacing.item_spacing = egui::vec2(6.0, 4.0);
+            style.spacing.button_padding = egui::vec2(8.0, 3.0);
+            style.spacing.menu_margin = egui::Margin::same(6);
+            style.interaction.selectable_labels = false;
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn palettes_are_distinct_and_readable() {
+        let (d, l) = (Palette::dark(), Palette::light());
+        assert!(d.dark && !l.dark);
+        assert_ne!(d.editor_bg, l.editor_bg);
+        // text must contrast against the editor background
+        fn lum(c: Color32) -> f32 {
+            0.2126 * c.r() as f32 + 0.7152 * c.g() as f32 + 0.0722 * c.b() as f32
+        }
+        for p in [d, l] {
+            assert!((lum(p.plain) - lum(p.editor_bg)).abs() > 100.0);
+            assert!((lum(p.text) - lum(p.panel_bg)).abs() > 100.0);
+            assert!((lum(p.comment) - lum(p.editor_bg)).abs() > 40.0);
+        }
+    }
+
+    #[test]
+    fn rainbow_cycles() {
+        let p = Palette::dark();
+        assert_eq!(p.syntax(Class::Bracket, 0, true), p.syntax(Class::Bracket, 6, true));
+        assert_ne!(p.syntax(Class::Bracket, 0, true), p.syntax(Class::Bracket, 1, true));
+        assert_eq!(p.syntax(Class::Bracket, 3, false), p.plain);
+    }
+}

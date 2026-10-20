@@ -1,0 +1,194 @@
+//! An open file: the editor model plus UI side state.
+
+use std::io;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use ide_core::editor::Editor;
+use lisp_syntax::{Dialect, Severity};
+
+use crate::editor_view::{Marker, Sev, ViewState};
+
+pub struct Doc {
+    pub path: Option<PathBuf>,
+    pub ed: Editor,
+    pub view: ViewState,
+    pub disk_mtime: Option<SystemTime>,
+    /// The file changed on disk while there were unsaved edits.
+    pub conflict: bool,
+    pub untitled_name: String,
+    /// Compiler problems from the last compile (byte ranges valid for `compiled_rev`).
+    pub compiler_markers: Vec<Marker>,
+    pub compiled_rev: u64,
+}
+
+fn mtime(p: &Path) -> Option<SystemTime> {
+    std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+impl Doc {
+    pub fn open(path: &Path) -> io::Result<Doc> {
+        let bytes = std::fs::read(path)?;
+        let text = String::from_utf8(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not valid UTF-8 text"))?;
+        let dialect = Dialect::from_path(path).unwrap_or_default();
+        Ok(Doc {
+            path: Some(path.to_path_buf()),
+            ed: Editor::new(&text, dialect),
+            view: ViewState::default(),
+            disk_mtime: mtime(path),
+            conflict: false,
+            untitled_name: String::new(),
+            compiler_markers: vec![],
+            compiled_rev: 0,
+        })
+    }
+
+    pub fn untitled(n: usize) -> Doc {
+        Doc {
+            path: None,
+            ed: Editor::new("", Dialect::CommonLisp),
+            view: ViewState::default(),
+            disk_mtime: None,
+            conflict: false,
+            untitled_name: format!("untitled-{n}.lisp"),
+            compiler_markers: vec![],
+            compiled_rev: 0,
+        }
+    }
+
+    pub fn name(&self) -> String {
+        match &self.path {
+            Some(p) => p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            None => self.untitled_name.clone(),
+        }
+    }
+
+    pub fn save(&mut self) -> io::Result<()> {
+        let Some(p) = self.path.clone() else {
+            return Err(io::Error::other("file has no path"));
+        };
+        std::fs::write(&p, self.ed.text_for_disk())?;
+        self.ed.mark_saved();
+        self.disk_mtime = mtime(&p);
+        self.conflict = false;
+        Ok(())
+    }
+
+    pub fn save_as(&mut self, path: &Path) -> io::Result<()> {
+        self.path = Some(path.to_path_buf());
+        self.ed.set_dialect(Dialect::from_path(path).unwrap_or_default());
+        self.save()
+    }
+
+    pub fn reload(&mut self) -> io::Result<()> {
+        let Some(p) = self.path.clone() else { return Ok(()) };
+        let text = String::from_utf8(std::fs::read(&p)?).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not valid UTF-8 text"))?;
+        self.ed.set_text(&text);
+        self.disk_mtime = mtime(&p);
+        self.conflict = false;
+        self.compiler_markers.clear();
+        Ok(())
+    }
+
+    /// Check the file on disk; reloads silently when there are no local edits.
+    /// Returns true if the content was reloaded.
+    pub fn sync_with_disk(&mut self) -> bool {
+        let Some(p) = self.path.clone() else { return false };
+        let now = mtime(&p);
+        if now == self.disk_mtime {
+            return false;
+        }
+        if !self.ed.is_modified() {
+            return self.reload().is_ok();
+        }
+        self.disk_mtime = now;
+        self.conflict = true;
+        false
+    }
+
+    /// Syntax problems of the current text plus the compiler's (while still fresh).
+    pub fn markers(&self) -> Vec<Marker> {
+        let p = self.ed.parsed();
+        let mut v: Vec<Marker> = p
+            .diagnostics
+            .iter()
+            .map(|d| Marker { start: d.start, end: d.end, sev: if d.severity == Severity::Error { Sev::Error } else { Sev::Warning } })
+            .collect();
+        if self.compiled_rev == self.ed.revision() {
+            v.extend(self.compiler_markers.iter().copied());
+        }
+        v
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str, content: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("lispcraft-doc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(name);
+        std::fs::write(&p, content).unwrap();
+        p
+    }
+
+    #[test]
+    fn open_edit_save_roundtrip_keeps_crlf() {
+        let p = tmp("crlf.lisp", "(a)\r\n(b)\r\n");
+        let mut d = Doc::open(&p).unwrap();
+        assert_eq!(d.ed.line_ending.label(), "CRLF");
+        d.ed.set_caret(3, false);
+        d.ed.type_text("x");
+        assert!(d.ed.is_modified());
+        d.save().unwrap();
+        assert!(!d.ed.is_modified());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "(a)x\r\n(b)\r\n");
+    }
+
+    #[test]
+    fn rejects_binary_files() {
+        let p = tmp("bin.lisp", "");
+        std::fs::write(&p, [0xff, 0xfe, 0x00, 0x80]).unwrap();
+        assert!(Doc::open(&p).is_err());
+    }
+
+    #[test]
+    fn disk_sync_reloads_clean_docs_and_flags_conflicts() {
+        let p = tmp("sync.lisp", "(one)");
+        let mut d = Doc::open(&p).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        std::fs::write(&p, "(two)").unwrap();
+        // make sure mtime differs even on coarse filesystems
+        d.disk_mtime = Some(SystemTime::UNIX_EPOCH);
+        assert!(d.sync_with_disk());
+        assert_eq!(d.ed.text(), "(two)");
+        d.ed.set_caret(0, false);
+        d.ed.type_text("z");
+        d.disk_mtime = Some(SystemTime::UNIX_EPOCH);
+        assert!(!d.sync_with_disk());
+        assert!(d.conflict, "unsaved edits + external change = conflict");
+        assert_eq!(d.ed.text(), "z(two)");
+    }
+
+    #[test]
+    fn markers_report_unbalanced_brackets() {
+        let mut d = Doc::untitled(1);
+        d.ed.insert_text_raw("(defun f (");
+        let m = d.markers();
+        assert!(m.iter().any(|m| m.sev == Sev::Error));
+    }
+
+    #[test]
+    fn untitled_names_and_save_as() {
+        let mut d = Doc::untitled(3);
+        assert_eq!(d.name(), "untitled-3.lisp");
+        assert!(d.save().is_err());
+        let p = std::env::temp_dir().join(format!("lispcraft-saveas-{}.scm", std::process::id()));
+        d.ed.insert_text_raw("(define x 1)");
+        d.save_as(&p).unwrap();
+        assert_eq!(d.ed.dialect(), Dialect::Scheme);
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "(define x 1)");
+        let _ = std::fs::remove_file(p);
+    }
+}
