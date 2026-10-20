@@ -174,6 +174,17 @@ pub fn run_eval(imp: &Implementation, forms: &str, cwd: Option<&Path>) -> io::Re
     spawn_streaming(cmd)
 }
 
+/// Load or test an ASDF system found under `root` in a fresh process.
+pub fn run_asdf(imp: &Implementation, root: &Path, system: &str, test: bool) -> io::Result<RunHandle> {
+    let op = if test { "test" } else { "load" };
+    // `(require :asdf)` must be evaluated before the reader sees `asdf:` symbols, hence separate --eval forms.
+    let setup = format!("(asdf:initialize-source-registry (list :source-registry (list :tree {}) :inherit-configuration))", lisp_string(&lisp_path(root)));
+    let work = format!("(progn (asdf:{op}-system {sys}) (format t \"~&; ASDF system ~a: {op} finished~%\" {sys}))", sys = lisp_string(system));
+    let mut cmd = base_command(imp, Some(root));
+    cmd.args(["--eval", "(require :asdf)", "--eval", &setup, "--eval", &work]);
+    spawn_streaming(cmd)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +227,26 @@ mod tests {
         let (out, code, _) = run_file(&imp, &f, None).unwrap().wait_output(Duration::from_secs(30));
         assert_ne!(code, Some(0));
         assert!(out.contains("boom 1"), "{out:?}");
+    }
+
+    #[test]
+    fn loads_and_tests_an_asdf_system() {
+        let Some(imp) = sbcl() else { return };
+        let dir = std::env::temp_dir().join(format!("lispcraft-asdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("mini.asd"), "(asdf:defsystem \"mini\" :components ((:file \"mini\")) :perform (test-op (o c) (format t \"MINI-TESTS-RAN~%\")))
+").unwrap();
+        std::fs::write(dir.join("mini.lisp"), "(format t \"MINI-LOADED~%\")
+").unwrap();
+        let (out, code, _) = run_asdf(&imp, &dir, "mini", false).unwrap().wait_output(Duration::from_secs(60));
+        assert_eq!(code, Some(0), "{out}");
+        assert!(out.contains("MINI-LOADED") && out.contains("load finished"), "{out}");
+        let (out, code, _) = run_asdf(&imp, &dir, "mini", true).unwrap().wait_output(Duration::from_secs(60));
+        assert_eq!(code, Some(0), "{out}");
+        assert!(out.contains("MINI-TESTS-RAN"), "{out}");
+        let (out, code, _) = run_asdf(&imp, &dir, "nope", false).unwrap().wait_output(Duration::from_secs(60));
+        assert_ne!(code, Some(0), "unknown system must fail: {out}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
