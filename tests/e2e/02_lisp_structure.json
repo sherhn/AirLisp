@@ -1,0 +1,59 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "open", "path": "${PROJ}/src/scratch.lisp"},
+
+  {"op": "log", "value": "slurp / barf / raise / splice / wrap through the real keymap"},
+  {"op": "set_text", "value": "(a b) c d"},
+  {"op": "caret", "line": 1, "col": 5},
+  {"op": "key", "value": "Alt+Shift+Right"},
+  {"op": "assert_text", "value": "(a b c) d"},
+  {"op": "key", "value": "Alt+Shift+Left"},
+  {"op": "assert_text", "value": "(a b) c d"},
+
+  {"op": "set_text", "value": "(a (b c) d)"},
+  {"op": "caret", "line": 1, "col": 6},
+  {"op": "key", "value": "Alt+Shift+R"},
+  {"op": "assert_text", "value": "(a b d)"},
+
+  {"op": "set_text", "value": "(a (b c) d)"},
+  {"op": "caret", "line": 1, "col": 6},
+  {"op": "key", "value": "Alt+Shift+S"},
+  {"op": "assert_text", "value": "(a b c d)"},
+
+  {"op": "set_text", "value": "(a b c)"},
+  {"op": "caret", "line": 1, "col": 4},
+  {"op": "key", "value": "Alt+Shift+9"},
+  {"op": "assert_text", "value": "(a (b) c)"},
+
+  {"op": "set_text", "value": "(a b c)"},
+  {"op": "caret", "line": 1, "col": 4},
+  {"op": "key", "value": "Alt+Shift+K"},
+  {"op": "assert_text", "value": "(a c)"},
+
+  {"op": "log", "value": "sexp navigation"},
+  {"op": "set_text", "value": "(foo (bar baz) qux)"},
+  {"op": "caret", "line": 1, "col": 1},
+  {"op": "key", "value": "Ctrl+Alt+D"},
+  {"op": "assert_caret", "line": 1, "col": 2},
+  {"op": "key", "value": "Ctrl+Alt+F"},
+  {"op": "assert_caret", "line": 1, "col": 5},
+  {"op": "key", "value": "Ctrl+Alt+B"},
+  {"op": "assert_caret", "line": 1, "col": 2},
+  {"op": "caret", "line": 1, "col": 9},
+  {"op": "key", "value": "Ctrl+Alt+U"},
+  {"op": "assert_caret", "line": 1, "col": 6},
+
+  {"op": "log", "value": "matching bracket"},
+  {"op": "caret", "line": 1, "col": 1},
+  {"op": "key", "value": "Ctrl+Shift+M"},
+  {"op": "assert_caret", "line": 1, "col": 20},
+
+  {"op": "log", "value": "reformat file and auto-indent"},
+  {"op": "open", "path": "${PROJ}/src/messy.lisp"},
+  {"op": "key", "value": "Ctrl+Alt+L"},
+  {"op": "assert_text", "value": "(defun f (x)\\n  (let ((a 1)\\n        (b 2))\\n    (+ a b x)))\\n"},
+  {"op": "key", "value": "Ctrl+Z"},
+  {"op": "assert_text", "value": "(defun f (x)\\n(let ((a 1)\\n(b 2))\\n(+ a b x)))\\n"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}.png"},
+  {"op": "quit"}
+]

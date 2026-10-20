@@ -1,0 +1,35 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "open", "path": "${PROJ}/src/hello.lisp"},
+  {"op": "wait", "what": "index"},
+
+  {"op": "log", "value": "Run current file (Shift+F10)"},
+  {"op": "key", "value": "Shift+F10"},
+  {"op": "assert_bottom", "value": "run"},
+  {"op": "wait", "what": "run_done", "timeout": 60},
+  {"op": "assert_run_contains", "value": "Hi from run"},
+  {"op": "assert_run_contains", "value": "exit code 0"},
+
+  {"op": "log", "value": "Compile a file with warnings (Ctrl+F9): problems are listed and marked"},
+  {"op": "open", "path": "${PROJ}/src/warn.lisp"},
+  {"op": "key", "value": "Ctrl+F9"},
+  {"op": "wait", "what": "compile_done", "timeout": 60},
+  {"op": "assert_problems", "min": 2},
+  {"op": "assert_bottom", "value": "problems"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_problems.png"},
+
+  {"op": "log", "value": "syntax errors show up without compiling"},
+  {"op": "open", "path": "${PROJ}/src/bad.lisp"},
+  {"op": "assert_problems", "min": 3},
+  {"op": "key", "value": "F2"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_syntax.png"},
+
+  {"op": "log", "value": "runtime error in a script is reported with a non-zero exit"},
+  {"op": "open", "path": "${PROJ}/src/scratch.lisp"},
+  {"op": "set_text", "value": "(error \"boom ~a\" 7)"},
+  {"op": "key", "value": "Shift+F10"},
+  {"op": "wait", "what": "run_done", "timeout": 60},
+  {"op": "assert_run_contains", "value": "boom 7"},
+  {"op": "assert_file_contains", "path": "${PROJ}/src/scratch.lisp", "value": "boom"},
+  {"op": "quit"}
+]

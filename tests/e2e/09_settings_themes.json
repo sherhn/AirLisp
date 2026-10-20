@@ -1,0 +1,27 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "open", "path": "${PROJ}/src/main.lisp"},
+  {"op": "wait", "what": "index"},
+  {"op": "key", "value": "Ctrl+Alt+S"},
+  {"op": "assert_popup", "value": "settings"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_settings.png"},
+  {"op": "key", "value": "Escape"},
+  {"op": "assert_popup", "value": "none"},
+
+  {"op": "log", "value": "zoom and light theme"},
+  {"op": "key", "value": "Ctrl+Equals"},
+  {"op": "key", "value": "Ctrl+Equals"},
+  {"op": "command", "value": "view.toggle_theme"},
+  {"op": "frames", "value": 4},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_light.png"},
+  {"op": "command", "value": "view.toggle_theme"},
+  {"op": "key", "value": "Ctrl+0"},
+
+  {"op": "log", "value": "about dialog"},
+  {"op": "key", "value": "F1"},
+  {"op": "assert_popup", "value": "about"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_about.png"},
+  {"op": "key", "value": "Escape"},
+  {"op": "assert_popup", "value": "none"},
+  {"op": "quit"}
+]
