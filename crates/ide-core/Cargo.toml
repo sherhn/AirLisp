@@ -1,7 +1,13 @@
 [package]
 name = "ide-core"
+description = "Editor model, command registry, keymap, project model and search for the Lisp IDE"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+lisp-syntax.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ignore.workspace = true
+dirs.workspace = true

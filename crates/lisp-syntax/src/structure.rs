@@ -236,7 +236,7 @@ pub fn extend_selection(src: &str, p: &Parsed, sel: (usize, usize)) -> (usize, u
     // tokens around the selection
     if let Some(i) = p.token_index_at(s) {
         let t = p.tokens[i];
-        if !t.kind.is_trivia() || t.kind.is_comment() {
+        if !matches!(t.kind, TokenKind::Whitespace | TokenKind::Open | TokenKind::Close | TokenKind::Prefix) {
             cands.push((t.start, t.end));
             if matches!(t.kind, TokenKind::String) && t.len() >= 2 {
                 cands.push((t.start + 1, t.end - 1));
@@ -248,7 +248,7 @@ pub fn extend_selection(src: &str, p: &Parsed, sel: (usize, usize)) -> (usize, u
         && let Some(i) = p.token_index_at(s - 1)
     {
         let t = p.tokens[i];
-        if !t.kind.is_trivia() && t.end == s {
+        if !matches!(t.kind, TokenKind::Whitespace | TokenKind::Open | TokenKind::Close | TokenKind::Prefix) && t.end == s {
             cands.push((t.start, t.end));
         }
     }
