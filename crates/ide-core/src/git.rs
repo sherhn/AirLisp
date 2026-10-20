@@ -312,7 +312,7 @@ mod tests {
         assert!(r.diff_text("a.lisp").contains("+changed"));
         let a = st.iter().find(|c| c.path == "a.lisp").unwrap().clone();
         r.rollback(&a).unwrap();
-        assert_eq!(std::fs::read_to_string(d.path().join("a.lisp")).unwrap(), "one\n");
+        assert_eq!(std::fs::read_to_string(d.path().join("a.lisp")).unwrap().replace("\r\n", "\n"), "one\n");
         let c = st.iter().find(|c| c.path == "c.lisp").unwrap().clone();
         r.rollback(&c).unwrap();
         assert!(!d.path().join("c.lisp").exists());
