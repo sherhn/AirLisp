@@ -1,7 +1,9 @@
 [package]
 name = "lisp-runtime"
+description = "Discovery and control of Lisp implementations: REPL server protocol, running and compiling files"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+lisp-syntax.workspace = true

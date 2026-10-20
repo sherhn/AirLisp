@@ -60,7 +60,7 @@ impl ProjectIndex {
         let mut v: Vec<IndexedSymbol> = self
             .by_file
             .iter()
-            .flat_map(|(p, ds)| ds.iter().filter(|d| d.operator.to_ascii_lowercase() != "in-package").map(|d| IndexedSymbol { path: p.clone(), def: d.clone() }))
+            .flat_map(|(p, ds)| ds.iter().filter(|d| !d.operator.eq_ignore_ascii_case("in-package")).map(|d| IndexedSymbol { path: p.clone(), def: d.clone() }))
             .collect();
         v.sort_by(|a, b| a.def.name.to_lowercase().cmp(&b.def.name.to_lowercase()).then(a.path.cmp(&b.path)).then(a.def.start.cmp(&b.def.start)));
         v
@@ -69,7 +69,7 @@ impl ProjectIndex {
     /// Definitions of `name` (package prefixes and case are ignored, as in Lisp).
     pub fn find_definitions(&self, name: &str) -> Vec<IndexedSymbol> {
         let want = normalize(name);
-        self.all().into_iter().filter(|s| normalize(&s.def.name.split(' ').next().unwrap_or("").to_string()) == want).collect()
+        self.all().into_iter().filter(|s| normalize(s.def.name.split(' ').next().unwrap_or("")) == want).collect()
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Vec<(IndexedSymbol, FuzzyMatch)> {
