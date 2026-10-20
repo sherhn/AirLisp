@@ -1,0 +1,8 @@
+[package]
+name = "lisp-syntax"
+description = "Lexer, bracket matching, indentation and structural editing for Lisp dialects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

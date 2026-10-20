@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+
+[workspace.dependencies]
+lisp-syntax = { path = "crates/lisp-syntax" }
+ide-core = { path = "crates/ide-core" }
+lisp-runtime = { path = "crates/lisp-runtime" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ignore = "0.4"
+dirs = "7"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+opt-level = 3
