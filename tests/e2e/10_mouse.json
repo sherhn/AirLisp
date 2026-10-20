@@ -1,0 +1,18 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "open", "path": "${PROJ}/src/nav.lisp"},
+  {"op": "wait", "what": "index"},
+  {"op": "frames", "value": 5},
+  {"op": "log", "value": "click on line 4 puts the caret there"},
+  {"op": "click", "x": 372, "y": 205},
+  {"op": "frames", "value": 3},
+  {"op": "assert_caret", "line": 4, "col": 1},
+  {"op": "click", "x": 372, "y": 148},
+  {"op": "frames", "value": 3},
+  {"op": "assert_caret", "line": 1, "col": 1},
+  {"op": "log", "value": "typing after a click goes to the clicked position"},
+  {"op": "text", "value": "X"},
+  {"op": "assert_text_contains", "value": "X(defun alpha"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}.png"},
+  {"op": "quit"}
+]

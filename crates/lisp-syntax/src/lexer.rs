@@ -58,11 +58,7 @@ fn is_terminator(b: u8, d: Dialect) -> bool {
     if is_ws(b, d) {
         return true;
     }
-    match b {
-        b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'"' | b';' => true,
-        b'\'' | b'`' | b',' => true,
-        _ => false,
-    }
+    matches!(b, b'(' | b')' | b'[' | b']' | b'{' | b'}' | b'"' | b';' | b'\'' | b'`' | b',')
 }
 
 /// Byte length of the UTF-8 char starting at `i`.
