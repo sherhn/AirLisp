@@ -1,0 +1,38 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+
+  {"op": "log", "value": "terminal runs shell commands"},
+  {"op": "key", "value": "Alt+F12"},
+  {"op": "assert_bottom", "value": "terminal"},
+  {"op": "frames", "value": 4},
+  {"op": "text", "value": "echo hello-from-terminal"},
+  {"op": "key", "value": "Enter"},
+  {"op": "wait", "what": "term_contains", "value": "hello-from-terminal", "timeout": 30},
+  {"op": "wait", "what": "term_idle", "timeout": 30},
+  {"op": "text", "value": "git status --short"},
+  {"op": "key", "value": "Enter"},
+  {"op": "wait", "what": "term_idle", "timeout": 30},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_terminal.png"},
+
+  {"op": "log", "value": "code folding"},
+  {"op": "open", "path": "${PROJ}/src/nav.lisp"},
+  {"op": "caret", "line": 1, "col": 3},
+  {"op": "key", "value": "Ctrl+Minus"},
+  {"op": "assert_folded", "value": 1},
+  {"op": "frames", "value": 4},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_folded.png"},
+  {"op": "key", "value": "Ctrl+Equals"},
+  {"op": "assert_folded", "value": 0},
+  {"op": "key", "value": "Ctrl+Shift+Minus"},
+  {"op": "assert_folded", "value": 2},
+  {"op": "key", "value": "Ctrl+Shift+Equals"},
+  {"op": "assert_folded", "value": 0},
+
+  {"op": "log", "value": "ASDF: test the project system from the run configuration"},
+  {"op": "command", "value": "run.test_system"},
+  {"op": "wait", "what": "run_done", "timeout": 90},
+  {"op": "assert_run_contains", "value": "All tests passed"},
+  {"op": "assert_run_contains", "value": "exit code 0"},
+  {"op": "quit"}
+]

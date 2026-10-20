@@ -41,6 +41,15 @@ def make_fixture(tmp):
     proj = tmp / "demo"
     for rel, content in FIXTURE_FILES.items():
         (proj / rel).write_text(content, encoding="utf-8")
+    # every fixture is a git repository with one commit, so Git features have something to show
+    def git(*args):
+        subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=proj, capture_output=True, check=True)
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "e2e@example.com")
+    git("config", "user.name", "E2E")
+    git("config", "core.autocrlf", "false")
+    git("add", "-A")
+    git("commit", "-q", "-m", "initial commit")
     return proj
 
 

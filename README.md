@@ -22,8 +22,13 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
   File Structure, Go to Declaration (Ctrl+B / Ctrl+click), Back/Forward, Find Usages, Find in Files.
 * **Refactoring** - Rename symbol across the project (token based: strings and comments untouched).
 * **Project** - project tree with file operations, ASDF project scaffolding, git branch in the toolbar.
+* **Git** - branch switcher, update/commit/push in the toolbar, commit dialog (Ctrl+K, Ctrl+Enter to commit),
+  Git tool window (changes with checkboxes, log), diff viewer, change markers in the gutter, file status colours in
+  the tree and tabs, rollback. Uses the `git` executable.
+* **Terminal, folding, run configurations** - a built-in terminal, code folding of forms (Ctrl+-/Ctrl+=),
+  load/test ASDF systems from the run configuration picker.
 * **JetBrains look & keymap** - New UI dark/light themes, tool windows, tabs, breadcrumbs, status bar.
-  All key bindings come from one registry (`crates/ide-core/src/commands.rs`); see Settings > Keymap.
+  Custom window frame (no OS title bar), Inter + JetBrains Mono fonts. All key bindings come from one registry (`crates/ide-core/src/commands.rs`); see Settings > Keymap.
 
 ## Layout
 
@@ -58,7 +63,7 @@ asserts on application state and takes screenshots *of the app window only*.
 
 ## Dependencies
 
-Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `png`. Every crate in
+Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `png`. Bundled fonts: JetBrains Mono and Inter (SIL OFL 1.1, see `assets/fonts`). Every crate in
 `Cargo.lock` was checked against crates.io (publisher, downloads, yanked status, repository);
 `deny.toml` pins the policy (crates.io only, no git sources).
 

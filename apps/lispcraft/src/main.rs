@@ -3,8 +3,12 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod app_git;
+mod app_run;
+mod app_terminal;
 mod doc;
 mod editor_view;
+mod folding;
 mod fonts;
 mod icons;
 mod input;
@@ -13,7 +17,9 @@ mod state;
 mod theme;
 mod ui;
 mod ui_chrome;
+mod ui_titlebar;
 mod ui_panels;
+mod widgets;
 mod ui_popups;
 
 use std::path::PathBuf;
@@ -58,17 +64,16 @@ fn main() -> eframe::Result {
     let settings = Settings::load();
     let (w, h) = args.size.unwrap_or((1280.0, 800.0));
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([w, h]).with_min_inner_size([640.0, 400.0]).with_title("Lispcraft").with_app_id("lispcraft"),
+        viewport: egui::ViewportBuilder::default().with_inner_size([w, h]).with_min_inner_size([640.0, 400.0]).with_title("Lispcraft").with_decorations(false).with_app_id("lispcraft"),
         ..Default::default()
     };
     eframe::run_native(
         "Lispcraft",
         options,
         Box::new(move |cc| {
-            let font_names = fonts::install(&cc.egui_ctx);
+            fonts::install(&cc.egui_ctx);
             let mut app = app::App::new(settings);
             app.pal.apply(&cc.egui_ctx);
-            app.font_names = font_names;
             // what to open: explicit paths win, otherwise restore the last session
             if !args.paths.is_empty() {
                 for p in &args.paths {

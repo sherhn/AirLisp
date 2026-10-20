@@ -66,6 +66,14 @@ impl App {
                 self.repl.log.iter().any(|l| l.text.contains(t))
             }
             "completion" => self.completion.active && !self.completion.items.is_empty(),
+            "git_ready" => self.git.repo.is_some() && self.git.head.is_some() && self.git.rx.is_none(),
+            "git_dirty" => self.git.rx.is_none() && !self.git.changes.is_empty(),
+            "git_clean" => self.git.rx.is_none() && self.git.changes.is_empty(),
+            "term_idle" => self.term.handle.is_none(),
+            "term_contains" => {
+                let t = cond["value"].as_str().unwrap_or("");
+                self.term.log.iter().any(|l| l.text.contains(t))
+            }
             "popup" => !matches!(self.popup, Popup::None),
             _ => true,
         }
@@ -292,6 +300,9 @@ impl App {
                     Popup::Info { .. } => "info",
                     Popup::Confirm { .. } => "confirm",
                     Popup::RenameFile { .. } => "rename_file",
+                    Popup::Commit { .. } => "commit",
+                    Popup::Diff { .. } => "diff",
+                    Popup::NewBranch { .. } => "new_branch",
                 };
                 if name != sval {
                     self.fail(format!("assert_popup: expected {sval}, got {name}"));
@@ -348,6 +359,8 @@ impl App {
                     Some(BottomTool::Run) => "run",
                     Some(BottomTool::Problems) => "problems",
                     Some(BottomTool::Find) => "find",
+                    Some(BottomTool::Git) => "git",
+                    Some(BottomTool::Terminal) => "terminal",
                     None => "none",
                 };
                 if name != sval {
@@ -358,6 +371,45 @@ impl App {
                 let min = step["min"].as_u64().unwrap_or(1) as usize;
                 if self.find_results.hits.len() < min {
                     self.fail(format!("assert_find_results: expected >= {min}, got {}", self.find_results.hits.len()));
+                }
+            }
+            "assert_git_changes" => {
+                let want = step["value"].as_u64().unwrap_or(0) as usize;
+                if self.git.changes.len() != want {
+                    let names: Vec<_> = self.git.changes.iter().map(|c| c.path.clone()).collect();
+                    self.fail(format!("assert_git_changes: expected {want}, got {names:?}"));
+                }
+            }
+            "assert_branch" => {
+                let got = self.git.branch.clone().unwrap_or_default();
+                if got != sval {
+                    self.fail(format!("assert_branch: expected {sval:?}, got {got:?}"));
+                }
+            }
+            "assert_git_log" => {
+                if !self.git.log.iter().any(|c| c.subject.contains(&sval)) {
+                    let all: Vec<_> = self.git.log.iter().map(|c| c.subject.clone()).collect();
+                    self.fail(format!("assert_git_log: {sval:?} not in {all:?}"));
+                }
+            }
+            "assert_marks" => {
+                let min = step["min"].as_u64().unwrap_or(1) as usize;
+                let n = self.docs.get_mut(self.active).map_or(0, |d| App::git_marks(d).len());
+                if n < min {
+                    self.fail(format!("assert_marks: expected >= {min} gutter marks, got {n}"));
+                }
+            }
+            "assert_folded" => {
+                let want = step["value"].as_u64().unwrap_or(0) as usize;
+                let n = self.doc().map_or(0, |d| d.folds.len());
+                if n != want {
+                    self.fail(format!("assert_folded: expected {want}, got {n}"));
+                }
+            }
+            "assert_term_contains" => {
+                if !self.term.log.iter().any(|l| l.text.contains(&sval)) {
+                    let tail: Vec<String> = self.term.log.iter().rev().take(6).map(|l| l.text.clone()).collect();
+                    self.fail(format!("assert_term_contains: {sval:?} not found; tail: {tail:?}"));
                 }
             }
             "assert_toast" => {

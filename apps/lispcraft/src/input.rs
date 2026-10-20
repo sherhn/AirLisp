@@ -5,7 +5,7 @@ use ide_core::commands::Shortcut;
 use ide_core::exec::{self, ExecCtx};
 use ide_core::search::TextQuery;
 
-use crate::app::App;
+use crate::app::{App, RunConfig};
 use crate::editor_view::Sev;
 use crate::state::*;
 
@@ -19,7 +19,7 @@ pub fn key_name(key: Key) -> Option<&'static str> {
         F9 => "F9", F10 => "F10", F11 => "F11", F12 => "F12", Enter => "Enter", Tab => "Tab", Backspace => "Backspace",
         Delete => "Delete", Insert => "Insert", Escape => "Escape", Space => "Space", ArrowLeft => "Left", ArrowRight => "Right",
         ArrowUp => "Up", ArrowDown => "Down", Home => "Home", End => "End", PageUp => "PageUp", PageDown => "PageDown",
-        Equals | Plus => "Equals", Minus => "Minus", Slash => "Slash", Comma => "Comma", Period => "Period", Semicolon => "Semicolon",
+        Equals | Plus => "Equals", Backtick => "Backtick", Minus => "Minus", Slash => "Slash", Comma => "Comma", Period => "Period", Semicolon => "Semicolon",
         _ => return None,
     })
 }
@@ -41,7 +41,7 @@ fn all_keys() -> Vec<Key> {
     vec![
         A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7,
         Num8, Num9, F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, Enter, Tab, Backspace, Delete, Insert, Escape, Space,
-        ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Home, End, PageUp, PageDown, Equals, Minus, Slash, Comma, Period, Semicolon,
+        ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Home, End, PageUp, PageDown, Equals, Minus, Slash, Comma, Period, Semicolon, Backtick,
     ]
 }
 
@@ -100,7 +100,7 @@ impl App {
         self.detect_double_shift(ctx);
         // Tab / arrows may have moved egui's keyboard focus onto a button; while the editor owns the
         // keyboard that would make Enter/Space press that button, so drop non-text focus.
-        if self.editor_focus && !self.popup.is_open() && !ctx.text_edit_focused()
+        if self.editor_focus && !self.popup.is_open()
             && let Some(id) = ctx.memory(|m| m.focused()) {
                 ctx.memory_mut(|m| m.surrender_focus(id));
             }
@@ -447,7 +447,19 @@ impl App {
                 }
             }
             // ---- run / REPL
-            "run.run_file" => self.run_current_file(),
+            "run.run_file" => self.run_selected(),
+            "run.load_system" => self.repl_load_system(),
+            "run.test_system" => {
+                let sys = match &self.run_config {
+                    RunConfig::Load(s) | RunConfig::Test(s) => Some(s.clone()),
+                    RunConfig::CurrentFile => self.asd_systems().into_iter().next(),
+                };
+                match sys {
+                    Some(s) => self.run_asdf_system(&s, true),
+                    None => self.toast("No .asd system found in this project", Sev::Weak),
+                }
+            }
+            "run.run_config" => {}
             "run.compile_file" => self.compile_current_file(),
             "run.stop" => {
                 self.stop_run();
@@ -498,7 +510,8 @@ impl App {
             "view.repl" => self.toggle_bottom(BottomTool::Repl),
             "view.run" => self.toggle_bottom(BottomTool::Run),
             "view.problems" => self.toggle_bottom(BottomTool::Problems),
-            "view.terminal" => self.toggle_bottom(BottomTool::Repl),
+            "view.terminal" => self.toggle_bottom(BottomTool::Terminal),
+            "view.git" => self.toggle_bottom(BottomTool::Git),
             "view.hide_all" => {
                 if self.left_tool.is_some() || self.bottom_tool.is_some() {
                     self.left_tool = None;
@@ -522,6 +535,62 @@ impl App {
             "help.keymap" => {
                 self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default(), filter: String::new() };
             }
+            // ---- git
+            "git.commit" => {
+                if self.git.repo.is_some() {
+                    self.git_refresh();
+                    self.popup = Popup::Commit { just_opened: true };
+                } else {
+                    self.toast("This project is not a Git repository (Git > Create Git Repository)", Sev::Weak);
+                }
+            }
+            "git.push" => {
+                self.save_all();
+                self.git_run_async("Push", |r| r.push());
+            }
+            "git.pull" => {
+                self.save_all();
+                self.git_run_async("Update", |r| r.pull());
+            }
+            "git.branches" => self.open_branch_palette(),
+            "git.new_branch" => self.popup = Popup::NewBranch { input: String::new(), just_opened: true },
+            "git.diff" => {
+                if let Some(rel) = self.current_rel_path() {
+                    self.git_show_diff(&rel);
+                }
+            }
+            "git.rollback" => {
+                if let Some(rel) = self.current_rel_path() {
+                    if self.git.changes.iter().any(|c| c.path == rel) {
+                        self.popup = Popup::Confirm { kind: ConfirmKind::Rollback(rel.clone()), message: format!("Discard all local changes to '{rel}'? This cannot be undone.") };
+                    } else {
+                        self.toast("No changes in this file", Sev::Weak);
+                    }
+                }
+            }
+            "git.refresh" => {
+                self.git.rx = None;
+                self.git_refresh();
+                self.refresh_project();
+            }
+            "git.init" => {
+                if let Some(root) = self.project_root().map(|p| p.to_path_buf()) {
+                    match ide_core::git::init(&root) {
+                        Ok(_) => {
+                            self.git_attach();
+                            self.toast("Git repository created", Sev::Weak);
+                        }
+                        Err(e) => self.toast(format!("git init failed: {e}"), Sev::Error),
+                    }
+                }
+            }
+            "git.stage_file" => {
+                if let Some(rel) = self.current_rel_path() {
+                    self.git_run_sync("Add", move |r| r.stage(&[rel]).map(|_| String::new()));
+                }
+            }
+            // ---- folding
+            "edit.fold" | "edit.unfold" | "edit.fold_all" | "edit.unfold_all" => self.fold_command(id),
             // ---- everything else is an editor command
             other => {
                 if editor_on {
@@ -542,6 +611,11 @@ impl App {
         self.bottom_tool = if self.bottom_tool == Some(t) { None } else { Some(t) };
         if self.bottom_tool == Some(BottomTool::Repl) && self.repl.session.is_none() {
             self.ensure_repl();
+        }
+        if self.bottom_tool == Some(BottomTool::Terminal) {
+            self.terminal_start_dir();
+            self.term.focus_input = true;
+            self.editor_focus = false;
         }
     }
 

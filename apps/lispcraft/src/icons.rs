@@ -29,6 +29,15 @@ pub enum Icon {
     Dot,
     Clear,
     Info,
+    ArrowUp,
+    ArrowDown,
+    Commit,
+    Refresh,
+    History,
+    Diff,
+    Menu,
+    More,
+    Eye,
 }
 
 fn p(r: Rect, x: f32, y: f32) -> Pos2 {
@@ -37,7 +46,7 @@ fn p(r: Rect, x: f32, y: f32) -> Pos2 {
 
 pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
     let r = Rect::from_center_size(rect.center(), Vec2::splat(rect.width().min(rect.height())));
-    let s = Stroke::new((r.width() / 10.0).max(1.2), color);
+    let s = Stroke::new((r.width() / 10.0).max(1.4), color);
     match icon {
         Icon::Folder | Icon::FolderOpen => {
             let body = Rect::from_min_max(p(r, 0.08, 0.28), p(r, 0.92, 0.82));
@@ -159,6 +168,55 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.circle_stroke(p(r, 0.72, 0.4), 2.0, s);
             painter.line_segment([p(r, 0.3, 0.3), p(r, 0.3, 0.7)], s);
             painter.add(Shape::line(vec![p(r, 0.72, 0.48), p(r, 0.72, 0.56), p(r, 0.3, 0.64)], s));
+        }
+        Icon::ArrowUp => {
+            painter.line_segment([p(r, 0.5, 0.86), p(r, 0.5, 0.18)], s);
+            painter.add(Shape::line(vec![p(r, 0.24, 0.42), p(r, 0.5, 0.16), p(r, 0.76, 0.42)], s));
+        }
+        Icon::ArrowDown => {
+            painter.line_segment([p(r, 0.5, 0.14), p(r, 0.5, 0.82)], s);
+            painter.add(Shape::line(vec![p(r, 0.24, 0.58), p(r, 0.5, 0.84), p(r, 0.76, 0.58)], s));
+        }
+        Icon::Commit => {
+            painter.line_segment([p(r, 0.06, 0.5), p(r, 0.32, 0.5)], s);
+            painter.line_segment([p(r, 0.68, 0.5), p(r, 0.94, 0.5)], s);
+            painter.circle_stroke(r.center(), r.width() * 0.19, s);
+        }
+        Icon::Refresh => {
+            let c = r.center();
+            let rad = r.width() * 0.36;
+            let pts: Vec<Pos2> = (0..24).map(|i| {
+                let a = 0.5 + (i as f32 / 23.0) * 5.0;
+                c + Vec2::new(a.cos(), a.sin()) * rad
+            }).collect();
+            let end = pts[0];
+            painter.add(Shape::line(pts, s));
+            painter.add(Shape::convex_polygon(vec![end + Vec2::new(-4.0, -1.0), end + Vec2::new(3.0, -4.5), end + Vec2::new(2.5, 3.0)], color, Stroke::NONE));
+        }
+        Icon::History => {
+            painter.circle_stroke(r.center(), r.width() * 0.38, s);
+            painter.add(Shape::line(vec![p(r, 0.5, 0.28), p(r, 0.5, 0.52), p(r, 0.66, 0.62)], s));
+        }
+        Icon::Diff => {
+            painter.rect_stroke(Rect::from_min_max(p(r, 0.1, 0.14), p(r, 0.9, 0.86)), CornerRadius::same(2), s, StrokeKind::Inside);
+            painter.line_segment([p(r, 0.5, 0.14), p(r, 0.5, 0.86)], s);
+            painter.line_segment([p(r, 0.2, 0.4), p(r, 0.4, 0.4)], s);
+            painter.line_segment([p(r, 0.6, 0.6), p(r, 0.8, 0.6)], s);
+            painter.line_segment([p(r, 0.7, 0.5), p(r, 0.7, 0.7)], s);
+        }
+        Icon::Menu => {
+            for y in [0.28, 0.5, 0.72] {
+                painter.line_segment([p(r, 0.16, y), p(r, 0.84, y)], s);
+            }
+        }
+        Icon::More => {
+            for x in [0.22, 0.5, 0.78] {
+                painter.circle_filled(p(r, x, 0.5), 1.6, color);
+            }
+        }
+        Icon::Eye => {
+            painter.add(Shape::line(vec![p(r, 0.06, 0.5), p(r, 0.3, 0.3), p(r, 0.5, 0.26), p(r, 0.7, 0.3), p(r, 0.94, 0.5), p(r, 0.7, 0.7), p(r, 0.5, 0.74), p(r, 0.3, 0.7), p(r, 0.06, 0.5)], s));
+            painter.circle_filled(r.center(), r.width() * 0.1, color);
         }
         Icon::Dot => {
             painter.circle_filled(r.center(), r.width() * 0.22, color);

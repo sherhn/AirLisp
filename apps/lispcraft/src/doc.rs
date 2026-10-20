@@ -20,6 +20,12 @@ pub struct Doc {
     /// Compiler problems from the last compile (byte ranges valid for `compiled_rev`).
     pub compiler_markers: Vec<Marker>,
     pub compiled_rev: u64,
+    /// HEAD content of the file: None = not loaded, Some(None) = untracked / not in HEAD.
+    pub git_base: Option<Option<String>>,
+    pub git_marks: Vec<ide_core::diff::Mark>,
+    pub git_marks_rev: u64,
+    /// Folded forms, identified by (text of the form's first line, occurrence index).
+    pub folds: std::collections::HashSet<(String, usize)>,
 }
 
 fn mtime(p: &Path) -> Option<SystemTime> {
@@ -40,6 +46,10 @@ impl Doc {
             untitled_name: String::new(),
             compiler_markers: vec![],
             compiled_rev: 0,
+            git_base: None,
+            git_marks: vec![],
+            git_marks_rev: u64::MAX,
+            folds: Default::default(),
         })
     }
 
@@ -53,6 +63,10 @@ impl Doc {
             untitled_name: format!("untitled-{n}.lisp"),
             compiler_markers: vec![],
             compiled_rev: 0,
+            git_base: None,
+            git_marks: vec![],
+            git_marks_rev: u64::MAX,
+            folds: Default::default(),
         }
     }
 
@@ -112,10 +126,10 @@ impl Doc {
         let mut v: Vec<Marker> = p
             .diagnostics
             .iter()
-            .map(|d| Marker { start: d.start, end: d.end, sev: if d.severity == Severity::Error { Sev::Error } else { Sev::Warning } })
+            .map(|d| Marker { start: d.start, end: d.end, sev: if d.severity == Severity::Error { Sev::Error } else { Sev::Warning }, msg: d.message.clone() })
             .collect();
         if self.compiled_rev == self.ed.revision() {
-            v.extend(self.compiler_markers.iter().copied());
+            v.extend(self.compiler_markers.iter().cloned());
         }
         v
     }

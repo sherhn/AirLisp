@@ -39,6 +39,9 @@ pub struct Palette {
     pub weak_warning: Color32,
     pub ok: Color32,
     pub modified: Color32,
+    pub git_modified: Color32,
+    pub git_added: Color32,
+    pub git_untracked: Color32,
     // syntax
     pub plain: Color32,
     pub comment: Color32,
@@ -91,6 +94,9 @@ impl Palette {
             weak_warning: c(0x6F7A8C),
             ok: c(0x5FB865),
             modified: c(0x3574F0),
+            git_modified: c(0x6C95EB),
+            git_added: c(0x73BD79),
+            git_untracked: c(0xD1675A),
             plain: c(0xBCBEC4),
             comment: c(0x7A7E85),
             string: c(0x6AAB73),
@@ -138,6 +144,9 @@ impl Palette {
             weak_warning: c(0x8C8C8C),
             ok: c(0x208A3C),
             modified: c(0x3574F0),
+            git_modified: c(0x2F5FC4),
+            git_added: c(0x208A3C),
+            git_untracked: c(0xB5483B),
             plain: c(0x080808),
             comment: c(0x8C8C8C),
             string: c(0x067D17),
@@ -197,9 +206,9 @@ impl Palette {
         v.selection.bg_fill = self.selection;
         v.selection.stroke = egui::Stroke::new(1.0, self.accent);
         v.hyperlink_color = self.accent;
-        v.window_corner_radius = egui::CornerRadius::same(8);
-        v.menu_corner_radius = egui::CornerRadius::same(6);
-        let r = egui::CornerRadius::same(4);
+        v.window_corner_radius = egui::CornerRadius::same(12);
+        v.menu_corner_radius = egui::CornerRadius::same(8);
+        let r = egui::CornerRadius::same(6);
         for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
             w.corner_radius = r;
         }
@@ -220,10 +229,15 @@ impl Palette {
         v.widgets.open.weak_bg_fill = self.hover;
         ctx.set_theme(if self.dark { egui::ThemePreference::Dark } else { egui::ThemePreference::Light });
         ctx.set_visuals_of(if self.dark { egui::Theme::Dark } else { egui::Theme::Light }, v);
-        ctx.global_style_mut(|style| {
-            style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-            style.spacing.button_padding = egui::vec2(8.0, 3.0);
+        ctx.all_styles_mut(|style| {
+            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+            style.spacing.button_padding = egui::vec2(10.0, 5.0);
+            style.spacing.interact_size = egui::vec2(36.0, 30.0);
             style.spacing.menu_margin = egui::Margin::same(6);
+            style.spacing.window_margin = egui::Margin::same(12);
+            style.spacing.scroll = egui::style::ScrollStyle::floating();
+            style.spacing.scroll.floating_width = 6.0;
+            style.spacing.scroll.bar_width = 10.0;
             style.interaction.selectable_labels = false;
         });
     }

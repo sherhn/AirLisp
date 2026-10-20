@@ -4,6 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
+use ide_core::diff::DiffLine;
+use ide_core::git::{Branch, Change, Commit, Repo};
 use ide_core::index::ProjectIndex;
 use ide_core::search::FileHit;
 use ide_core::workspace::Entry;
@@ -23,6 +25,67 @@ pub enum BottomTool {
     Run,
     Problems,
     Find,
+    Git,
+    Terminal,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitTab {
+    Changes,
+    Log,
+}
+
+pub struct GitSnapshot {
+    pub branch: Option<String>,
+    pub head: Option<String>,
+    pub changes: Vec<Change>,
+    pub branches: Vec<Branch>,
+    pub log: Vec<Commit>,
+}
+
+pub struct GitState {
+    pub repo: Option<Repo>,
+    pub branch: Option<String>,
+    pub head: Option<String>,
+    pub changes: Vec<Change>,
+    pub branches: Vec<Branch>,
+    pub log: Vec<Commit>,
+    pub rx: Option<Receiver<GitSnapshot>>,
+    pub last_refresh: f64,
+    pub commit_msg: String,
+    pub checked: HashSet<String>,
+    pub busy: Option<String>,
+    pub op_rx: Option<Receiver<(String, Result<String, String>)>>,
+    pub tab: GitTab,
+    pub selected_commit: Option<usize>,
+    /// Absolute path -> change kind for tree colouring; directories containing changes.
+    pub kinds: HashMap<PathBuf, ide_core::git::ChangeKind>,
+    pub dirty_dirs: HashSet<PathBuf>,
+    pub available: bool,
+}
+
+impl Default for GitState {
+    fn default() -> Self {
+        GitState {
+            repo: None,
+            branch: None,
+            head: None,
+            changes: vec![],
+            branches: vec![],
+            log: vec![],
+            rx: None,
+            last_refresh: -100.0,
+            commit_msg: String::new(),
+            checked: HashSet::new(),
+            busy: None,
+            op_rx: None,
+            tab: GitTab::Changes,
+            selected_commit: None,
+            kinds: HashMap::new(),
+            dirty_dirs: HashSet::new(),
+            available: true,
+        }
+    }
 }
 
 pub struct Project {
@@ -145,6 +208,7 @@ pub enum PTarget {
     File(PathBuf),
     Symbol { path: PathBuf, offset: usize },
     Offset(usize),
+    Branch(String),
 }
 
 #[derive(Clone, Debug)]
@@ -207,6 +271,7 @@ pub enum ConfirmKind {
     Exit,
     Delete(PathBuf),
     Reload(usize),
+    Rollback(String),
 }
 
 pub enum Popup {
@@ -221,6 +286,9 @@ pub enum Popup {
     About,
     Info { title: String, text: String },
     Confirm { kind: ConfirmKind, message: String },
+    Commit { just_opened: bool },
+    Diff { title: String, lines: Vec<DiffLine>, scroll_to: Option<usize> },
+    NewBranch { input: String, just_opened: bool },
     RenameFile { path: PathBuf, input: String, just_opened: bool },
 }
 

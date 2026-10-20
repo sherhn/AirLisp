@@ -20,6 +20,8 @@ use crate::editor_view::{Marker, Sev};
 use crate::state::*;
 use crate::theme::Palette;
 
+pub use crate::app_run::RunConfig;
+
 pub struct App {
     pub settings: Settings,
     pub pal: Palette,
@@ -56,6 +58,9 @@ pub struct App {
     pub editor_rect: Option<egui::Rect>,
     pub caret_screen: Option<egui::Pos2>,
     pub pending_close_others: bool,
+    pub git: GitState,
+    pub term: crate::app_terminal::TerminalState,
+    pub run_config: crate::app_run::RunConfig,
     pub script: Option<crate::script::Script>,
     /// Double-Shift detection: (shift currently down, another key was used meanwhile, time of the last clean tap).
     pub shift_tap: (bool, bool, f64),
@@ -104,6 +109,9 @@ impl App {
             editor_rect: None,
             caret_screen: None,
             pending_close_others: false,
+            git: GitState::default(),
+            term: Default::default(),
+            run_config: Default::default(),
             script: None,
             shift_tap: (false, false, -10.0),
             settings,
@@ -168,6 +176,7 @@ impl App {
         self.settings.push_recent_project(&root.to_string_lossy());
         self.left_tool = Some(LeftTool::Project);
         self.compiler_problems.clear();
+        self.git_attach();
         // restart the REPL in the new working directory on next use
         if self.repl.session.is_some() {
             self.repl_restart();
@@ -180,6 +189,7 @@ impl App {
         self.docs.clear();
         self.active = 0;
         self.compiler_problems.clear();
+        self.git = GitState::default();
     }
 
     pub fn poll_index(&mut self) {
@@ -366,6 +376,7 @@ impl App {
             proj.index.update_file(p, &text, dialect);
             proj.dir_cache.clear();
         }
+        self.git.last_refresh = -100.0;
         true
     }
 
@@ -428,6 +439,9 @@ impl App {
         self.poll_repl();
         self.poll_run();
         self.poll_compile();
+        self.git_poll();
+        self.poll_terminal();
+        self.git_update_bases();
 
         // external file changes (once a second)
         if self.now - self.last_disk_check > 1.0 {
@@ -792,7 +806,7 @@ impl App {
             };
             let (s, e) = loc.unwrap_or((0, 0));
             if loc.is_some() {
-                markers.push(Marker { start: s, end: e.max(s + 1), sev });
+                markers.push(Marker { start: s, end: e.max(s + 1), sev, msg: p.message.lines().next().unwrap_or("").to_string() });
             }
             self.compiler_problems.push(ProblemRow { path: Some(job.file.clone()), start: s, end: e, sev, message: p.message.lines().next().unwrap_or("").to_string(), source: "compiler" });
         }

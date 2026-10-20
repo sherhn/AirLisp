@@ -5,7 +5,7 @@ use eframe::egui::{self, CornerRadius, Frame, Margin};
 use crate::app::App;
 use crate::editor_view::{self, ViewCfg};
 use crate::state::*;
-use crate::ui_chrome::{STATUS_H, TOOLBAR_H};
+use crate::widgets::{STATUS_H, STRIP_W, TOOLBAR_H};
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
@@ -43,10 +43,10 @@ impl eframe::App for App {
         }
 
         let chrome = Frame::new().fill(pal.panel_bg);
-        egui::Panel::top("menu").frame(chrome.inner_margin(Margin::symmetric(6, 2))).show(ui, |ui| self.draw_menu_bar(ui, &ctx));
+        egui::Panel::top("titlebar").exact_size(crate::ui_titlebar::TITLEBAR_H).frame(chrome).show(ui, |ui| self.draw_titlebar(ui, &ctx));
         egui::Panel::top("toolbar").exact_size(TOOLBAR_H).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_toolbar(ui, &ctx));
         egui::Panel::bottom("status").exact_size(STATUS_H).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_status_bar(ui, &ctx));
-        egui::Panel::left("strip").exact_size(40.0).resizable(false).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_tool_strip(ui, &ctx));
+        egui::Panel::left("strip").exact_size(STRIP_W).resizable(false).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_tool_strip(ui, &ctx));
         if let Some(t) = self.left_tool {
             egui::Panel::left("left_tool").resizable(true).default_size(270.0).size_range(160.0..=700.0).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| match t {
                 LeftTool::Project => self.draw_project_panel(ui, &ctx),
@@ -62,6 +62,7 @@ impl eframe::App for App {
         self.draw_popups(&ctx);
         self.draw_toasts(&ctx);
         self.process_screenshots(&ctx);
+        self.draw_resize_handles(&ctx);
 
         // keep animating only when needed
         let busy = self.repl.starting || !self.repl.busy.is_empty() || self.run.running || self.compile.is_some() || self.repl.session.is_some();
@@ -122,6 +123,7 @@ impl App {
         self.refresh_find();
         let markers = self.docs[idx].markers();
         let find: Vec<(usize, usize)> = if self.find.open { self.find.matches.clone() } else { vec![] };
+        let git_marks: Vec<ide_core::diff::Mark> = App::git_marks(&mut self.docs[idx]).to_vec();
         let editor_on = self.editor_active(ctx);
         let cfg = ViewCfg {
             pal: &self.pal,
@@ -133,9 +135,15 @@ impl App {
             markers: &markers,
             find: &find,
             find_current: self.find.current,
+            git_marks: &git_marks,
         };
         let doc = &mut self.docs[idx];
-        let out = editor_view::show(ui, &mut doc.ed, &mut doc.view, &cfg);
+        let out = editor_view::show(ui, &mut doc.ed, &mut doc.view, &mut doc.folds, &cfg);
+        if let Some(key) = out.fold_toggle.clone()
+            && !doc.folds.remove(&key)
+        {
+            doc.folds.insert(key);
+        }
         self.editor_rect = out.text_rect;
         self.caret_screen = out.caret_screen;
         if out.clicked {

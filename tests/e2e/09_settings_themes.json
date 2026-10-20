@@ -9,8 +9,8 @@
   {"op": "assert_popup", "value": "none"},
 
   {"op": "log", "value": "zoom and light theme"},
-  {"op": "key", "value": "Ctrl+Equals"},
-  {"op": "key", "value": "Ctrl+Equals"},
+  {"op": "key", "value": "Ctrl+Alt+Equals"},
+  {"op": "key", "value": "Ctrl+Alt+Equals"},
   {"op": "command", "value": "view.toggle_theme"},
   {"op": "frames", "value": 4},
   {"op": "screenshot", "path": "${SHOTS}/${NAME}_light.png"},

@@ -12,6 +12,7 @@ pub enum Category {
     Navigate,
     Code,
     Refactor,
+    Git,
     Run,
     Tools,
     Window,
@@ -27,6 +28,7 @@ impl Category {
             Category::Navigate => "Navigate",
             Category::Code => "Code",
             Category::Refactor => "Refactor",
+            Category::Git => "Git",
             Category::Run => "Run",
             Category::Tools => "Tools",
             Category::Window => "Window",
@@ -187,13 +189,32 @@ cmds! {
     "view.repl", "REPL", View, ["Alt+8"];
     "view.terminal", "Terminal", View, ["Alt+F12"];
     "view.hide_all", "Hide All Tool Windows", View, ["Ctrl+Shift+F12"];
-    "view.zoom_in", "Increase Font Size", View, ["Ctrl+Equals"];
-    "view.zoom_out", "Decrease Font Size", View, ["Ctrl+Minus"];
+    "view.zoom_in", "Increase Font Size", View, ["Ctrl+Alt+Equals"];
+    "view.zoom_out", "Decrease Font Size", View, ["Ctrl+Alt+Minus"];
     "view.zoom_reset", "Reset Font Size", View, ["Ctrl+0"];
     "view.toggle_theme", "Toggle Dark/Light Theme", View, [];
     "view.line_numbers", "Toggle Line Numbers", View, [];
     "view.whitespace", "Toggle Whitespace", View, [];
     "view.rainbow", "Toggle Rainbow Brackets", View, [];
+    // ---- Git
+    "git.commit", "Commit...", Git, ["Ctrl+K"];
+    "git.push", "Push", Git, ["Ctrl+Shift+K"];
+    "git.pull", "Update Project (Pull)", Git, ["Ctrl+T"];
+    "git.branches", "Branches...", Git, ["Ctrl+Shift+Backtick"];
+    "git.new_branch", "New Branch...", Git, [];
+    "git.diff", "Show Diff", Git, ["Ctrl+Alt+Shift+D"];
+    "git.rollback", "Rollback Changes...", Git, ["Ctrl+Alt+Z"];
+    "git.refresh", "Refresh Git Status", Git, [];
+    "git.init", "Create Git Repository", Git, [];
+    "git.stage_file", "Add File to Git", Git, [];
+    "view.git", "Git", View, ["Alt+9"];
+    "run.run_config", "Choose Run Configuration...", Run, [];
+    "run.load_system", "Load ASDF System into REPL", Run, [];
+    "run.test_system", "Test ASDF System", Run, [];
+    "edit.fold", "Fold Form", Edit, ["Ctrl+Minus"];
+    "edit.unfold", "Unfold Form", Edit, ["Ctrl+Equals"];
+    "edit.fold_all", "Fold All", Edit, ["Ctrl+Shift+Minus"];
+    "edit.unfold_all", "Unfold All", Edit, ["Ctrl+Shift+Equals"];
     // ---- Help
     "help.keymap", "Keymap Reference", Help, [];
     "help.about", "About", Help, ["F1"];
@@ -219,7 +240,7 @@ pub const KEY_NAMES: &[&str] = &[
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
     "Enter", "Tab", "Backspace", "Delete", "Insert", "Escape", "Space", "Left", "Right", "Up", "Down", "Home", "End", "PageUp",
-    "PageDown", "Equals", "Minus", "Slash", "Comma", "Period", "Semicolon",
+    "PageDown", "Equals", "Minus", "Slash", "Comma", "Period", "Semicolon", "Backtick",
 ];
 
 impl Shortcut {
@@ -259,7 +280,7 @@ impl fmt::Display for Shortcut {
 
 /// Pretty text for UI labels: `Ctrl+Shift+A` -> `Ctrl+Shift+A` with symbols for punctuation.
 pub fn display_shortcut(s: &str) -> String {
-    s.replace("Equals", "=").replace("Minus", "-").replace("Slash", "/").replace("Comma", ",").replace("Period", ".").replace("Semicolon", ";")
+    s.replace("Equals", "=").replace("Minus", "-").replace("Slash", "/").replace("Comma", ",").replace("Period", ".").replace("Semicolon", ";").replace("Backtick", "`")
 }
 
 pub struct Keymap {
