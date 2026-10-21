@@ -187,6 +187,7 @@ impl App {
             find: &find,
             find_current: self.find.current,
             git_marks: &git_marks,
+            minimap: self.settings.minimap,
         };
         let mut view = match (own_view, self.split.as_mut()) {
             (true, Some(sp)) => std::mem::take(&mut sp.view),

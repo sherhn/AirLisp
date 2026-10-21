@@ -289,6 +289,8 @@ pub const RU: &[(&str, &str)] = &[
     ("Line numbers", "Номера строк"),
     ("Show the gutter with line numbers", "Показывать поле с номерами строк"),
     ("Whitespace", "Пробельные символы"),
+    ("Code overview", "Обзор кода"),
+    ("Minimap with changes next to the scrollbar", "Миникарта файла с изменениями возле полосы прокрутки"),
     ("Draw dots for spaces and arrows for tabs", "Точки вместо пробелов и стрелки вместо табуляции"),
     ("Rainbow brackets", "Радужные скобки"),
     ("Color parentheses by nesting depth", "Раскрашивать скобки по глубине вложенности"),

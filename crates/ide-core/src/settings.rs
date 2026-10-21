@@ -49,6 +49,8 @@ pub struct Settings {
     pub font_size: f32,
     pub show_line_numbers: bool,
     pub show_whitespace: bool,
+    /// Code overview (minimap) next to the scrollbar.
+    pub minimap: bool,
     pub rainbow_brackets: bool,
     pub auto_save_on_focus_loss: bool,
     /// Show the completion popup automatically while typing.
@@ -84,6 +86,7 @@ impl Default for Settings {
             font_size: 14.0,
             show_line_numbers: true,
             show_whitespace: false,
+            minimap: true,
             rainbow_brackets: true,
             auto_save_on_focus_loss: true,
             auto_popup: true,

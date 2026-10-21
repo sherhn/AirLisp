@@ -37,7 +37,11 @@ pub struct ViewState {
     max_cols: Option<(u64, usize)>,
     pub last_viewport_lines: usize,
     pub last_text_rect: Option<Rect>,
+    /// Cached code-overview geometry, keyed by what it was built from.
+    minimap: Option<(MapKey, egui::Mesh)>,
 }
+
+type MapKey = (u64, usize, i32, i32, [u8; 4]);
 
 pub struct ViewCfg<'a> {
     pub pal: &'a Palette,
@@ -50,6 +54,8 @@ pub struct ViewCfg<'a> {
     pub find: &'a [(usize, usize)],
     pub find_current: Option<usize>,
     pub git_marks: &'a [Mark],
+    /// Code overview (minimap) next to the scrollbar.
+    pub minimap: bool,
 }
 
 #[derive(Default)]
@@ -72,7 +78,8 @@ const GUTTER_PAD: f32 = 12.0;
 const FOLD_W: f32 = 18.0;
 const MARK_W: f32 = 10.0;
 const STRIPE_W: f32 = 12.0;
-const TEXT_PAD: f32 = 14.0;
+const TEXT_PAD: f32 = 20.0;
+const MAP_W: f32 = 96.0;
 
 /// Screen position of the change marker of display row `row` in a gutter (used by the UI tests to click it).
 pub fn gutter_mark_pos(gutter: Rect, scroll_y: f32, font_size: f32, row: usize) -> Pos2 {
@@ -151,7 +158,9 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
 
     let full = ui.available_rect_before_wrap();
     let gutter_rect = Rect::from_min_size(full.min, Vec2::new(gutter_w, full.height()));
-    let text_rect = Rect::from_min_max(Pos2::new(full.min.x + gutter_w, full.min.y), full.max);
+    let map_w = if cfg.minimap && full.width() > 520.0 { MAP_W } else { 0.0 };
+    let text_rect = Rect::from_min_max(Pos2::new(full.min.x + gutter_w, full.min.y), Pos2::new(full.max.x - map_w, full.max.y));
+    let map_rect = Rect::from_min_max(Pos2::new(text_rect.max.x, full.min.y), full.max);
     state.last_text_rect = Some(text_rect);
     let mut out = ViewOut { text_rect: Some(text_rect), gutter_rect: Some(gutter_rect), ..Default::default() };
 
@@ -180,6 +189,19 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         Line(usize),
     }
     let mut acts: Vec<Act> = Vec::new();
+
+    // code overview: geometry shared by the click handling (before the scroll area) and the painting (after it)
+    let map_inner = map_rect.shrink2(Vec2::new(8.0, 10.0));
+    let map_unit = if rows.len() == 0 { 1.0 } else { (map_inner.height() / rows.len() as f32).min(3.0) };
+    if map_w > 0.0 {
+        let resp = ui.interact(map_rect, ui.id().with("minimap"), Sense::click_and_drag());
+        if let (true, Some(p)) = (resp.is_pointer_button_down_on() || resp.dragged(), resp.interact_pointer_pos()) {
+            let row = ((p.y - map_inner.min.y) / map_unit).max(0.0);
+            let max_scroll = (content_h - text_rect.height()).max(0.0);
+            state.scroll.y = (row * lh - text_rect.height() / 2.0).clamp(0.0, max_scroll);
+            ui.ctx().request_repaint();
+        }
+    }
 
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(text_rect).layout(egui::Layout::top_down(egui::Align::Min)));
     let scroll = egui::ScrollArea::both().auto_shrink([false, false]).scroll_offset(state.scroll).id_salt("editor_scroll");
@@ -398,7 +420,6 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         }
     });
     state.scroll = area.state.clamped_offset();
-    state.spans = Some((spans_rev, spans));
     for a in acts {
         match a {
             Act::Caret { off, extend } => ed.set_caret(off, extend),
@@ -409,6 +430,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
 
     // ---------------------------------------------------------------- gutter
     let gp = ui.painter_at(gutter_rect);
+    gp.rect_filled(gutter_rect.shrink2(Vec2::new(5.0, 6.0)), CornerRadius::same(12), pal.gutter_bg);
     let gresp = ui.interact(gutter_rect, ui.id().with("gutter"), Sense::click());
     let hover_gutter = gresp.hovered();
     let first = ((state.scroll.y / lh).floor().max(0.0)) as usize;
@@ -495,6 +517,96 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         };
         sp.rect_filled(Rect::from_min_size(Pos2::new(stripe.min.x + 3.0, to_y(m.start)), Vec2::new(STRIPE_W - 6.0, 3.0)), CornerRadius::same(1), color);
     }
+    // ---------------------------------------------------------------- code overview
+    if map_w > 0.0 {
+        let text_len = ed.text().len();
+        let mp = ui.painter_at(map_rect);
+        mp.rect_filled(map_rect.shrink2(Vec2::new(4.0, 6.0)), CornerRadius::same(12), pal.gutter_bg);
+        let n = rows.len().max(1);
+        let sampled = map_unit < 1.0;
+        let bars = if sampled { map_inner.height().floor() as usize } else { n };
+        let step = if sampled { 1.0 } else { map_unit };
+        let key: MapKey = (spans_rev, n, map_inner.height() as i32, map_inner.width() as i32, pal.plain.to_array());
+        if state.minimap.as_ref().is_none_or(|(k, _)| *k != key) {
+            let mut mesh = egui::Mesh::default();
+            let col_w = ((map_inner.width() - 4.0) / 100.0).max(0.4);
+            for i in 0..bars {
+                let row = if sampled { ((i as f32 / map_unit) as usize).min(n - 1) } else { i };
+                let Some(line_no) = rows.get(row) else { continue };
+                let ls = ed.line_start(line_no);
+                let line = ed.line_text(line_no);
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let le = ls + line.len();
+                let y = i as f32 * step;
+                let h = if step >= 2.5 { step - 1.0 } else { step.max(1.0) };
+                let mut si = spans.partition_point(|s| s.end <= ls);
+                while si < spans.len() && spans[si].start < le {
+                    let s = &spans[si];
+                    si += 1;
+                    let a = s.start.max(ls) - ls;
+                    let b = s.end.min(le) - ls;
+                    if a > 400 || !line.is_char_boundary(a) || !line.is_char_boundary(b) {
+                        break;
+                    }
+                    let c0 = display_col(line, line[..a].chars().count());
+                    let c1 = display_col(line, line[..b].chars().count());
+                    if line[a..b].trim().is_empty() || c0 >= 100 {
+                        continue;
+                    }
+                    let c = pal.syntax(s.class, s.depth, cfg.rainbow).gamma_multiply(0.8);
+                    mesh.add_colored_rect(Rect::from_min_max(Pos2::new(c0 as f32 * col_w, y), Pos2::new((c1.min(100) as f32 * col_w).max(c0 as f32 * col_w + 1.0), y + h)), c);
+                }
+            }
+            state.minimap = Some((key, mesh));
+        }
+        if let Some((_, mesh)) = &state.minimap {
+            let mut m = mesh.clone();
+            m.translate(map_inner.min.to_vec2() + Vec2::new(2.0, 0.0));
+            mp.add(Shape::mesh(m));
+        }
+        let y_of = |row: usize| map_inner.min.y + row as f32 * map_unit;
+        // what changed: a tint across the row plus a solid bar on the left edge
+        for m in cfg.git_marks {
+            let row = row_of_line(m.line);
+            if rows.get(row) != Some(m.line) {
+                continue;
+            }
+            let y = y_of(row);
+            let color = match m.kind {
+                MarkKind::Added => pal.git_added,
+                MarkKind::Modified => pal.git_modified,
+                MarkKind::Deleted => pal.error,
+            };
+            let h = map_unit.max(2.0);
+            if m.kind != MarkKind::Deleted {
+                mp.rect_filled(Rect::from_min_size(Pos2::new(map_inner.min.x - 2.0, y), Vec2::new(map_inner.width() + 4.0, h)), CornerRadius::ZERO, color.gamma_multiply(0.22));
+            }
+            mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.min.x + 4.0, y), Vec2::new(3.0, h)), CornerRadius::same(1), color);
+        }
+        // problems and search matches on the right edge
+        for &(fs, _) in cfg.find {
+            let row = row_of_line(ed.line_of(fs.min(text_len)));
+            mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.max.x - 8.0, y_of(row)), Vec2::new(4.0, map_unit.max(2.0))), CornerRadius::same(1), pal.find_current);
+        }
+        for m in cfg.markers {
+            let row = row_of_line(ed.line_of(m.start.min(text_len)));
+            let color = match m.sev {
+                Sev::Error => pal.error,
+                Sev::Warning => pal.warning,
+                Sev::Weak => pal.weak_warning,
+            };
+            mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.max.x - 8.0, y_of(row)), Vec2::new(4.0, map_unit.max(2.5))), CornerRadius::same(1), color);
+        }
+        // the visible part of the file
+        let top = map_inner.min.y + (state.scroll.y / lh) * map_unit;
+        let vis = ((text_rect.height() / lh) * map_unit).max(14.0).min(map_inner.height());
+        let view = Rect::from_min_size(Pos2::new(map_rect.min.x + 4.0, top.min(map_inner.max.y - vis).max(map_inner.min.y)), Vec2::new(map_rect.width() - 8.0, vis));
+        let hovered = ui.rect_contains_pointer(map_rect);
+        mp.rect_filled(view, CornerRadius::same(6), if hovered { pal.hover.gamma_multiply(2.2) } else { pal.hover.gamma_multiply(1.5) });
+    }
+    state.spans = Some((spans_rev, spans));
     state.regions = Some((regions_rev, regions));
     ui.advance_cursor_after_rect(full);
     out

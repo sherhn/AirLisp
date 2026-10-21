@@ -147,6 +147,9 @@ impl App {
                                 rows.row(ui, &pal, tr("Whitespace"), tr("Draw dots for spaces and arrows for tabs"), 44.0, |ui| {
                                     widgets::toggle(ui, &pal, &mut self.settings.show_whitespace);
                                 });
+                                rows.row(ui, &pal, tr("Code overview"), tr("Minimap with changes next to the scrollbar"), 44.0, |ui| {
+                                    widgets::toggle(ui, &pal, &mut self.settings.minimap);
+                                });
                                 rows.row(ui, &pal, tr("Rainbow brackets"), tr("Color parentheses by nesting depth"), 44.0, |ui| {
                                     widgets::toggle(ui, &pal, &mut self.settings.rainbow_brackets);
                                 });
