@@ -57,7 +57,8 @@ impl eframe::App for App {
             let margin = Margin { left: 0, right: gap, top: 0, bottom: gap };
             let (panel_id, width) = if t == LeftTool::Commit { ("left_commit", 360.0) } else { ("left_tool", 290.0) };
             egui::Panel::left(panel_id).resizable(true).default_size(width).size_range(220.0..=700.0).show_separator_line(false).frame(none.inner_margin(margin)).show(ui, |ui| {
-                widgets::card_frame(&pal, pal.panel_bg).show(ui, |ui| {
+                // no card behind the side panels: a short file tree on a big slab looks like an empty block
+                widgets::card_frame(&pal, egui::Color32::TRANSPARENT).show(ui, |ui| {
                     ui.set_min_size(ui.available_size());
                     match t {
                         LeftTool::Project => self.draw_project_panel(ui, &ctx),
