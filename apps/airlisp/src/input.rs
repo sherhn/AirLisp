@@ -689,6 +689,27 @@ pub fn dirs_home() -> std::path::PathBuf {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("."))
 }
 
+/// Open `url` (an https link) in the default browser.
+pub fn open_url(url: &str) {
+    if !url.starts_with("https://") || url.contains(['"', '\n', '\r', ' ']) {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // `start` treats & and friends specially: the quoted raw argument keeps the link in one piece
+        let _ = std::process::Command::new("cmd").args(["/C", "start", "\"\""]).raw_arg(format!("\"{url}\"")).creation_flags(0x0800_0000).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(url).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
+}
+
 pub fn reveal_in_file_manager(path: &std::path::Path) {
     #[cfg(windows)]
     {

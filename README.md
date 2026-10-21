@@ -43,6 +43,24 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
   Lucide icons (ISC), a sidebar Settings dialog. Dark/light themes, custom window frame (no OS title bar), Inter + JetBrains Mono fonts.
 * **Keymap** - IntelliJ-style. All key bindings come from one registry (`crates/ide-core/src/commands.rs`); see Settings > Keymap.
 
+## GitHub: your repositories in "Get from Version Control"
+
+The **GitHub** tab of File > Get from Version Control lists your repositories (private, collaborator and organization
+ones included, newest push first) with search, fork / archived switches, language, stars and age; a click picks one,
+a double click clones it into the chosen folder and opens it as a project. Signing in works like in PyCharm:
+
+* **Sign in in the browser** - Git Credential Manager (part of Git for Windows) opens GitHub's own authorization page;
+  you sign in there, two-factor included, and the account lands in Git's credential store. AirLisp never sees your
+  password and has no OAuth secret of its own.
+* **Use the saved login** - the GitHub CLI's (`gh auth token`) or the one Git already saved for github.com.
+* **Token** - paste a personal access token (scope `repo` for private repositories); optionally remember it in Git's
+  credential store. **Public repositories of a user** need no sign-in at all.
+
+Requests go through `curl` (no HTTP library is linked); the token reaches `curl` through its config on stdin and `git`
+through environment variables of that one clone, and only for `https://github.com/...` URLs. Nothing is written to
+AirLisp's own files except the last login name. For the UI tests `AIRLISP_GITHUB_API`, `AIRLISP_FAKE_GCM` and
+`tests/fake_github.py` / `tests/fake_gcm.py` replace GitHub and Git Credential Manager.
+
 ## Linux on Windows (WSL)
 
 Settings > **Linux (WSL)** runs SBCL, the REPL, Run/Compile and the terminal inside a Linux distribution of the
@@ -104,6 +122,11 @@ AirLisp - IDE для Lisp в стиле JetBrains (PyCharm/WebStorm), напис
 редактирование, живой REPL на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация,
 рефакторинг (rename), тёмная и светлая темы и привычная раскладка клавиш IntelliJ.
 Сборка: `cargo run --release -p airlisp`. Для REPL нужен SBCL в `PATH`.
+
+**Репозитории GitHub.** Во вкладке GitHub диалога «Получить из системы контроля версий» виден список ваших
+репозиториев (в том числе приватных): поиск, значки форков и архивов, язык, звёзды; клик выбирает, двойной клик
+клонирует и открывает проект. Вход, как в PyCharm: в браузере откроется страница авторизации GitHub (через Git
+Credential Manager), пароль AirLisp не видит. Есть также вход сохранённым логином и по токену.
 
 **Linux без виртуальной машины.** В Настройки > Linux (WSL) можно по шагам установить WSL, дистрибутив (Ubuntu 24.04
 по умолчанию, или из файла `.wsl` / `.tar`) и SBCL внутри него, а затем одной кнопкой перевести SBCL, REPL, запуск,

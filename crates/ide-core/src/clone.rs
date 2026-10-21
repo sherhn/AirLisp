@@ -60,6 +60,8 @@ pub fn default_dir_name(url: &str) -> String {
 pub struct CloneOptions {
     pub shallow: bool,
     pub branch: Option<String>,
+    /// Extra environment for the git process (e.g. the credentials of a private GitHub repository).
+    pub env: Vec<(String, String)>,
 }
 
 /// Percent of a git progress line (`Receiving objects:  42% (...)`), if it has one.
@@ -87,6 +89,7 @@ pub fn clone_repo(url: &str, dest: &Path, opts: &CloneOptions, cancel: &Arc<Atom
         cmd.args(["--branch", b.trim()]);
     }
     cmd.arg("--").arg(url).arg(dest).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    cmd.envs(opts.env.iter().map(|(k, v)| (k, v)));
     cmd.env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
     #[cfg(windows)]
     {
@@ -228,7 +231,7 @@ mod tests {
         let url = normalize_url(&src.to_string_lossy()).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         let dest = d.path().join("dev-copy");
-        clone_repo(&url, &dest, &CloneOptions { shallow: false, branch: Some("dev".into()) }, &cancel, &mut |_| {}).unwrap();
+        clone_repo(&url, &dest, &CloneOptions { shallow: false, branch: Some("dev".into()), env: vec![] }, &cancel, &mut |_| {}).unwrap();
         assert!(dest.join("dev.lisp").exists());
         // cancelled before it starts reading: no leftovers
         let cancel2 = Arc::new(AtomicBool::new(true));

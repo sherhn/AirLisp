@@ -16,6 +16,8 @@ import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests"))
+import fake_github
 PROFILE = "release" if "--release" in sys.argv else "debug"
 EXE = pathlib.Path(os.environ["AIRLISP_E2E_EXE"]) if os.environ.get("AIRLISP_E2E_EXE") else ROOT / "target" / PROFILE / ("airlisp.exe" if os.name == "nt" else "airlisp")
 CLI = ROOT / "target" / PROFILE / ("airlisp-cli.exe" if os.name == "nt" else "airlisp-cli")
@@ -66,7 +68,7 @@ def run_one(script_path):
     try:
         proj = make_fixture(tmp)
         text = script_path.read_text(encoding="utf-8")
-        text = text.replace("${PROJ}", fwd(proj)).replace("${SHOTS}", fwd(SHOTS)).replace("${NAME}", name)
+        text = text.replace("${GH_TOKEN}", fake_github.FAKE_TOKEN).replace("${PROJ}", fwd(proj)).replace("${SHOTS}", fwd(SHOTS)).replace("${NAME}", name)
         script = tmp / "script.json"
         script.write_text(text, encoding="utf-8")
         json.loads(text)  # validate
@@ -77,6 +79,27 @@ def run_one(script_path):
 
             shutil.rmtree(proj / ".git", onexc=_unlock)
         env = dict(os.environ, AIRLISP_CONFIG_DIR=str(tmp / "cfg"))
+        # the tests never read the real GitHub login (gh / Git credential store) nor call api.github.com
+        env["AIRLISP_GITHUB_AUTODETECT"] = "0"
+        env.pop("AIRLISP_GITHUB_FAKE_TOKEN", None)
+        github = None
+        if "github" in name:
+            remotes = tmp / "remotes"
+            paths = {
+                "lisp-demo": fake_github.make_remote(remotes, "lisp-demo", {"src/main.lisp": "(defun hello () :from-github)\n", "README.md": "demo\n"}),
+                "private-notes": fake_github.make_remote(remotes, "private-notes", {"notes.txt": "secret notes\n"}),
+            }
+            github = fake_github.Server(paths).start()
+            env["AIRLISP_GITHUB_API"] = github.url
+            # a fake Git Credential Manager: the browser sign-in hangs (cancelled), fails, then works
+            env["AIRLISP_FAKE_GCM"] = str(ROOT / "tests" / "fake_gcm.py")
+            env["AIRLISP_FAKE_GCM_PYTHON"] = sys.executable
+            env["AIRLISP_FAKE_GCM_STATE"] = str(tmp / "fake-gcm.json")
+            env["AIRLISP_FAKE_GCM_MODES"] = "hang,fail,ok"
+            env["AIRLISP_FAKE_GCM_TOKEN"] = fake_github.FAKE_TOKEN
+            if "saved" in name:
+                # "a login that is already on this computer" without touching the real one
+                env["AIRLISP_GITHUB_FAKE_TOKEN"] = fake_github.FAKE_TOKEN
         # the tests never touch the real WSL: a fake stands in for wsl.exe (scripts named *wsl* start without WSL)
         env["AIRLISP_FAKE_WSL"] = str(ROOT / "tests" / "fake_wsl.py")
         env["AIRLISP_FAKE_WSL_PYTHON"] = sys.executable
@@ -98,6 +121,8 @@ def run_one(script_path):
         ok = p.returncode == 0 and "SCRIPT OK" in out
         return name, ok, out, time.time() - t0
     finally:
+        if github is not None:
+            github.stop()
         if os.environ.get("KEEP"):
             print(f"  kept fixture: {tmp}")
         else:

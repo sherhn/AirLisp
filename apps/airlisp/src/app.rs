@@ -72,6 +72,8 @@ pub struct App {
     pub term: crate::app_terminal::TerminalState,
     /// The Linux (WSL) settings page: what is installed and what is being set up.
     pub wsl: crate::app_wsl::WslState,
+    /// The GitHub session of the "Get from Version Control" dialog.
+    pub github: crate::app_github::GithubState,
     pub run_config: crate::app_run::RunConfig,
     pub script: Option<crate::script::Script>,
     /// Longest frame seen so far (ms) and the worst offender's frame number, for freeze diagnostics.
@@ -135,6 +137,7 @@ impl App {
             logo: None,
             term: Default::default(),
             wsl: Default::default(),
+            github: Default::default(),
             run_config: Default::default(),
             script: None,
             max_frame_ms: 0.0,
@@ -500,6 +503,7 @@ impl App {
         self.git_poll();
         self.poll_terminal();
         self.poll_wsl();
+        self.poll_github();
         self.git_update_bases();
 
         // external file changes (once a second)

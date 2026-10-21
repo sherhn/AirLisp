@@ -177,11 +177,17 @@ pub struct TextField<'a> {
     font: FontId,
     id: Option<egui::Id>,
     enabled: bool,
+    password: bool,
 }
 
 impl<'a> TextField<'a> {
     pub fn new(text: &'a mut String) -> Self {
-        TextField { text, hint: "", icon: None, width: None, height: FIELD_H, font: fonts::ui(13.5), id: None, enabled: true }
+        TextField { text, hint: "", icon: None, width: None, height: FIELD_H, font: fonts::ui(13.5), id: None, enabled: true, password: false }
+    }
+    /// Show bullets instead of the characters (a token or password).
+    pub fn password(mut self, on: bool) -> Self {
+        self.password = on;
+        self
     }
     pub fn hint(mut self, h: &'a str) -> Self {
         self.hint = h;
@@ -235,6 +241,7 @@ impl<'a> TextField<'a> {
             .hint_text(egui::RichText::new(self.hint).font(self.font.clone()).color(pal.text_dim))
             .font(self.font)
             .text_color(pal.text)
+            .password(self.password)
             .frame(egui::Frame::NONE)
             .margin(Margin::ZERO)
             .align(Align2::LEFT_CENTER)

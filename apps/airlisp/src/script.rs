@@ -81,6 +81,7 @@ impl App {
                 self.docs.iter().filter_map(|d| d.diff.as_deref()).any(|d| d.new.contains(t))
             }
             "wsl_idle" => !self.wsl.busy(),
+            "github_idle" => !self.github.busy(),
             "popup" => !matches!(self.popup, Popup::None),
             "no_popup" => matches!(self.popup, Popup::None),
             _ => true,
@@ -603,6 +604,121 @@ impl App {
             }
             "hunk_revert" => self.hunk_revert(),
             "diff_edit_beside" => self.diff_edit_beside(),
+            "clone_tab" => {
+                if let Popup::Clone(c) = &mut self.popup {
+                    c.tab = if sval == "github" { CloneTab::GitHub } else { CloneTab::Url };
+                } else {
+                    self.fail("clone_tab: the clone dialog is not open".to_string());
+                }
+            }
+            "github_sign_in" => self.github_sign_in_token(&sval, step["remember"].as_bool().unwrap_or(false)),
+            "github_sign_in_saved" => self.github_sign_in_saved(),
+            "github_sign_in_browser" => self.github_sign_in_browser(),
+            "github_cancel_browser" => self.github_cancel_browser(),
+            "github_show_user" => self.github_show_user(&sval),
+            "github_sign_out" => self.github_sign_out(),
+            "github_filter" => {
+                self.github.filter = sval.clone();
+                if let Some(b) = step["forks"].as_bool() {
+                    self.github.include_forks = b;
+                }
+                if let Some(b) = step["archived"].as_bool() {
+                    self.github.include_archived = b;
+                }
+            }
+            "github_select" => {
+                let repo = self.github.repos.iter().find(|r| r.full_name == sval).cloned();
+                match (repo, &mut self.popup) {
+                    (Some(r), Popup::Clone(c)) => {
+                        c.url = r.clone_url;
+                        c.gh_selected = Some(r.full_name);
+                    }
+                    (None, _) => self.fail(format!("github_select: {sval} is not in the list")),
+                    _ => self.fail("github_select: the clone dialog is not open".to_string()),
+                }
+            }
+            "github_click" => {
+                let hit = self.github.rects.iter().find(|(n, _)| *n == sval).map(|(_, r)| egui::pos2(r.center().x, r.center().y));
+                match hit {
+                    Some(pos) => {
+                        let presses = if step["double"].as_bool().unwrap_or(false) { 2 } else { 1 };
+                        let s = self.script.as_mut().unwrap();
+                        s.pending.push(Event::PointerMoved(pos));
+                        for _ in 0..presses {
+                            s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+                            s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+                        }
+                    }
+                    None => self.fail(format!("github_click: {sval} is not a visible row")),
+                }
+            }
+            "assert_github" => {
+                let g = &self.github;
+                let mut errors: Vec<String> = vec![];
+                if let Some(b) = step["signed_in"].as_bool()
+                    && g.signed_in() != b
+                {
+                    errors.push(format!("signed_in is {}, expected {b}", g.signed_in()));
+                }
+                if let Some(l) = step["login"].as_str() {
+                    let shown = g.shown.as_ref().map(|a| a.login.as_str()).unwrap_or("");
+                    if shown != l {
+                        errors.push(format!("listing {shown:?}, expected {l:?}"));
+                    }
+                }
+                if let Some(n) = step["repos"].as_u64()
+                    && g.repos.len() != n as usize
+                {
+                    errors.push(format!("{} repositories, expected {n}", g.repos.len()));
+                }
+                if let Some(n) = step["visible"].as_u64()
+                    && g.visible().len() != n as usize
+                {
+                    errors.push(format!("{} visible, expected {n}", g.visible().len()));
+                }
+                if let Some(t) = step["error_contains"].as_str() {
+                    let e = g.error.as_ref().map(crate::app_github::error_text).unwrap_or_default();
+                    if !e.contains(t) {
+                        errors.push(format!("error {e:?} does not contain {t:?}"));
+                    }
+                }
+                if let Some(t) = step["login_error_contains"].as_str() {
+                    let e = g.login_error.as_ref().and_then(crate::app_github::login_error_text).unwrap_or_default();
+                    if !e.contains(t) {
+                        errors.push(format!("login error {e:?} does not contain {t:?}"));
+                    }
+                }
+                if step["no_login_error"].as_bool().unwrap_or(false) && g.login_error.is_some() {
+                    errors.push(format!("unexpected login error {:?}", g.login_error));
+                }
+                if let Some(b) = step["waiting"].as_bool()
+                    && g.browser_cancel.is_some() != b
+                {
+                    errors.push(format!("waiting for the browser is {}, expected {b}", g.browser_cancel.is_some()));
+                }
+                if step["no_error"].as_bool().unwrap_or(false) && g.error.is_some() {
+                    errors.push(format!("unexpected error {:?}", g.error));
+                }
+                if let Some(k) = step["listing"].as_str() {
+                    let now = match &g.listing {
+                        None => "none".to_string(),
+                        Some(crate::app_github::Listing::Mine) => "mine".to_string(),
+                        Some(crate::app_github::Listing::User(u)) => format!("user:{u}"),
+                    };
+                    if now != k {
+                        errors.push(format!("listing {now}, expected {k}"));
+                    }
+                }
+                if let Some(s) = step["selected"].as_str() {
+                    let now = if let Popup::Clone(c) = &self.popup { c.gh_selected.clone().unwrap_or_default() } else { String::new() };
+                    if now != s {
+                        errors.push(format!("selected {now:?}, expected {s:?}"));
+                    }
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_github: {}", errors.join("; ")));
+                }
+            }
             "settings_page" => {
                 if let Popup::Settings { page, .. } = &mut self.popup {
                     *page = step["value"].as_u64().unwrap_or(0) as usize;

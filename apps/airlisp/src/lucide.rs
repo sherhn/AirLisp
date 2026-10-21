@@ -79,3 +79,7 @@ pub const CONTAINER: char = '\u{e4d5}';
 pub const HARD_DRIVE_DOWNLOAD: char = '\u{e4e5}';
 pub const CIRCLE_CHECK_BIG: char = '\u{e07c}';
 pub const LOADER_CIRCLE: char = '\u{e10a}';
+pub const KEY_ROUND: char = '\u{e4a3}';
+pub const USER: char = '\u{e19f}';
+pub const LOCK: char = '\u{e10b}';
+pub const BOOK_MARKED: char = '\u{e3f1}';

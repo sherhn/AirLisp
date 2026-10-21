@@ -341,8 +341,19 @@ pub struct CloneRun {
     pub dest: PathBuf,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloneTab {
+    /// Type or paste a repository URL.
+    Url,
+    /// Pick one of your GitHub repositories.
+    GitHub,
+}
+
 /// The "Get from Version Control" dialog.
 pub struct CloneState {
+    pub tab: CloneTab,
+    /// Full name (`owner/repo`) of the repository picked on the GitHub tab.
+    pub gh_selected: Option<String>,
     pub url: String,
     pub dir: String,
     /// The user edited the directory by hand: stop deriving it from the repository name.

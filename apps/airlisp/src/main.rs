@@ -5,6 +5,7 @@
 mod app;
 mod brand;
 mod app_git;
+mod app_github;
 mod app_local;
 mod app_run;
 mod app_split;
@@ -33,6 +34,7 @@ mod ui_popups;
 mod ui_split;
 mod ui_settings;
 mod ui_clone;
+mod ui_github;
 mod ui_commit;
 mod ui_diff;
 mod ui_local;

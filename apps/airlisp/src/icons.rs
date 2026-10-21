@@ -74,6 +74,11 @@ pub enum Icon {
     Install,
     Ok,
     Spinner,
+    Key,
+    User,
+    Lock,
+    /// A repository.
+    Repo,
 }
 
 pub fn glyph(icon: Icon) -> Option<char> {
@@ -140,6 +145,10 @@ pub fn glyph(icon: Icon) -> Option<char> {
         Icon::Install => l::HARD_DRIVE_DOWNLOAD,
         Icon::Ok => l::CIRCLE_CHECK_BIG,
         Icon::Spinner => l::LOADER_CIRCLE,
+        Icon::Key => l::KEY_ROUND,
+        Icon::User => l::USER,
+        Icon::Lock => l::LOCK,
+        Icon::Repo => l::BOOK_MARKED,
     })
 }
 
@@ -180,7 +189,7 @@ mod tests {
     #[test]
     fn every_icon_has_a_glyph_or_is_custom() {
         use Icon::*;
-        for i in [Folder, FolderOpen, File, Play, Stop, Restart, Search, Warning, Error, Check, ChevronRight, ChevronDown, ChevronUp, Close, Plus, Gear, List, Terminal, Trash, Project, Branch, Clear, Info, ArrowUp, ArrowDown, Commit, Refresh, History, Diff, Menu, More, Repl, Download, Palette, Keyboard, Sliders, Code, FolderPlus, FilePlus, Pencil, Copy, Save, Sun, Moon, Fork, External, Zap, Layers, Package, Hammer, Globe, Cloud, Eye, ChevronLeft, Undo, FileDiff, Script, Linux, Install, Ok, Spinner] {
+        for i in [Folder, FolderOpen, File, Play, Stop, Restart, Search, Warning, Error, Check, ChevronRight, ChevronDown, ChevronUp, Close, Plus, Gear, List, Terminal, Trash, Project, Branch, Clear, Info, ArrowUp, ArrowDown, Commit, Refresh, History, Diff, Menu, More, Repl, Download, Palette, Keyboard, Sliders, Code, FolderPlus, FilePlus, Pencil, Copy, Save, Sun, Moon, Fork, External, Zap, Layers, Package, Hammer, Globe, Cloud, Eye, ChevronLeft, Undo, FileDiff, Script, Linux, Install, Ok, Spinner, Key, User, Lock, Repo] {
             assert!(glyph(i).is_some(), "{i:?}");
         }
         assert!(glyph(Lisp).is_none() && glyph(Dot).is_none());

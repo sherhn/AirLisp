@@ -20,7 +20,11 @@ use crate::widgets::{self, TextField};
 impl App {
     pub fn open_clone_dialog(&mut self) {
         let parent = if self.settings.clone_dir.trim().is_empty() { dirs_home().join("AirLispProjects").to_string_lossy().into_owned() } else { self.settings.clone_dir.clone() };
-        self.popup = Popup::Clone(Box::new(CloneState { url: String::new(), dir: String::new(), dir_touched: false, parent, branch: String::new(), shallow: false, error: None, just_opened: true, run: None }));
+        self.popup = Popup::Clone(Box::new(CloneState { tab: CloneTab::Url, gh_selected: None, url: String::new(), dir: String::new(), dir_touched: false, parent, branch: String::new(), shallow: false, error: None, just_opened: true, run: None }));
+        // a login the CLI or Git keeps for us is picked up again on its own
+        if self.settings.github_autologin && !self.github.signed_in() && !self.github.signing_in {
+            self.github_sign_in_saved();
+        }
     }
 
     fn start_clone(&mut self, st: &mut CloneState) {
@@ -36,7 +40,9 @@ impl App {
             return;
         }
         let dest = PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&url));
-        let opts = clone::CloneOptions { shallow: st.shallow, branch: Some(st.branch.clone()).filter(|b| !b.trim().is_empty()) };
+        // signed in to GitHub: private repositories clone too (the token reaches git for github.com only)
+        let env = self.github.token.as_deref().map(|t| ide_core::github::git_auth_env(&url, t)).unwrap_or_default();
+        let opts = clone::CloneOptions { shallow: st.shallow, branch: Some(st.branch.clone()).filter(|b| !b.trim().is_empty()), env };
         let (tx, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let (c2, d2) = (cancel.clone(), dest.clone());
@@ -88,9 +94,11 @@ impl App {
         let mut close = esc;
         let mut start = false;
         let running = st.run.is_some();
+        // Enter belongs to the text field being edited: on the GitHub tab it signs in or searches, it does not clone
+        let enter = enter && st.tab == CloneTab::Url;
         egui::Area::new(egui::Id::new("clone_dialog")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
             let r = widgets::glass_frame(&pal).show(ui, |ui| {
-                ui.set_width(560.0);
+                ui.set_width(700.0);
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), egui::Sense::hover());
                     crate::icons::paint(ui.painter(), r, Icon::Download, pal.accent);
@@ -98,16 +106,26 @@ impl App {
                 });
                 ui.add_space(4.0);
                 ui.label(RichText::new(tr("Clone a repository from GitHub or any Git URL and open it as a project.")).color(pal.text_dim).size(12.5));
-                ui.add_space(18.0);
-
-                widgets::caption(ui, &pal, &tr("Repository URL").to_uppercase());
-                ui.add_space(6.0);
-                let id = egui::Id::new("clone_url");
-                let r = TextField::new(&mut st.url).id(id).hint(tr("https://github.com/owner/repo  or  owner/repo")).icon(Icon::Globe).enabled(!running).show(ui, &pal);
-                if r.changed() {
+                ui.add_space(14.0);
+                if !running && let Some(i) = widgets::segmented(ui, &pal, &[tr("Repository URL"), tr("GitHub")], usize::from(st.tab == CloneTab::GitHub)) {
+                    st.tab = if i == 0 { CloneTab::Url } else { CloneTab::GitHub };
                     st.error = None;
                 }
-                widgets::focus_once(ui, &r, &mut st.just_opened);
+                ui.add_space(14.0);
+
+                if st.tab == CloneTab::Url {
+                    widgets::caption(ui, &pal, &tr("Repository URL").to_uppercase());
+                    ui.add_space(6.0);
+                    let id = egui::Id::new("clone_url");
+                    let r = TextField::new(&mut st.url).id(id).hint(tr("https://github.com/owner/repo  or  owner/repo")).icon(Icon::Globe).enabled(!running).show(ui, &pal);
+                    if r.changed() {
+                        st.error = None;
+                        st.gh_selected = None;
+                    }
+                    widgets::focus_once(ui, &r, &mut st.just_opened);
+                } else if self.draw_github_tab(ui, &mut st, running) {
+                    start = true;
+                }
                 ui.add_space(16.0);
 
                 widgets::caption(ui, &pal, &tr("Parent directory").to_uppercase());
@@ -121,7 +139,10 @@ impl App {
                     }
                     TextField::new(&mut st.parent).icon(Icon::Folder).enabled(!running).show(ui, &pal);
                 });
-                if let Ok(u) = clone::normalize_url(&st.url) {
+                if st.tab == CloneTab::GitHub && st.gh_selected.is_none() {
+                    ui.add_space(8.0);
+                    ui.label(RichText::new(tr("Pick a repository from the list")).color(pal.text_dim).size(12.0));
+                } else if let Ok(u) = clone::normalize_url(&st.url) {
                     let dest = PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&u));
                     ui.add_space(8.0);
                     ui.label(RichText::new(i18n::fmt("Will be cloned into  {}", &[&dest.display()])).color(pal.text_dim).size(12.0));
@@ -168,9 +189,12 @@ impl App {
                 ui.add_space(18.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if !running && widgets::primary_button(ui, &pal, tr("Clone")).clicked() {
-                            start = true;
-                        }
+                        let can = st.tab == CloneTab::Url || st.gh_selected.is_some();
+                        ui.add_enabled_ui(!running && can, |ui| {
+                            if widgets::primary_button(ui, &pal, tr("Clone")).clicked() {
+                                start = true;
+                            }
+                        });
                         if widgets::secondary_button(ui, &pal, tr("Cancel")).clicked() {
                             close = true;
                         }
@@ -183,7 +207,7 @@ impl App {
         if enter && !running {
             start = true;
         }
-        if start && !running {
+        if start && !running && (st.tab == CloneTab::Url || st.gh_selected.is_some()) {
             self.start_clone(&mut st);
         }
         if close {
