@@ -211,6 +211,15 @@ cmds! {
     "git.init", "Create Git Repository", Git, [];
     "git.stage_file", "Add File to Git", Git, [];
     "view.git", "Git", View, ["Alt+9"];
+    "view.commit", "Commit", View, ["Alt+0"];
+    "view.split_right", "Split Right", View, [];
+    "view.split_down", "Split Down", View, [];
+    "view.unsplit", "Unsplit", View, [];
+    "view.switch_pane", "Switch Pane", View, [];
+    "diff.next", "Next Difference", Git, ["F7"];
+    "diff.prev", "Previous Difference", Git, ["Shift+F7"];
+    "diff.next_file", "Next Changed File", Git, [];
+    "diff.prev_file", "Previous Changed File", Git, [];
     "run.run_config", "Choose Run Configuration...", Run, [];
     "run.load_system", "Load ASDF System into REPL", Run, [];
     "run.test_system", "Test ASDF System", Run, [];

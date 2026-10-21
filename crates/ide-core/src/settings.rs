@@ -24,10 +24,28 @@ impl Theme {
     }
 }
 
+/// Language of the user interface.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Language {
+    #[default]
+    English,
+    Russian,
+}
+
+/// Where Lisp, the REPL and the terminal run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum RunEnv {
+    #[default]
+    Windows,
+    /// Inside a Linux distribution of the Windows Subsystem for Linux.
+    Wsl,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub theme: Theme,
+    pub language: Language,
     pub font_size: f32,
     pub show_line_numbers: bool,
     pub show_whitespace: bool,
@@ -39,6 +57,13 @@ pub struct Settings {
     pub last_project: Option<String>,
     /// Explicit path to the Lisp binary; empty = auto-detect.
     pub lisp_path: String,
+    pub run_env: RunEnv,
+    /// WSL distribution used when `run_env` is `Wsl`.
+    pub wsl_distro: String,
+    /// SBCL inside the distribution (command or absolute path); empty = `sbcl`.
+    pub wsl_sbcl: String,
+    /// Where Windows drives are mounted inside the distribution; empty = `/mnt/`.
+    pub wsl_mount_root: String,
     /// Default parent folder for "Get from Version Control"; empty = ~/AirLispProjects.
     pub clone_dir: String,
     pub open_files: Vec<String>,
@@ -51,6 +76,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: Theme::Dark,
+            language: Language::English,
             font_size: 14.0,
             show_line_numbers: true,
             show_whitespace: false,
@@ -60,6 +86,10 @@ impl Default for Settings {
             recent_projects: vec![],
             last_project: None,
             lisp_path: String::new(),
+            run_env: RunEnv::Windows,
+            wsl_distro: String::new(),
+            wsl_sbcl: String::new(),
+            wsl_mount_root: String::new(),
             clone_dir: String::new(),
             open_files: vec![],
             active_file: None,
@@ -153,6 +183,17 @@ mod tests {
         assert_eq!(s.theme, Theme::Light);
         assert_eq!(s.font_size, MAX_FONT, "clamped");
         assert!(s.show_line_numbers, "missing fields use defaults");
+    }
+
+    #[test]
+    fn wsl_settings_default_to_windows_and_survive_a_roundtrip() {
+        let d = TempDir::new("settings3");
+        let f = d.path().join("s.json");
+        fs::write(&f, r#"{"theme":"Dark"}"#).unwrap();
+        assert_eq!(Settings::load_from(&f).run_env, RunEnv::Windows, "older files run on Windows");
+        let s = Settings { run_env: RunEnv::Wsl, wsl_distro: "Ubuntu-24.04".into(), wsl_sbcl: "/usr/bin/sbcl".into(), ..Settings::default() };
+        s.save_to(&f).unwrap();
+        assert_eq!(Settings::load_from(&f), s);
     }
 
     #[test]

@@ -219,6 +219,68 @@ impl LocalVcs {
         }
     }
 
+    /// The local commit made right before `id` (`None` for the first one).
+    pub fn previous_id(&self, id: u64) -> Option<u64> {
+        let i = self.store.commits.iter().position(|c| c.id == id)?;
+        i.checked_sub(1).map(|j| self.store.commits[j].id)
+    }
+
+    /// The text of `rel` as it was just before local commit `id`: in the previous local commit, or at git HEAD
+    /// for the first one.
+    pub fn text_before(&self, id: u64, rel: &str, repo: Option<&Repo>) -> Option<String> {
+        match self.previous_id(id) {
+            Some(prev) => self.text_in(prev, rel, repo),
+            None => Self::head_text(repo, rel),
+        }
+    }
+
+    /// What local commit `id` changed: files whose content differs from the state before the commit.
+    pub fn commit_changes(&self, id: u64, repo: Option<&Repo>) -> Vec<Change> {
+        let Some(c) = self.commit(id) else { return vec![] };
+        let mut paths: BTreeSet<String> = c.files.keys().cloned().collect();
+        if let Some(prev) = self.previous_id(id).and_then(|p| self.commit(p)) {
+            paths.extend(prev.files.keys().cloned());
+        }
+        let mut out = Vec::new();
+        for rel in paths {
+            let before = self.text_before(id, &rel, repo);
+            let after = self.text_in(id, &rel, repo);
+            let kind = match (&before, &after) {
+                (None, None) => continue,
+                (None, Some(_)) => ChangeKind::Added,
+                (Some(_), None) => ChangeKind::Deleted,
+                (Some(b), Some(a)) => {
+                    if norm(b) == norm(a) {
+                        continue;
+                    }
+                    ChangeKind::Modified
+                }
+            };
+            out.push(Change { path: rel, kind, staged: false, unstaged: true });
+        }
+        out
+    }
+
+    /// Put one file back into its state in local commit `id` (deleting it if the commit has no such file).
+    pub fn restore_file(&self, id: u64, rel: &str, repo: Option<&Repo>) -> io::Result<()> {
+        if self.commit(id).is_none() {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "no such local commit"));
+        }
+        let abs = self.root.join(rel);
+        match self.text_in(id, rel, repo) {
+            Some(t) => {
+                if let Some(parent) = abs.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(&abs, t)
+            }
+            None => match fs::remove_file(&abs) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            },
+        }
+    }
+
     /// Text of `rel` in the current base (HEAD or a local commit).
     pub fn base_text(&self, rel: &str, repo: Option<&Repo>) -> Option<String> {
         match &self.store.base {
@@ -309,14 +371,36 @@ impl LocalVcs {
     }
 }
 
+/// How long ago a snapshot was made, in the largest fitting unit (so the UI can word it in any language).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Age {
+    JustNow,
+    Minutes(u64),
+    Hours(u64),
+    Days(u64),
+}
+
+pub fn age_of(seconds: u64) -> Age {
+    match seconds {
+        0..=59 => Age::JustNow,
+        60..=3599 => Age::Minutes(seconds / 60),
+        3600..=86_399 => Age::Hours(seconds / 3600),
+        _ => Age::Days(seconds / 86_400),
+    }
+}
+
+/// Age of a unix timestamp.
+pub fn age(time: u64) -> Age {
+    age_of(now_secs().saturating_sub(time))
+}
+
 /// "3 min ago" style text for a unix timestamp.
 pub fn ago(time: u64) -> String {
-    let d = now_secs().saturating_sub(time);
-    match d {
-        0..=59 => "just now".into(),
-        60..=3599 => format!("{} min ago", d / 60),
-        3600..=86_399 => format!("{} h ago", d / 3600),
-        _ => format!("{} d ago", d / 86_400),
+    match age(time) {
+        Age::JustNow => "just now".into(),
+        Age::Minutes(n) => format!("{n} min ago"),
+        Age::Hours(n) => format!("{n} h ago"),
+        Age::Days(n) => format!("{n} d ago"),
     }
 }
 
@@ -479,6 +563,60 @@ mod tests {
         let c = v.create("x", None).unwrap();
         write(d.path(), "a.lisp", "(a)\r\n(b)\r\n");
         assert!(v.changes_vs(c, None).is_empty());
+    }
+
+    #[test]
+    fn commit_changes_show_what_each_commit_did() {
+        let d = TempDir::new("lv7");
+        write(d.path(), "a.lisp", "(a)\n");
+        write(d.path(), "b.lisp", "(b)\n");
+        let mut v = LocalVcs::open(d.path());
+        let c1 = v.create("one", None).unwrap();
+        assert_eq!(v.previous_id(c1), None);
+        // the first commit has nothing before it: everything is new
+        assert_eq!(kinds(&v.commit_changes(c1, None)), vec![("a.lisp".to_string(), ChangeKind::Added), ("b.lisp".to_string(), ChangeKind::Added)]);
+        write(d.path(), "a.lisp", "(a2)\n");
+        fs::remove_file(d.path().join("b.lisp")).unwrap();
+        write(d.path(), "c.lisp", "(c)\n");
+        let c2 = v.create("two", None).unwrap();
+        assert_eq!(v.previous_id(c2), Some(c1));
+        assert_eq!(
+            kinds(&v.commit_changes(c2, None)),
+            vec![("a.lisp".to_string(), ChangeKind::Modified), ("b.lisp".to_string(), ChangeKind::Deleted), ("c.lisp".to_string(), ChangeKind::Added)]
+        );
+        assert_eq!(v.text_before(c2, "a.lisp", None).as_deref(), Some("(a)\n"));
+        assert_eq!(v.text_in(c2, "a.lisp", None).as_deref(), Some("(a2)\n"));
+        // a commit that changes nothing lists nothing
+        let c3 = v.create("three", None).unwrap();
+        assert!(v.commit_changes(c3, None).is_empty());
+        assert!(v.commit_changes(99, None).is_empty());
+    }
+
+    #[test]
+    fn restore_one_file_to_a_commit() {
+        let d = TempDir::new("lv8");
+        write(d.path(), "a.lisp", "(a)\n");
+        write(d.path(), "b.lisp", "(b)\n");
+        let mut v = LocalVcs::open(d.path());
+        let c = v.create("base", None).unwrap();
+        write(d.path(), "a.lisp", "(changed)\n");
+        write(d.path(), "b.lisp", "(changed)\n");
+        write(d.path(), "extra.lisp", "(x)\n");
+        v.restore_file(c, "a.lisp", None).unwrap();
+        v.restore_file(c, "extra.lisp", None).unwrap();
+        assert_eq!(fs::read_to_string(d.path().join("a.lisp")).unwrap(), "(a)\n");
+        assert_eq!(fs::read_to_string(d.path().join("b.lisp")).unwrap(), "(changed)\n", "other files are untouched");
+        assert!(!d.path().join("extra.lisp").exists(), "a file the commit does not have is removed");
+        v.restore_file(c, "extra.lisp", None).unwrap(); // already gone: fine
+        assert!(v.restore_file(99, "a.lisp", None).is_err());
+    }
+
+    #[test]
+    fn age_units() {
+        assert_eq!(age_of(5), Age::JustNow);
+        assert_eq!(age_of(120), Age::Minutes(2));
+        assert_eq!(age_of(7200), Age::Hours(2));
+        assert_eq!(age_of(3 * 86_400), Age::Days(3));
     }
 
     #[test]
