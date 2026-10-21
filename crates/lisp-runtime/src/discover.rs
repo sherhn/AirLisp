@@ -7,11 +7,19 @@ use std::process::Command;
 pub struct Implementation {
     pub name: String,
     pub path: PathBuf,
+    /// `SBCL_HOME` for the bundled distribution (core and contribs live next to the executable).
+    pub home: Option<PathBuf>,
 }
 
 impl Implementation {
     pub fn sbcl(path: impl Into<PathBuf>) -> Implementation {
-        Implementation { name: "SBCL".into(), path: path.into() }
+        Implementation { name: "SBCL".into(), path: path.into(), home: None }
+    }
+
+    /// An SBCL shipped inside `dir` (`dir/sbcl[.exe]`, `dir/sbcl.core`, `dir/contrib`).
+    pub fn bundled(dir: &Path) -> Option<Implementation> {
+        let exe = dir.join(exe_name());
+        (is_file(&exe) && dir.join("sbcl.core").is_file()).then(|| Implementation { name: "SBCL".into(), path: exe, home: Some(dir.to_path_buf()) })
     }
 
     /// Query the version string, e.g. `SBCL 2.6.8`.
@@ -66,14 +74,56 @@ pub fn candidates(configured: &str) -> Vec<PathBuf> {
     v
 }
 
-/// Find SBCL: the explicit setting, `AIRLISP_SBCL`, `PATH`, then well-known install locations.
+/// Directory of the SBCL that ships with AirLisp: `AIRLISP_BUNDLE_DIR`, else `lisp/` next to the executable.
+pub fn bundle_dir() -> Option<PathBuf> {
+    if let Ok(d) = std::env::var("AIRLISP_BUNDLE_DIR") {
+        return Some(PathBuf::from(d));
+    }
+    std::env::current_exe().ok()?.parent().map(|p| p.join("lisp"))
+}
+
+/// Find SBCL: the explicit setting, `AIRLISP_SBCL`, the bundled one, `PATH`, then well-known install locations.
 pub fn find_sbcl(configured: &str) -> Option<Implementation> {
-    candidates(configured).into_iter().find(|p| is_file(p)).map(Implementation::sbcl)
+    let mut explicit = Vec::new();
+    if !configured.trim().is_empty() {
+        explicit.push(PathBuf::from(configured.trim()));
+    }
+    if let Ok(p) = std::env::var("AIRLISP_SBCL") {
+        explicit.push(PathBuf::from(p));
+    }
+    if let Some(p) = explicit.into_iter().find(|p| is_file(p)) {
+        return Some(Implementation::sbcl(p));
+    }
+    if let Some(b) = bundle_dir().and_then(|d| Implementation::bundled(&d)) {
+        return Some(b);
+    }
+    candidates("").into_iter().find(|p| is_file(p)).map(Implementation::sbcl)
+}
+
+/// Environment every SBCL process needs (applies `SBCL_HOME` for the bundled distribution).
+pub fn apply_env(cmd: &mut Command, imp: &Implementation) {
+    if let Some(h) = &imp.home {
+        cmd.env("SBCL_HOME", h);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_requires_executable_and_core() {
+        let dir = std::env::temp_dir().join(format!("airlisp-bundle-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(Implementation::bundled(&dir).is_none());
+        std::fs::write(dir.join(exe_name()), b"x").unwrap();
+        assert!(Implementation::bundled(&dir).is_none(), "the core is required too");
+        std::fs::write(dir.join("sbcl.core"), b"x").unwrap();
+        let b = Implementation::bundled(&dir).unwrap();
+        assert_eq!(b.home.as_deref(), Some(dir.as_path()));
+        assert_eq!(b.path, dir.join(exe_name()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn configured_path_has_priority() {

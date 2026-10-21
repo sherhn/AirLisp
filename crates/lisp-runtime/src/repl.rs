@@ -141,6 +141,7 @@ impl ReplSession {
         let server_file = write_server_file()?;
         let mut cmd = Command::new(&implementation.path);
         crate::no_window(&mut cmd);
+        crate::discover::apply_env(&mut cmd, implementation);
         cmd.args(["--noinform", "--disable-ldb", "--lose-on-corruption", "--no-userinit", "--no-sysinit", "--load"])
             .arg(&server_file)
             .stdin(Stdio::piped())
@@ -465,6 +466,39 @@ mod tests {
             }
         }
         assert_eq!(exited, Some(Some(3)));
+    }
+
+    fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for e in std::fs::read_dir(from).unwrap().flatten() {
+            let (src, dst) = (e.path(), to.join(e.file_name()));
+            if src.is_dir() { copy_dir(&src, &dst) } else { std::fs::copy(&src, &dst).map(|_| ()).unwrap() }
+        }
+    }
+
+    /// The distribution ships SBCL next to the app: it must run from a relocated folder using SBCL_HOME only,
+    /// including `(require :asdf)` and sb-introspect from the bundled contribs.
+    #[test]
+    fn bundled_sbcl_runs_from_a_relocated_folder() {
+        let Some(system) = crate::discover::find_sbcl("") else { return };
+        let Some(install) = system.path.parent() else { return };
+        if !install.join("sbcl.core").is_file() || !install.join("contrib").is_dir() {
+            return; // other layouts (distro packages) cannot be relocated this way
+        }
+        let dir = std::env::temp_dir().join(format!("airlisp-bundle-run-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        copy_dir(install, &dir);
+        let imp = Implementation::bundled(&dir).expect("bundle layout");
+        let s = ReplSession::start(&imp, None).expect("spawn bundled sbcl");
+        s.wait_ready(Duration::from_secs(60)).expect("ready");
+        let t = Duration::from_secs(60);
+        assert_eq!(s.eval_sync("(+ 1 2)", t).unwrap().values.as_deref(), Some("3"));
+        let r = s.eval_sync("(require :asdf) (asdf:asdf-version)", t).unwrap();
+        assert!(r.error.is_none(), "asdf from the bundled contrib must load: {:?}", r.error);
+        let a = s.query_sync("arglist", "mapcar", t).unwrap();
+        assert!(a.starts_with("(mapcar"), "sb-introspect from contrib: {a}");
+        drop(s);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

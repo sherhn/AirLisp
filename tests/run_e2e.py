@@ -17,7 +17,7 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROFILE = "release" if "--release" in sys.argv else "debug"
-EXE = ROOT / "target" / PROFILE / ("airlisp.exe" if os.name == "nt" else "airlisp")
+EXE = pathlib.Path(os.environ["AIRLISP_E2E_EXE"]) if os.environ.get("AIRLISP_E2E_EXE") else ROOT / "target" / PROFILE / ("airlisp.exe" if os.name == "nt" else "airlisp")
 CLI = ROOT / "target" / PROFILE / ("airlisp-cli.exe" if os.name == "nt" else "airlisp-cli")
 SHOTS = ROOT / "target" / "e2e-shots"
 
@@ -75,6 +75,11 @@ def run_one(script_path):
 
             shutil.rmtree(proj / ".git", onexc=_unlock)
         env = dict(os.environ, AIRLISP_CONFIG_DIR=str(tmp / "cfg"))
+        if os.environ.get("AIRLISP_E2E_STRIP_SBCL"):
+            # prove that the bundled SBCL is used: no system SBCL on PATH, no explicit override
+            env.pop("AIRLISP_SBCL", None)
+            sep = os.pathsep
+            env["PATH"] = sep.join(p for p in env.get("PATH", "").split(sep) if "sbcl" not in p.lower() and "steel bank" not in p.lower())
         t0 = time.time()
         try:
             p = subprocess.run([str(EXE), "--script", str(script), "--size", "1280x800", "--no-restore"], capture_output=True, text=True, timeout=180, env=env)

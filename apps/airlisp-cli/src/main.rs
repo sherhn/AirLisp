@@ -29,6 +29,7 @@ COMMANDS:
   commands                  list all registered commands with their shortcuts
   new-project <dir> <name>  scaffold an ASDF project
   index <dir>               build the project symbol index and report timings
+  clone <url> [dir] [--shallow]  clone a GitHub/git repository (owner/repo works too)
   which                     show the detected Lisp implementation
   help                      this text
 ";
@@ -59,6 +60,16 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     match cmd.as_str() {
         "help" | "--help" | "-h" => {
             print!("{USAGE}");
+        }
+        "clone" => {
+            let input = rest.first().ok_or("usage: clone <url> [dir] [--shallow]")?;
+            let url = ide_core::clone::normalize_url(input)?;
+            let dir = rest.get(1).filter(|a| !a.starts_with("--")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(ide_core::clone::default_dir_name(&url)));
+            let opts = ide_core::clone::CloneOptions { shallow: rest.iter().any(|a| a == "--shallow"), branch: None };
+            let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            println!("cloning {url} into {}", dir.display());
+            ide_core::clone::clone_repo(&url, &dir, &opts, &cancel, &mut |l| println!("  {l}"))?;
+            println!("done: {}", dir.display());
         }
         "index" => {
             let dir = rest.first().ok_or("usage: index <dir>")?;

@@ -152,6 +152,7 @@ pub fn lisp_path(p: &Path) -> String {
 
 fn base_command(imp: &Implementation, cwd: Option<&Path>) -> Command {
     let mut cmd = Command::new(&imp.path);
+    crate::discover::apply_env(&mut cmd, imp);
     cmd.args(["--noinform", "--non-interactive", "--no-userinit", "--no-sysinit"]);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);

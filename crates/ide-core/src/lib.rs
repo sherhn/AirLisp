@@ -1,5 +1,6 @@
 //! UI independent core of the IDE: editor model, command registry, project model and search.
 
+pub mod clone;
 pub mod commands;
 pub mod diff;
 pub mod editor;
