@@ -1,0 +1,16 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "open", "path": "${PROJ}/src/main.lisp"},
+  {"op": "wait", "what": "index"},
+  {"op": "frames", "value": 3},
+  {"op": "log", "value": "closing the last tab keeps the IDE running"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_before.png"},
+  {"op": "click", "x": 474, "y": 118},
+  {"op": "frames", "value": 5},
+  {"op": "assert_tabs", "value": 0},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}.png"},
+  {"op": "open", "path": "${PROJ}/src/main.lisp"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_tabs", "value": 1},
+  {"op": "quit"}
+]

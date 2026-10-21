@@ -116,6 +116,11 @@ impl App {
         }
         self.fix_split();
         self.draw_tabs(ui, ctx);
+        if self.docs.is_empty() {
+            // the last tab was just closed
+            self.split = None;
+            return;
+        }
         let shown = self.active.min(self.docs.len() - 1);
         self.active = shown;
         if self.split.is_some() {
