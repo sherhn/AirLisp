@@ -35,8 +35,13 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
   dimmed, excluded from search and indexing), cached outline and line index, background search and git status.
 * **Terminal, folding, run configurations** - a built-in terminal, code folding of forms (Ctrl+-/Ctrl+=),
   load/test ASDF systems from the run configuration picker.
-* **JetBrains look & keymap** - New UI dark/light themes, tool windows, tabs, breadcrumbs, status bar.
-  Custom window frame (no OS title bar), Inter + JetBrains Mono fonts. All key bindings come from one registry (`crates/ide-core/src/commands.rs`); see Settings > Keymap.
+* **Get from Version Control** - File > Get from Version Control (or the welcome screen): paste a GitHub URL or `owner/repo`,
+  pick a folder, optional branch / shallow clone, live progress; the repository is cloned and opened as a project.
+* **Works out of the box** - the distribution (`python tools/package.py`) bundles SBCL (public domain/BSD, license included),
+  so the REPL and Run work without installing anything.
+* **Modern look** - borderless "glass" design: tonal greys over a soft gradient, floating rounded cards, translucent dialogs,
+  Lucide icons (ISC), a sidebar Settings dialog. Dark/light themes, custom window frame (no OS title bar), Inter + JetBrains Mono fonts.
+* **Keymap** - IntelliJ-style. All key bindings come from one registry (`crates/ide-core/src/commands.rs`); see Settings > Keymap.
 
 ## Layout
 
@@ -55,8 +60,8 @@ cargo run --release -p airlisp            # the IDE
 cargo run --release -p airlisp-cli -- help
 ```
 
-Requires Rust (stable) and, for the REPL/run features, SBCL on `PATH`
-(or set `AIRLISP_SBCL` / Settings > Lisp). Linux needs the usual windowing libs
+Requires Rust (stable) and, for the REPL/run features, SBCL (bundled in packaged builds; otherwise on `PATH`
+or set `AIRLISP_SBCL` / Settings > Lisp & REPL). Linux needs the usual windowing libs
 (`libxkbcommon`, `libgl`, wayland/x11 headers).
 
 ## Tests
@@ -71,7 +76,7 @@ asserts on application state and takes screenshots *of the app window only*.
 
 ## Dependencies
 
-Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `png`. Bundled fonts: JetBrains Mono and Inter (SIL OFL 1.1, see `assets/fonts`). Every crate in
+Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `png`. Bundled fonts: JetBrains Mono and Inter (SIL OFL 1.1, see `assets/fonts`); icons: Lucide (ISC, `assets/icons`). Every crate in
 `Cargo.lock` was checked against crates.io (publisher, downloads, yanked status, repository);
 `deny.toml` pins the policy (crates.io only, no git sources).
 
