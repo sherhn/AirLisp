@@ -3,11 +3,13 @@
 
 pub mod compiler;
 pub mod discover;
+pub mod oem;
 pub mod protocol;
 pub mod repl;
 pub mod runner;
+pub mod wsl;
 
-pub use discover::Implementation;
+pub use discover::{Arg, Implementation, Launch};
 pub use repl::{EvalOutcome, ReplEvent, ReplSession};
 pub use runner::{RunEvent, RunHandle};
 

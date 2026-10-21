@@ -9,7 +9,7 @@ use lisp_syntax::outline::outline;
 use lisp_syntax::{Dialect, parse};
 
 use crate::discover::Implementation;
-use crate::runner::{self, RunHandle, lisp_path, lisp_string};
+use crate::runner::{self, RunHandle, lisp_string};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Severity {
@@ -287,8 +287,8 @@ pub fn compile_file(imp: &Implementation, file: &Path) -> io::Result<(RunHandle,
     let fasl = dir.join(format!("compile-{}-{}.fasl", std::process::id(), FASL_COUNTER.fetch_add(1, Ordering::SeqCst)));
     let forms = format!(
         "(multiple-value-bind (out warn fail) (compile-file {} :output-file {}) (declare (ignore out warn)) (sb-ext:exit :code (if fail 1 0)))",
-        lisp_string(&lisp_path(file)),
-        lisp_string(&lisp_path(&fasl))
+        lisp_string(&imp.lisp_path(file)),
+        lisp_string(&imp.lisp_path(&fasl))
     );
     let dir_of_file = file.parent().filter(|p| !p.as_os_str().is_empty());
     let h = runner::run_eval(imp, &forms, dir_of_file)?;

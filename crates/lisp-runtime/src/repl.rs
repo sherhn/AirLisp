@@ -2,13 +2,14 @@
 
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::discover::Implementation;
+use crate::discover::{Arg, Implementation, Launch};
+use crate::wsl::Cleanup;
 use crate::protocol::{self, SOH};
 
 const SERVER_SOURCE: &str = include_str!("../lisp/repl-server.lisp");
@@ -45,6 +46,7 @@ pub struct ReplSession {
     rx: Mutex<Receiver<ReplEvent>>,
     next_id: AtomicU64,
     server_file: PathBuf,
+    cleanup: Option<Cleanup>,
     pub implementation: Implementation,
 }
 
@@ -139,17 +141,10 @@ fn to_event(m: protocol::Message) -> ReplEvent {
 impl ReplSession {
     pub fn start(implementation: &Implementation, cwd: Option<&Path>) -> io::Result<ReplSession> {
         let server_file = write_server_file()?;
-        let mut cmd = Command::new(&implementation.path);
+        let args = [Arg::Text("--noinform"), Arg::Text("--disable-ldb"), Arg::Text("--lose-on-corruption"), Arg::Text("--no-userinit"), Arg::Text("--no-sysinit"), Arg::Text("--load"), Arg::Path(&server_file)];
+        let Launch { mut cmd, cleanup } = implementation.launch(cwd, &args);
         crate::no_window(&mut cmd);
-        crate::discover::apply_env(&mut cmd, implementation);
-        cmd.args(["--noinform", "--disable-ldb", "--lose-on-corruption", "--no-userinit", "--no-sysinit", "--load"])
-            .arg(&server_file)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if let Some(dir) = cwd {
-            cmd.current_dir(dir);
-        }
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = cmd.spawn()?;
         let stdin = child.stdin.take();
         let mut stdout = child.stdout.take().expect("piped");
@@ -211,6 +206,7 @@ impl ReplSession {
             rx: Mutex::new(rx),
             next_id: AtomicU64::new(1),
             server_file,
+            cleanup,
             implementation: implementation.clone(),
         })
     }
@@ -246,6 +242,9 @@ impl ReplSession {
         if let Some(mut c) = self.child.lock().unwrap().take() {
             let _ = c.kill();
             let _ = c.wait();
+            if let Some(cl) = &self.cleanup {
+                cl.run();
+            }
         }
         *self.stdin.lock().unwrap() = None;
     }

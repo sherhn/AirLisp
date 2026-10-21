@@ -7,7 +7,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::discover::Implementation;
+use crate::discover::{Arg, Implementation, Launch};
+use crate::wsl::Cleanup;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RunEvent {
@@ -18,6 +19,7 @@ pub enum RunEvent {
 pub struct RunHandle {
     rx: Receiver<RunEvent>,
     child: Arc<Mutex<Option<Child>>>,
+    cleanup: Option<Cleanup>,
 }
 
 impl RunHandle {
@@ -37,6 +39,9 @@ impl RunHandle {
         if let Some(mut c) = self.child.lock().unwrap().take() {
             let _ = c.kill();
             let _ = c.wait();
+            if let Some(cl) = &self.cleanup {
+                cl.run();
+            }
         }
     }
 
@@ -71,6 +76,14 @@ impl Drop for RunHandle {
     }
 }
 
+/// UTF-8 as is; anything else is console output in the system's OEM code page.
+fn decode_chunk(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => crate::oem::decode_non_utf8(bytes),
+    }
+}
+
 pub fn spawn_streaming(mut cmd: Command) -> io::Result<RunHandle> {
     crate::no_window(&mut cmd);
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -95,7 +108,7 @@ pub fn spawn_streaming(mut cmd: Command) -> io::Result<RunHandle> {
                             Err(_) => tail.len(),
                         };
                         let rest = tail.split_off(valid);
-                        let text = String::from_utf8_lossy(&tail).into_owned();
+                        let text = decode_chunk(&tail);
                         tail = rest;
                         if !text.is_empty() {
                             let _ = tx.send(RunEvent::Output { text, is_err });
@@ -104,7 +117,7 @@ pub fn spawn_streaming(mut cmd: Command) -> io::Result<RunHandle> {
                 }
             }
             if !tail.is_empty() {
-                let _ = tx.send(RunEvent::Output { text: String::from_utf8_lossy(&tail).into_owned(), is_err });
+                let _ = tx.send(RunEvent::Output { text: decode_chunk(&tail), is_err });
             }
         }));
     }
@@ -130,7 +143,14 @@ pub fn spawn_streaming(mut cmd: Command) -> io::Result<RunHandle> {
             }
         }
     });
-    Ok(RunHandle { rx, child })
+    Ok(RunHandle { rx, child, cleanup: None })
+}
+
+/// Spawn a [`Launch`]; killing the handle also ends what it started inside WSL.
+pub fn spawn_launch(l: Launch) -> io::Result<RunHandle> {
+    let mut h = spawn_streaming(l.cmd)?;
+    h.cleanup = l.cleanup;
+    Ok(h)
 }
 
 /// Lisp string literal for `s`.
@@ -150,40 +170,31 @@ pub fn lisp_path(p: &Path) -> String {
     p.to_string_lossy().replace('\\', "/")
 }
 
-fn base_command(imp: &Implementation, cwd: Option<&Path>) -> Command {
-    let mut cmd = Command::new(&imp.path);
-    crate::discover::apply_env(&mut cmd, imp);
-    cmd.args(["--noinform", "--non-interactive", "--no-userinit", "--no-sysinit"]);
-    if let Some(dir) = cwd {
-        cmd.current_dir(dir);
-    }
-    cmd
+/// A batch SBCL process with `extra` arguments after the usual non-interactive options.
+fn batch(imp: &Implementation, cwd: Option<&Path>, extra: &[Arg]) -> io::Result<RunHandle> {
+    let mut args = vec![Arg::Text("--noinform"), Arg::Text("--non-interactive"), Arg::Text("--no-userinit"), Arg::Text("--no-sysinit")];
+    args.extend_from_slice(extra);
+    spawn_launch(imp.launch(cwd, &args))
 }
 
 /// `sbcl --load FILE`; the working directory defaults to the file's folder.
 pub fn run_file(imp: &Implementation, file: &Path, cwd: Option<&Path>) -> io::Result<RunHandle> {
     let dir = cwd.or_else(|| file.parent().filter(|p| !p.as_os_str().is_empty()));
-    let mut cmd = base_command(imp, dir);
-    cmd.arg("--load").arg(file);
-    spawn_streaming(cmd)
+    batch(imp, dir, &[Arg::Text("--load"), Arg::Path(file)])
 }
 
 /// Evaluate forms in a fresh process.
 pub fn run_eval(imp: &Implementation, forms: &str, cwd: Option<&Path>) -> io::Result<RunHandle> {
-    let mut cmd = base_command(imp, cwd);
-    cmd.arg("--eval").arg(forms);
-    spawn_streaming(cmd)
+    batch(imp, cwd, &[Arg::Text("--eval"), Arg::Text(forms)])
 }
 
 /// Load or test an ASDF system found under `root` in a fresh process.
 pub fn run_asdf(imp: &Implementation, root: &Path, system: &str, test: bool) -> io::Result<RunHandle> {
     let op = if test { "test" } else { "load" };
     // `(require :asdf)` must be evaluated before the reader sees `asdf:` symbols, hence separate --eval forms.
-    let setup = format!("(asdf:initialize-source-registry (list :source-registry (list :tree {}) :inherit-configuration))", lisp_string(&lisp_path(root)));
+    let setup = format!("(asdf:initialize-source-registry (list :source-registry (list :tree {}) :inherit-configuration))", lisp_string(&imp.lisp_path(root)));
     let work = format!("(progn (asdf:{op}-system {sys}) (format t \"~&; ASDF system ~a: {op} finished~%\" {sys}))", sys = lisp_string(system));
-    let mut cmd = base_command(imp, Some(root));
-    cmd.args(["--eval", "(require :asdf)", "--eval", &setup, "--eval", &work]);
-    spawn_streaming(cmd)
+    batch(imp, Some(root), &[Arg::Text("--eval"), Arg::Text("(require :asdf)"), Arg::Text("--eval"), Arg::Text(&setup), Arg::Text("--eval"), Arg::Text(&work)])
 }
 
 #[cfg(test)]

@@ -3,30 +3,113 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::wsl::{self, Cleanup, Target};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Implementation {
     pub name: String,
+    /// The executable: a Windows path, or (with `wsl`) a command or path inside the distribution.
     pub path: PathBuf,
     /// `SBCL_HOME` for the bundled distribution (core and contribs live next to the executable).
     pub home: Option<PathBuf>,
+    /// Run inside this WSL distribution instead of on Windows.
+    pub wsl: Option<Target>,
+}
+
+/// An argument of a Lisp process: plain text, or a file whose path has to be given the way Lisp sees files.
+#[derive(Clone, Copy, Debug)]
+pub enum Arg<'a> {
+    Text(&'a str),
+    Path(&'a Path),
+}
+
+/// A command ready to spawn, plus how to stop what it starts inside WSL.
+pub struct Launch {
+    pub cmd: Command,
+    pub cleanup: Option<Cleanup>,
 }
 
 impl Implementation {
     pub fn sbcl(path: impl Into<PathBuf>) -> Implementation {
-        Implementation { name: "SBCL".into(), path: path.into(), home: None }
+        Implementation { name: "SBCL".into(), path: path.into(), home: None, wsl: None }
     }
 
     /// An SBCL shipped inside `dir` (`dir/sbcl[.exe]`, `dir/sbcl.core`, `dir/contrib`).
     pub fn bundled(dir: &Path) -> Option<Implementation> {
         let exe = dir.join(exe_name());
-        (is_file(&exe) && dir.join("sbcl.core").is_file()).then(|| Implementation { name: "SBCL".into(), path: exe, home: Some(dir.to_path_buf()) })
+        (is_file(&exe) && dir.join("sbcl.core").is_file()).then(|| Implementation { name: "SBCL".into(), path: exe, home: Some(dir.to_path_buf()), wsl: None })
+    }
+
+    /// SBCL inside a WSL distribution; `sbcl` is its command or absolute path there (empty: `sbcl`).
+    pub fn in_wsl(target: Target, sbcl: &str) -> Implementation {
+        let sbcl = if sbcl.trim().is_empty() { "sbcl" } else { sbcl.trim() };
+        Implementation { name: format!("SBCL ({})", target.distro), path: PathBuf::from(sbcl), home: None, wsl: Some(target) }
+    }
+
+    /// Which binary and where, for messages: `C:\...\sbcl.exe` or `/usr/bin/sbcl (WSL: Ubuntu-24.04)`.
+    pub fn describe(&self) -> String {
+        match &self.wsl {
+            Some(t) => format!("{} (WSL: {})", self.path.to_string_lossy(), t.distro),
+            None => self.path.to_string_lossy().into_owned(),
+        }
+    }
+
+    /// `p` the way this Lisp names files, with forward slashes (`C:/x/a.lisp`, or `/mnt/c/x/a.lisp` in WSL).
+    pub fn lisp_path(&self, p: &Path) -> String {
+        match &self.wsl {
+            Some(t) => wsl::to_linux(p, t),
+            None => p.to_string_lossy().replace('\\', "/"),
+        }
+    }
+
+    /// The Windows path of a file name this Lisp reported (e.g. a definition's source file).
+    pub fn host_path(&self, name: &str) -> PathBuf {
+        match &self.wsl {
+            Some(t) if name.starts_with('/') => wsl::to_windows(name, t),
+            _ => PathBuf::from(name),
+        }
+    }
+
+    /// The command for this Lisp with `args`, working in `cwd`. Inside WSL the paths are translated and the
+    /// process gets a tag so it can be ended even if stopping `wsl.exe` leaves it running.
+    pub fn launch(&self, cwd: Option<&Path>, args: &[Arg]) -> Launch {
+        match &self.wsl {
+            None => {
+                let mut cmd = Command::new(&self.path);
+                apply_env(&mut cmd, self);
+                for a in args {
+                    match a {
+                        Arg::Text(s) => cmd.arg(s),
+                        Arg::Path(p) => cmd.arg(p),
+                    };
+                }
+                if let Some(dir) = cwd {
+                    cmd.current_dir(dir);
+                }
+                Launch { cmd, cleanup: None }
+            }
+            Some(t) => {
+                let marker = wsl::new_marker();
+                let mut list: Vec<String> = args
+                    .iter()
+                    .map(|a| match a {
+                        Arg::Text(s) => s.to_string(),
+                        Arg::Path(p) => wsl::to_linux(p, t),
+                    })
+                    .collect();
+                // SBCL ignores what follows; the tag only has to be on the command line
+                list.extend(["--end-toplevel-options".to_string(), marker.clone()]);
+                let cmd = wsl::exec(t, cwd, &self.path.to_string_lossy(), &list);
+                Launch { cmd, cleanup: Some(Cleanup { target: t.clone(), marker }) }
+            }
+        }
     }
 
     /// Query the version string, e.g. `SBCL 2.6.8`.
     pub fn version(&self) -> Option<String> {
-        let mut cmd = Command::new(&self.path);
+        let Launch { mut cmd, .. } = self.launch(None, &[Arg::Text("--version")]);
         crate::no_window(&mut cmd);
-        let out = cmd.arg("--version").output().ok()?;
+        let out = cmd.output().ok()?;
         let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
         (!s.is_empty()).then_some(s)
     }
@@ -110,6 +193,26 @@ pub fn apply_env(cmd: &mut Command, imp: &Implementation) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wsl_implementations_translate_paths_and_tag_the_process() {
+        let imp = Implementation::in_wsl(Target::new("Ubuntu-24.04", ""), "");
+        assert_eq!(imp.path, PathBuf::from("sbcl"));
+        assert_eq!(imp.lisp_path(Path::new(r"C:\p\a.lisp")), "/mnt/c/p/a.lisp");
+        assert_eq!(imp.host_path("/mnt/c/p/a.lisp"), PathBuf::from(r"C:\p\a.lisp"));
+        assert!(imp.describe().contains("Ubuntu-24.04"));
+        let l = imp.launch(Some(Path::new(r"C:\p")), &[Arg::Text("--load"), Arg::Path(Path::new(r"C:\p\a.lisp"))]);
+        let args: Vec<String> = l.cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let marker = l.cleanup.as_ref().unwrap().marker.clone();
+        let at = args.iter().position(|a| a == "-d").unwrap();
+        assert_eq!(args[at..], ["-d", "Ubuntu-24.04", "--cd", "/mnt/c/p", "-e", "sbcl", "--load", "/mnt/c/p/a.lisp", "--end-toplevel-options", marker.as_str()]);
+        let native = Implementation::sbcl(r"C:\sbcl\sbcl.exe");
+        assert_eq!(native.lisp_path(Path::new(r"C:\p\a.lisp")), "C:/p/a.lisp");
+        assert_eq!(native.host_path("C:/p/a.lisp"), PathBuf::from("C:/p/a.lisp"));
+        let l = native.launch(None, &[Arg::Path(Path::new(r"C:\p\a.lisp"))]);
+        assert!(l.cleanup.is_none());
+        assert_eq!(l.cmd.get_program(), std::ffi::OsStr::new(r"C:\sbcl\sbcl.exe"));
+    }
 
     #[test]
     fn bundled_requires_executable_and_core() {
