@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn cd_resolves_relative_and_rejects_missing() {
-        let base = std::env::temp_dir().join(format!("lispcraft-term-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("airlisp-term-{}", std::process::id()));
         std::fs::create_dir_all(base.join("sub")).unwrap();
         let base = change_dir(&base, ".").unwrap();
         let sub = change_dir(&base, "sub").unwrap();
@@ -166,8 +166,8 @@ mod tests {
 
     #[test]
     fn runs_a_command_and_captures_output() {
-        let mut cmd = shell_command("echo lispcraft-terminal-test", Path::new("."));
+        let mut cmd = shell_command("echo airlisp-terminal-test", Path::new("."));
         let out = cmd.output().unwrap();
-        assert!(String::from_utf8_lossy(&out.stdout).contains("lispcraft-terminal-test"));
+        assert!(String::from_utf8_lossy(&out.stdout).contains("airlisp-terminal-test"));
     }
 }

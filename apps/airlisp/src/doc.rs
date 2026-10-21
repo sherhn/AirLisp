@@ -153,7 +153,7 @@ mod tests {
     use super::*;
 
     fn tmp(name: &str, content: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("lispcraft-doc-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("airlisp-doc-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join(name);
         std::fs::write(&p, content).unwrap();
@@ -211,7 +211,7 @@ mod tests {
         let mut d = Doc::untitled(3);
         assert_eq!(d.name(), "untitled-3.lisp");
         assert!(d.save().is_err());
-        let p = std::env::temp_dir().join(format!("lispcraft-saveas-{}.scm", std::process::id()));
+        let p = std::env::temp_dir().join(format!("airlisp-saveas-{}.scm", std::process::id()));
         d.ed.insert_text_raw("(define x 1)");
         d.save_as(&p).unwrap();
         assert_eq!(d.ed.dialect(), Dialect::Scheme);

@@ -1,12 +1,12 @@
 [package]
-name = "lispcraft-cli"
-description = "Headless command line interface to the Lispcraft engine"
+name = "airlisp-cli"
+description = "Headless command line interface to the AirLisp engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "lispcraft-cli"
+name = "airlisp-cli"
 path = "src/main.rs"
 
 [dependencies]

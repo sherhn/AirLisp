@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end tests: drive the real Lispcraft window with JSON scripts (see apps/lispcraft/src/script.rs).
+"""End-to-end tests: drive the real AirLisp window with JSON scripts (see apps/airlisp/src/script.rs).
 
 Usage: python tests/run_e2e.py [--release] [name-substring ...]
 Each tests/e2e/*.json script runs in a fresh fixture project with an isolated config directory.
@@ -17,8 +17,8 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROFILE = "release" if "--release" in sys.argv else "debug"
-EXE = ROOT / "target" / PROFILE / ("lispcraft.exe" if os.name == "nt" else "lispcraft")
-CLI = ROOT / "target" / PROFILE / ("lispcraft-cli.exe" if os.name == "nt" else "lispcraft-cli")
+EXE = ROOT / "target" / PROFILE / ("airlisp.exe" if os.name == "nt" else "airlisp")
+CLI = ROOT / "target" / PROFILE / ("airlisp-cli.exe" if os.name == "nt" else "airlisp-cli")
 SHOTS = ROOT / "target" / "e2e-shots"
 
 FIXTURE_FILES = {
@@ -60,7 +60,7 @@ def make_fixture(tmp):
 
 def run_one(script_path):
     name = script_path.stem
-    tmp = pathlib.Path(tempfile.mkdtemp(prefix=f"lispcraft-e2e-{name}-"))
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix=f"airlisp-e2e-{name}-"))
     try:
         proj = make_fixture(tmp)
         text = script_path.read_text(encoding="utf-8")
@@ -74,7 +74,7 @@ def run_one(script_path):
                 func(path)
 
             shutil.rmtree(proj / ".git", onexc=_unlock)
-        env = dict(os.environ, LISPCRAFT_CONFIG_DIR=str(tmp / "cfg"))
+        env = dict(os.environ, AIRLISP_CONFIG_DIR=str(tmp / "cfg"))
         t0 = time.time()
         try:
             p = subprocess.run([str(EXE), "--script", str(script), "--size", "1280x800", "--no-restore"], capture_output=True, text=True, timeout=180, env=env)
@@ -92,7 +92,7 @@ def run_one(script_path):
 
 def main():
     if not EXE.exists() or not CLI.exists():
-        raise SystemExit(f"build first: cargo build{' --release' if PROFILE == 'release' else ''} -p lispcraft -p lispcraft-cli")
+        raise SystemExit(f"build first: cargo build{' --release' if PROFILE == 'release' else ''} -p airlisp -p airlisp-cli")
     SHOTS.mkdir(parents=True, exist_ok=True)
     filters = [a for a in sys.argv[1:] if not a.startswith("--")]
     scripts = sorted((ROOT / "tests" / "e2e").glob("*.json"))

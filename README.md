@@ -1,4 +1,6 @@
-# Lispcraft
+# AirLisp
+
+<img src="assets/icon/airlisp-128.png" width="96" align="right" alt="AirLisp icon">
 
 A JetBrains-style IDE for Lisp, written in Rust (egui) and built the PhotoCraft way:
 a UI-independent engine, one command registry that drives menus, palettes and key bindings,
@@ -25,6 +27,12 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
 * **Git** - branch switcher, update/commit/push in the toolbar, commit dialog (Ctrl+K, Ctrl+Enter to commit),
   Git tool window (changes with checkboxes, log), diff viewer, change markers in the gutter, file status colours in
   the tree and tabs, rollback. Uses the `git` executable.
+* **Local commits** - snapshots of your working tree kept outside of git (`.airlisp/`, excluded through
+  `.git/info/exclude`). Made for working on top of somebody else's repository without a fork: create a local
+  commit and the diff, gutter markers and changes list start from it; switch the comparison base between `HEAD`
+  and any local commit, restore or delete checkpoints. Works in projects without git too.
+* **Big projects** - tested on 110 000 files and a 6 MB source file: `.gitignore`-aware tree (ignored entries are
+  dimmed, excluded from search and indexing), cached outline and line index, background search and git status.
 * **Terminal, folding, run configurations** - a built-in terminal, code folding of forms (Ctrl+-/Ctrl+=),
   load/test ASDF systems from the run configuration picker.
 * **JetBrains look & keymap** - New UI dark/light themes, tool windows, tabs, breadcrumbs, status bar.
@@ -37,18 +45,18 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
 | `crates/lisp-syntax` | lexer, bracket matching, indentation, structural edits, outline, highlighting (no deps) |
 | `crates/ide-core` | editor model, command registry + keymap, project model, fuzzy/text search, symbol index, settings |
 | `crates/lisp-runtime` | SBCL discovery, REPL protocol (`lisp/repl-server.lisp`), file runner, compiler diagnostics |
-| `apps/lispcraft` | the GUI (eframe/egui) incl. the JSON automation harness |
-| `apps/lispcraft-cli` | headless engine: `check`, `fmt`, `outline`, `eval`, `run`, `compile`, `exec`, `commands`, ... |
+| `apps/airlisp` | the GUI (eframe/egui) incl. the JSON automation harness |
+| `apps/airlisp-cli` | headless engine: `check`, `fmt`, `outline`, `eval`, `run`, `compile`, `exec`, `commands`, ... |
 
 ## Build & run
 
 ```
-cargo run --release -p lispcraft            # the IDE
-cargo run --release -p lispcraft-cli -- help
+cargo run --release -p airlisp            # the IDE
+cargo run --release -p airlisp-cli -- help
 ```
 
 Requires Rust (stable) and, for the REPL/run features, SBCL on `PATH`
-(or set `LISPCRAFT_SBCL` / Settings > Lisp). Linux needs the usual windowing libs
+(or set `AIRLISP_SBCL` / Settings > Lisp). Linux needs the usual windowing libs
 (`libxkbcommon`, `libgl`, wayland/x11 headers).
 
 ## Tests
@@ -69,7 +77,7 @@ Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `pn
 
 ## Русский
 
-Lispcraft - IDE для Lisp в стиле JetBrains (PyCharm/WebStorm), написанная на Rust. Структурное
+AirLisp - IDE для Lisp в стиле JetBrains (PyCharm/WebStorm), написанная на Rust. Структурное
 редактирование, живой REPL на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация,
 рефакторинг (rename), тёмная и светлая темы и привычная раскладка клавиш IntelliJ.
-Сборка: `cargo run --release -p lispcraft`. Для REPL нужен SBCL в `PATH`.
+Сборка: `cargo run --release -p airlisp`. Для REPL нужен SBCL в `PATH`.

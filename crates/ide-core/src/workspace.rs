@@ -122,7 +122,7 @@ pub fn create_lisp_project(parent: &Path, name: &str) -> io::Result<PathBuf> {
         root.join("test/tests.lisp"),
         format!("(defpackage :{name}/test\n  (:use :cl)\n  (:export #:run))\n(in-package :{name}/test)\n\n(defun run ()\n  (assert (string= (funcall (intern \"GREET\" :{name}) \"Lisp\") \"Hello, Lisp!\"))\n  (format t \"All tests passed.~%\"))\n"),
     )?;
-    fs::write(root.join("README.md"), format!("# {name}\n\nA Common Lisp project created with Lispcraft.\n"))?;
+    fs::write(root.join("README.md"), format!("# {name}\n\nA Common Lisp project created with AirLisp.\n"))?;
     fs::write(root.join(".gitignore"), "*.fasl\n")?;
     Ok(root)
 }
@@ -300,9 +300,9 @@ mod ignore_tests {
     fn git_info_exclude_and_reset() {
         let d = TempDir::new("ign2");
         fs::create_dir_all(d.path().join(".git/info")).unwrap();
-        fs::write(d.path().join(".git/info/exclude"), "/.lispcraft/\nsecret.txt\n").unwrap();
+        fs::write(d.path().join(".git/info/exclude"), "/.airlisp/\nsecret.txt\n").unwrap();
         let mut m = IgnoreMatcher::new(d.path());
-        assert!(m.is_ignored(&d.path().join(".lispcraft"), true));
+        assert!(m.is_ignored(&d.path().join(".airlisp"), true));
         assert!(m.is_ignored(&d.path().join("secret.txt"), false));
         assert!(!m.is_ignored(&d.path().join("a.txt"), false));
         fs::write(d.path().join(".gitignore"), "a.txt\n").unwrap();

@@ -38,7 +38,7 @@ impl App {
             (Some(p), Some(d)) => format!("{}  -  {}", p.name, d.name()),
             (Some(p), None) => p.name.clone(),
             (None, Some(d)) => d.name(),
-            (None, None) => "Lispcraft".to_string(),
+            (None, None) => "AirLisp".to_string(),
         };
         let tg = ui.painter().layout_no_wrap(title, fonts::ui(12.5), pal.text_dim);
         // the main menu occupies roughly the first 640 px
@@ -92,9 +92,8 @@ impl App {
         // logo + menu
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(bar.min, Pos2::new(bar.max.x - BTN_W * 3.0, bar.max.y))).layout(egui::Layout::left_to_right(egui::Align::Center)));
         inner.add_space(12.0);
-        let (r, _) = inner.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
-        inner.painter().rect_filled(r, CornerRadius::same(6), pal.accent);
-        icons::paint(inner.painter(), r.shrink(4.0), Icon::Lisp, Color32::WHITE);
+        let (r, _) = inner.allocate_exact_size(Vec2::splat(24.0), Sense::hover());
+        crate::brand::paint_logo(inner.painter(), r, self.logo.as_ref(), pal.accent);
         inner.add_space(8.0);
         self.draw_menu_bar(&mut inner, ctx);
     }

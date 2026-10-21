@@ -1,15 +1,15 @@
-;;; Lispcraft REPL server.
+;;; AirLisp REPL server.
 ;;;
 ;;; Reads one request per line from stdin:      KIND <TAB> ID <TAB> ESCAPED-PAYLOAD
 ;;; Writes protocol lines to stdout:            <SOH> KIND <TAB> ID <TAB> ESCAPED-PAYLOAD
 ;;; Everything else the user's code prints is passed through as plain output.
 ;;; Escaping: backslash, newline, carriage return and tab are written as \\ \n \r \t.
 
-(defpackage :lispcraft-repl
+(defpackage :airlisp-repl
   (:use :cl)
   (:export #:main))
 
-(in-package :lispcraft-repl)
+(in-package :airlisp-repl)
 
 #+sbcl
 (progn

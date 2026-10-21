@@ -38,7 +38,7 @@ pub fn candidates(configured: &str) -> Vec<PathBuf> {
     if !configured.trim().is_empty() {
         v.push(PathBuf::from(configured.trim()));
     }
-    if let Ok(p) = std::env::var("LISPCRAFT_SBCL") {
+    if let Ok(p) = std::env::var("AIRLISP_SBCL") {
         v.push(PathBuf::from(p));
     }
     if let Some(paths) = std::env::var_os("PATH") {
@@ -66,7 +66,7 @@ pub fn candidates(configured: &str) -> Vec<PathBuf> {
     v
 }
 
-/// Find SBCL: the explicit setting, `LISPCRAFT_SBCL`, `PATH`, then well-known install locations.
+/// Find SBCL: the explicit setting, `AIRLISP_SBCL`, `PATH`, then well-known install locations.
 pub fn find_sbcl(configured: &str) -> Option<Implementation> {
     candidates(configured).into_iter().find(|p| is_file(p)).map(Implementation::sbcl)
 }

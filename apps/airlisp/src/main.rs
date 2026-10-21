@@ -1,8 +1,9 @@
-//! Lispcraft - an IDE for Lisp.
+//! AirLisp - an IDE for Lisp.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod brand;
 mod app_git;
 mod app_run;
 mod app_terminal;
@@ -50,7 +51,7 @@ fn parse_args() -> Args {
             }
             "--no-restore" => a.no_restore = true,
             "--help" | "-h" => {
-                println!("lispcraft [PATH...] [--script FILE.json] [--size WxH] [--no-restore]");
+                println!("airlisp [PATH...] [--script FILE.json] [--size WxH] [--no-restore]");
                 std::process::exit(0);
             }
             p => a.paths.push(PathBuf::from(p)),
@@ -63,16 +64,19 @@ fn main() -> eframe::Result {
     let args = parse_args();
     let settings = Settings::load();
     let (w, h) = args.size.unwrap_or((1280.0, 800.0));
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([w, h]).with_min_inner_size([640.0, 400.0]).with_title("Lispcraft").with_decorations(false).with_app_id("lispcraft"),
-        ..Default::default()
-    };
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([w, h]).with_min_inner_size([640.0, 400.0]).with_title("AirLisp").with_decorations(false).with_app_id("airlisp");
+    if let Some(icon) = brand::window_icon() {
+        viewport = viewport.with_icon(std::sync::Arc::new(icon));
+    }
+    let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native(
-        "Lispcraft",
+        "AirLisp",
         options,
         Box::new(move |cc| {
             fonts::install(&cc.egui_ctx);
+            let logo = brand::load_logo(&cc.egui_ctx);
             let mut app = app::App::new(settings);
+            app.logo = logo;
             app.pal.apply(&cc.egui_ctx);
             // what to open: explicit paths win, otherwise restore the last session
             if !args.paths.is_empty() {

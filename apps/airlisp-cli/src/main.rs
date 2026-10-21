@@ -1,4 +1,4 @@
-//! `lispcraft-cli`: the IDE engine without a window. Useful for scripts, CI and automated tests.
+//! `airlisp-cli`: the IDE engine without a window. Useful for scripts, CI and automated tests.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -11,10 +11,10 @@ use lisp_syntax::outline::outline;
 use lisp_syntax::{Dialect, Severity, indent, parse};
 
 const USAGE: &str = "\
-lispcraft-cli - headless Lispcraft engine
+airlisp-cli - headless AirLisp engine
 
 USAGE:
-  lispcraft-cli <command> [args]
+  airlisp-cli <command> [args]
 
 COMMANDS:
   check <file>              report unbalanced brackets and other syntax problems (exit 1 on errors)
@@ -40,7 +40,7 @@ fn read(path: &str) -> Result<(String, Dialect), String> {
 }
 
 fn lisp() -> Result<lisp_runtime::Implementation, String> {
-    discover::find_sbcl("").ok_or_else(|| "no Lisp implementation found (install SBCL or set LISPCRAFT_SBCL)".to_string())
+    discover::find_sbcl("").ok_or_else(|| "no Lisp implementation found (install SBCL or set AIRLISP_SBCL)".to_string())
 }
 
 fn line_col(text: &str, off: usize) -> (usize, usize) {

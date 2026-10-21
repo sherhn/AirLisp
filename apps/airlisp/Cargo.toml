@@ -1,12 +1,12 @@
 [package]
-name = "lispcraft"
-description = "Lispcraft - a JetBrains-style IDE for Lisp"
+name = "airlisp"
+description = "AirLisp - a JetBrains-style IDE for Lisp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "lispcraft"
+name = "airlisp"
 path = "src/main.rs"
 
 [dependencies]
@@ -17,3 +17,6 @@ eframe = { version = "0.37", default-features = false, features = ["glow", "defa
 rfd = "0.17"
 serde_json.workspace = true
 png = "0.18"
+
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3"

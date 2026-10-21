@@ -50,7 +50,7 @@ pub struct ReplSession {
 
 fn write_server_file() -> io::Result<PathBuf> {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let dir = std::env::temp_dir().join("lispcraft");
+    let dir = std::env::temp_dir().join("airlisp");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("repl-server-{}-{}.lisp", std::process::id(), COUNTER.fetch_add(1, Ordering::SeqCst)));
     std::fs::write(&path, SERVER_SOURCE)?;

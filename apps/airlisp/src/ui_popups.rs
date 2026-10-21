@@ -413,7 +413,7 @@ impl App {
                         just_opened = false;
                     }
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Saves a snapshot of your changes outside of git (in .lispcraft/, invisible to git).\nDiffs and change markers start from it afterwards.").color(self.pal.text_dim).size(12.0));
+                    ui.label(RichText::new("Saves a snapshot of your changes outside of git (in .airlisp/, invisible to git).\nDiffs and change markers start from it afterwards.").color(self.pal.text_dim).size(12.0));
                     let (o, c) = self.ok_cancel(ui, "Create");
                     ok |= o;
                     cancel |= c;
@@ -780,11 +780,10 @@ impl App {
                         ui.set_width(400.0);
                         ui.vertical_centered(|ui| {
                             ui.add_space(10.0);
-                            let (r, _) = ui.allocate_exact_size(Vec2::splat(72.0), Sense::hover());
-                            ui.painter().rect_filled(r, CornerRadius::same(18), pal.accent);
-                            icons::paint(ui.painter(), r.shrink(17.0), Icon::Lisp, Color32::WHITE);
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(96.0), Sense::hover());
+                            crate::brand::paint_logo(ui.painter(), r, self.logo.as_ref(), pal.accent);
                             ui.add_space(14.0);
-                            ui.label(RichText::new("Lispcraft").font(fonts::semibold(24.0)));
+                            ui.label(RichText::new("AirLisp").font(fonts::semibold(24.0)));
                             ui.label(RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(pal.text_dim));
                             ui.add_space(12.0);
                             ui.label("An IDE for Lisp, written in Rust.");
@@ -1180,13 +1179,12 @@ impl App {
         let ui = &mut ui2;
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(Vec2::splat(64.0), Sense::hover());
-                ui.painter().rect_filled(r, CornerRadius::same(16), pal.accent);
-                icons::paint(ui.painter(), r.shrink(15.0), Icon::Lisp, Color32::WHITE);
+                let (r, _) = ui.allocate_exact_size(Vec2::splat(72.0), Sense::hover());
+                crate::brand::paint_logo(ui.painter(), r, self.logo.as_ref(), pal.accent);
                 ui.add_space(8.0);
                 ui.vertical(|ui| {
                     ui.add_space(6.0);
-                    ui.label(RichText::new("Lispcraft").font(fonts::semibold(26.0)));
+                    ui.label(RichText::new("AirLisp").font(fonts::semibold(26.0)));
                     ui.label(RichText::new("The IDE for Lisp").color(pal.text_dim));
                 });
             });

@@ -200,7 +200,7 @@ mod tests {
     }
 
     fn tmp(name: &str, content: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("lispcraft-runner-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("airlisp-runner-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join(name);
         std::fs::write(&p, content).unwrap();
@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn loads_and_tests_an_asdf_system() {
         let Some(imp) = sbcl() else { return };
-        let dir = std::env::temp_dir().join(format!("lispcraft-asdf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("airlisp-asdf-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("mini.asd"), "(asdf:defsystem \"mini\" :components ((:file \"mini\")) :perform (test-op (o c) (format t \"MINI-TESTS-RAN~%\")))
 ").unwrap();
