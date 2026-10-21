@@ -321,6 +321,7 @@ impl App {
             }
             "file.close_tab" => self.request_close_doc(self.active),
             "file.close_all" => {
+                self.flush_saves();
                 if self.has_unsaved() {
                     self.popup = Popup::Confirm { kind: ConfirmKind::CloseAll, message: tr("Some files have unsaved changes. Close all without saving?").into() };
                 } else {
@@ -329,6 +330,7 @@ impl App {
                 }
             }
             "file.close_others" => {
+                self.flush_saves();
                 let keep = self.active;
                 if let Some(d) = self.docs.get(keep) {
                     let path = d.path.clone();
@@ -370,6 +372,7 @@ impl App {
                 self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.describe()).unwrap_or_default(), filter: String::new(), page: 0 };
             }
             "app.exit" => {
+                self.flush_saves();
                 if self.has_unsaved() {
                     self.popup = Popup::Confirm { kind: ConfirmKind::Exit, message: tr("You have unsaved changes. Exit without saving?").into() };
                 } else {

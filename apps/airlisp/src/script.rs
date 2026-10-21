@@ -83,6 +83,7 @@ impl App {
             "wsl_idle" => !self.wsl.busy(),
             "github_idle" => !self.github.busy(),
             "popup" => !matches!(self.popup, Popup::None),
+            "all_saved" => self.docs.iter().all(|d| !d.ed.is_modified() || d.path.is_none()),
             "find_done" => self.find_rx.is_none(),
             "ask_open" => matches!(self.popup, Popup::OpenProject { .. }),
             "no_popup" => matches!(self.popup, Popup::None),

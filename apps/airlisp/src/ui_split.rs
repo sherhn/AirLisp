@@ -46,7 +46,7 @@ impl App {
             let (hr, _) = pane.allocate_exact_size(vec2(rect.width(), PANE_HEAD_H), Sense::hover());
             let (name, is_diff, modified) = {
                 let d = &self.docs[idx];
-                (d.name(), d.diff.is_some(), d.ed.is_modified())
+                (d.name(), d.diff.is_some(), d.ed.is_modified() && d.path.is_none())
             };
             let icon = if is_diff { Icon::FileDiff } else { Icon::File };
             icons::paint(pane.painter(), Rect::from_center_size(pos2(hr.min.x + 22.0, hr.center().y), vec2(15.0, 15.0)), icon, if focused { pal.accent } else { pal.text_dim });

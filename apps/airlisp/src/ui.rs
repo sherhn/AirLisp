@@ -37,6 +37,9 @@ impl eframe::App for App {
         if self.exit_now {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.flush_saves();
+        }
         if ctx.input(|i| i.viewport().close_requested()) && self.has_unsaved() && !self.exit_now {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.popup = Popup::Confirm { kind: ConfirmKind::Exit, message: "You have unsaved changes. Exit without saving?".into() };
@@ -97,6 +100,7 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.flush_saves();
         self.save_settings();
         if let Some(s) = self.repl.session.take() {
             s.kill();

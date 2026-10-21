@@ -23,6 +23,9 @@ use crate::theme::Palette;
 
 pub use crate::app_run::RunConfig;
 
+/// Seconds a file has to stay untouched before it is saved automatically.
+pub const AUTOSAVE_DELAY: f64 = 1.0;
+
 pub struct App {
     pub settings: Settings,
     pub pal: Palette,
@@ -390,7 +393,24 @@ impl App {
         self.goto(&p, o, false);
     }
 
+    /// A new scratch file. It lives in the settings folder and is saved automatically like any other file, so
+    /// there is never an unsaved document to lose; an empty scratch file is deleted when its tab is closed.
     pub fn new_untitled(&mut self) {
+        if let Some(dir) = Settings::config_dir().map(|d| d.join("scratches"))
+            && std::fs::create_dir_all(&dir).is_ok()
+        {
+            loop {
+                self.untitled_counter += 1;
+                let path = dir.join(format!("scratch-{}.lisp", self.untitled_counter));
+                if !path.exists() {
+                    if std::fs::write(&path, "").is_ok() {
+                        self.open_file(&path);
+                        return;
+                    }
+                    break;
+                }
+            }
+        }
         self.untitled_counter += 1;
         self.docs.push(Doc::untitled(self.untitled_counter));
         self.active = self.docs.len() - 1;
@@ -468,15 +488,54 @@ impl App {
         self.active = idx;
     }
 
+    /// Edits that automatic saving cannot take care of: a document without a file, or a file that changed on disk
+    /// in the meantime (the user has to choose which version wins).
     pub fn has_unsaved(&self) -> bool {
-        self.docs.iter().any(|d| d.ed.is_modified())
+        self.docs.iter().any(|d| d.diff.is_none() && d.ed.is_modified() && (d.path.is_none() || d.conflict))
+    }
+
+    /// Save every modified file right now, silently. Returns how many were written.
+    pub fn flush_saves(&mut self) -> usize {
+        let mut saved = 0;
+        for i in 0..self.docs.len() {
+            let d = &self.docs[i];
+            if d.diff.is_none() && d.path.is_some() && !d.conflict && d.ed.is_modified() && self.save_doc(i) {
+                saved += 1;
+            }
+        }
+        saved
+    }
+
+    /// Autosave: a file is written once it has been left alone for a moment.
+    fn autosave_tick(&mut self) {
+        let now = self.now;
+        let mut due = vec![];
+        for (i, d) in self.docs.iter_mut().enumerate() {
+            let rev = d.ed.revision();
+            if rev != d.autosave_rev {
+                d.autosave_rev = rev;
+                d.autosave_at = now;
+            } else if d.diff.is_none() && d.path.is_some() && !d.conflict && d.ed.is_modified() && now - d.autosave_at >= AUTOSAVE_DELAY {
+                due.push(i);
+            }
+        }
+        for i in due {
+            self.save_doc(i);
+        }
     }
 
     pub fn close_doc(&mut self, idx: usize) {
         if idx >= self.docs.len() {
             return;
         }
-        self.docs.remove(idx);
+        let doc = self.docs.remove(idx);
+        // an empty scratch file is not worth keeping
+        if let (Some(p), Some(dir)) = (doc.path.as_ref(), Settings::config_dir().map(|d| d.join("scratches")))
+            && p.starts_with(&dir)
+            && doc.ed.text().trim().is_empty()
+        {
+            let _ = std::fs::remove_file(p);
+        }
         if self.active >= self.docs.len() {
             self.active = self.docs.len().saturating_sub(1);
         } else if idx < self.active {
@@ -488,8 +547,13 @@ impl App {
 
     pub fn request_close_doc(&mut self, idx: usize) {
         match self.docs.get(idx) {
-            Some(d) if d.ed.is_modified() => {
+            Some(d) if d.diff.is_none() && d.ed.is_modified() && (d.path.is_none() || d.conflict) => {
                 self.popup = Popup::Confirm { kind: ConfirmKind::CloseDoc(idx), message: i18n::fmt("Save changes to {} before closing?", &[&d.name()]) };
+            }
+            Some(d) if d.diff.is_none() && d.ed.is_modified() => {
+                if self.save_doc(idx) {
+                    self.close_doc(idx);
+                }
             }
             Some(_) => self.close_doc(idx),
             None => {}
@@ -538,15 +602,12 @@ impl App {
                 self.toast(i18n::fmt("{} reloaded from disk", &[&n]), Sev::Weak);
             }
         }
-        // save on focus loss
+        // autosave: shortly after the last edit, and at once when the window loses focus
         let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
-        if self.window_focused && !focused && self.settings.auto_save_on_focus_loss {
-            for i in 0..self.docs.len() {
-                if self.docs[i].ed.is_modified() && self.docs[i].path.is_some() {
-                    self.save_doc(i);
-                }
-            }
+        if self.window_focused && !focused {
+            self.flush_saves();
         }
+        self.autosave_tick();
         // coming back to the window: the file system may have changed meanwhile
         if focused && !self.window_focused
             && let Some(p) = self.project.as_mut()
@@ -1427,6 +1488,7 @@ impl App {
     }
 
     pub fn exit_clean(&mut self) {
+        self.flush_saves();
         self.save_settings();
         if let Some(s) = self.repl.session.take() {
             s.kill();

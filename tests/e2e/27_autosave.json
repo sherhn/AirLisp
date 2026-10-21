@@ -1,0 +1,23 @@
+[
+  {"op": "log", "value": "a new file without a project is a scratch file that saves itself"},
+  {"op": "command", "value": "file.new"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_tabs", "value": 1},
+  {"op": "assert_active_file", "value": "scratch-1.lisp"},
+  {"op": "text", "value": "(print 1)"},
+  {"op": "assert_modified", "value": true},
+  {"op": "wait", "what": "all_saved", "timeout": 10},
+  {"op": "assert_modified", "value": false},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}.png"},
+
+  {"op": "log", "value": "an empty scratch file disappears when its tab is closed"},
+  {"op": "command", "value": "file.new"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_active_file", "value": "scratch-2.lisp"},
+  {"op": "command", "value": "file.close_tab"},
+  {"op": "assert_tabs", "value": 1},
+  {"op": "command", "value": "file.new"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_active_file", "value": "scratch-3.lisp"},
+  {"op": "quit"}
+]

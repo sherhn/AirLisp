@@ -60,7 +60,7 @@ impl App {
                         }
                     }
                 });
-                self.menu_items(ui, ctx, &["-", "file.save", "file.reload", "file.close_tab", "file.close_all", "-", "file.copy_path", "file.reveal", "-", "app.settings", "app.exit"]);
+                self.menu_items(ui, ctx, &["-", "file.reload", "file.close_tab", "file.close_all", "-", "file.copy_path", "file.reveal", "-", "app.settings", "app.exit"]);
             });
             ui.menu_button(tr("Edit"), |ui| {
                 self.menu_items(
@@ -337,7 +337,7 @@ impl App {
         let mut x = strip.min.x + 12.0;
         let mut to_close: Option<usize> = None;
         let mut to_activate: Option<usize> = None;
-        let names: Vec<(String, bool, bool)> = self.docs.iter().map(|d| (d.name(), d.ed.is_modified(), d.conflict)).collect();
+        let names: Vec<(String, bool, bool)> = self.docs.iter().map(|d| (d.name(), d.ed.is_modified() && d.path.is_none() && d.diff.is_none(), d.conflict)).collect();
         let other_pane = self.split_other_index();
         let is_split = self.split.is_some();
         let mut split_request: Option<(usize, Option<bool>)> = None;

@@ -302,8 +302,6 @@ pub const RU: &[(&str, &str)] = &[
     ("Behavior", "Поведение"),
     ("Automatic completion", "Автоматическое дополнение"),
     ("Open the popup while typing", "Показывать подсказки во время набора"),
-    ("Save on focus loss", "Сохранять при потере фокуса"),
-    ("Save modified files when the window loses focus", "Сохранять изменённые файлы, когда окно теряет фокус"),
     ("Lisp implementation", "Реализация Lisp"),
     ("SBCL executable", "Исполняемый файл SBCL"),
     ("Leave empty to use the bundled or installed SBCL", "Оставьте пустым, чтобы использовать встроенный или установленный SBCL"),

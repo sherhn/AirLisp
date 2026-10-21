@@ -52,7 +52,6 @@ pub struct Settings {
     /// Code overview (minimap) next to the scrollbar.
     pub minimap: bool,
     pub rainbow_brackets: bool,
-    pub auto_save_on_focus_loss: bool,
     /// Show the completion popup automatically while typing.
     pub auto_popup: bool,
     pub recent_projects: Vec<String>,
@@ -88,7 +87,6 @@ impl Default for Settings {
             show_whitespace: false,
             minimap: true,
             rainbow_brackets: true,
-            auto_save_on_focus_loss: true,
             auto_popup: true,
             recent_projects: vec![],
             last_project: None,

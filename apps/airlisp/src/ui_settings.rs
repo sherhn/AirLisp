@@ -158,9 +158,6 @@ impl App {
                                 rows.row(ui, &pal, tr("Automatic completion"), tr("Open the popup while typing"), 44.0, |ui| {
                                     widgets::toggle(ui, &pal, &mut self.settings.auto_popup);
                                 });
-                                rows.row(ui, &pal, tr("Save on focus loss"), tr("Save modified files when the window loses focus"), 44.0, |ui| {
-                                    widgets::toggle(ui, &pal, &mut self.settings.auto_save_on_focus_loss);
-                                });
                             });
                         }
                         2 => {

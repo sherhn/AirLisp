@@ -29,6 +29,9 @@ pub struct Doc {
     pub disk_mtime: Option<SystemTime>,
     /// The file changed on disk while there were unsaved edits.
     pub conflict: bool,
+    /// Revision last seen by the autosave timer and when it was first seen (UI clock, seconds).
+    pub autosave_rev: u64,
+    pub autosave_at: f64,
     pub untitled_name: String,
     /// Compiler problems from the last compile (byte ranges valid for `compiled_rev`).
     pub compiler_markers: Vec<Marker>,
@@ -59,6 +62,8 @@ impl Doc {
             view: ViewState::default(),
             disk_mtime: mtime(path),
             conflict: false,
+            autosave_rev: 0,
+            autosave_at: 0.0,
             untitled_name: String::new(),
             compiler_markers: vec![],
             compiled_rev: 0,
@@ -79,6 +84,8 @@ impl Doc {
             view: ViewState::default(),
             disk_mtime: None,
             conflict: false,
+            autosave_rev: 0,
+            autosave_at: 0.0,
             untitled_name: format!("untitled-{n}.lisp"),
             compiler_markers: vec![],
             compiled_rev: 0,

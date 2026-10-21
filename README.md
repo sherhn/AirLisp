@@ -35,6 +35,7 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
   dimmed, excluded from search and indexing), cached outline and line index, background search and git status.
 * **Terminal, folding, run configurations** - a built-in terminal, code folding of forms (Ctrl+-/Ctrl+=),
   load/test ASDF systems from the run configuration picker.
+* **No manual saving** - files are saved automatically a second after the last edit, when the window loses focus, before running, when a tab is closed and on exit (Ctrl+S still works). New files without a project are scratch files kept in the settings folder.
 * **Branch graph** - the Git log draws all branches as coloured lanes with merges and branch/tag labels.
 * **Code overview** - a minimap next to the scrollbar shows the whole file with changed lines, problems and search hits; click or drag to scroll.
 * **Projects** - opening a project while another is open asks: this window or a new window.
