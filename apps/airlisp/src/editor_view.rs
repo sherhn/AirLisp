@@ -37,11 +37,8 @@ pub struct ViewState {
     max_cols: Option<(u64, usize)>,
     pub last_viewport_lines: usize,
     pub last_text_rect: Option<Rect>,
-    /// Cached code-overview geometry, keyed by what it was built from.
-    minimap: Option<(MapKey, egui::Mesh)>,
 }
 
-type MapKey = (u64, usize, i32, i32, [u8; 4]);
 
 pub struct ViewCfg<'a> {
     pub pal: &'a Palette,
@@ -74,17 +71,23 @@ pub struct ViewOut {
     pub gutter_rect: Option<Rect>,
 }
 
-const GUTTER_PAD: f32 = 12.0;
+// Gutter, left to right: padding, line numbers, gap, change marker, fold chevron; then the code.
+const GUTTER_PAD: f32 = 14.0;
+const NUM_GAP: f32 = 10.0;
+const MARK_W: f32 = 4.0;
 const FOLD_W: f32 = 18.0;
-const MARK_W: f32 = 10.0;
-const STRIPE_W: f32 = 12.0;
-const TEXT_PAD: f32 = 20.0;
-const MAP_W: f32 = 96.0;
+const TEXT_PAD: f32 = 6.0;
+/// Code overview (minimap): pixels per row and per character.
+const MAP_W: f32 = 88.0;
+const MAP_ROW: f32 = 2.0;
+const MAP_COL: f32 = 1.0;
+/// The scrollbar lane at the far right; it also shows where the changes and problems are in the whole file.
+const BAR_W: f32 = 14.0;
 
 /// Screen position of the change marker of display row `row` in a gutter (used by the UI tests to click it).
 pub fn gutter_mark_pos(gutter: Rect, scroll_y: f32, font_size: f32, row: usize) -> Pos2 {
     let lh = line_height_for(font_size);
-    Pos2::new(gutter.max.x - FOLD_W - 4.0, gutter.min.y + row as f32 * lh - scroll_y + lh * 0.5)
+    Pos2::new(gutter.max.x - FOLD_W - MARK_W * 0.5, gutter.min.y + row as f32 * lh - scroll_y + lh * 0.5)
 }
 
 pub fn line_height_for(font_size: f32) -> f32 {
@@ -130,7 +133,9 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let cw = ui.fonts_mut(|f| f.glyph_width(&font, 'M')).max(1.0);
     let total_lines = ed.line_count();
     let digits = total_lines.to_string().len().max(3);
-    let gutter_w = if cfg.line_numbers { cw * digits as f32 + GUTTER_PAD + FOLD_W + MARK_W } else { FOLD_W + MARK_W };
+    let num_font = FontId::monospace((cfg.font_size * 0.9).round());
+    let num_cw = ui.fonts_mut(|f| f.glyph_width(&num_font, '0')).max(1.0);
+    let gutter_w = if cfg.line_numbers { GUTTER_PAD + num_cw * digits as f32 + NUM_GAP + MARK_W + FOLD_W } else { 8.0 + MARK_W + FOLD_W };
 
     // ---- caches
     let rev = ed.revision();
@@ -159,8 +164,11 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let full = ui.available_rect_before_wrap();
     let gutter_rect = Rect::from_min_size(full.min, Vec2::new(gutter_w, full.height()));
     let map_w = if cfg.minimap && full.width() > 520.0 { MAP_W } else { 0.0 };
-    let text_rect = Rect::from_min_max(Pos2::new(full.min.x + gutter_w, full.min.y), Pos2::new(full.max.x - map_w, full.max.y));
-    let map_rect = Rect::from_min_max(Pos2::new(text_rect.max.x, full.min.y), full.max);
+    // left to right: gutter, code, code overview, scrollbar
+    let text_rect = Rect::from_min_max(Pos2::new(full.min.x + gutter_w, full.min.y), Pos2::new(full.max.x - BAR_W - map_w, full.max.y));
+    let map_rect = Rect::from_min_max(Pos2::new(text_rect.max.x, full.min.y), Pos2::new(text_rect.max.x + map_w, full.max.y));
+    let vbar = Rect::from_min_max(Pos2::new(full.max.x - BAR_W, full.min.y), full.max);
+    let hbar = Rect::from_min_max(Pos2::new(text_rect.min.x, text_rect.max.y - BAR_W), text_rect.max);
     state.last_text_rect = Some(text_rect);
     let mut out = ViewOut { text_rect: Some(text_rect), gutter_rect: Some(gutter_rect), ..Default::default() };
 
@@ -173,7 +181,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
             c
         }
     };
-    let content_w = (max_cols as f32 + 10.0) * cw + STRIPE_W + TEXT_PAD;
+    let content_w = (max_cols as f32 + 10.0) * cw + TEXT_PAD;
     let content_h = rows.len() as f32 * lh + text_rect.height() * 0.45;
 
     let (sel_s, sel_e) = ed.selection();
@@ -190,21 +198,57 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     }
     let mut acts: Vec<Act> = Vec::new();
 
-    // code overview: geometry shared by the click handling (before the scroll area) and the painting (after it)
-    let map_inner = map_rect.shrink2(Vec2::new(8.0, 10.0));
-    let map_unit = if rows.len() == 0 { 1.0 } else { (map_inner.height() / rows.len() as f32).min(3.0) };
+    // code overview (VS Code style): 2 px per row; a file taller than the overview scrolls in it proportionally
+    let max_scroll_y = (content_h - text_rect.height()).max(0.0);
+    let map_h = rows.len() as f32 * MAP_ROW;
+    let map_offset = |scroll_y: f32| if map_h > map_rect.height() && max_scroll_y > 0.0 { (scroll_y / max_scroll_y).clamp(0.0, 1.0) * (map_h - map_rect.height()) } else { 0.0 };
+    let slider_h = (text_rect.height() / lh * MAP_ROW).max(12.0);
+    let slider_top = |scroll_y: f32| map_rect.min.y + scroll_y / lh * MAP_ROW - map_offset(scroll_y);
+    let mut map_resp = None;
     if map_w > 0.0 {
         let resp = ui.interact(map_rect, ui.id().with("minimap"), Sense::click_and_drag());
-        if let (true, Some(p)) = (resp.is_pointer_button_down_on() || resp.dragged(), resp.interact_pointer_pos()) {
-            let row = ((p.y - map_inner.min.y) / map_unit).max(0.0);
-            let max_scroll = (content_h - text_rect.height()).max(0.0);
-            state.scroll.y = (row * lh - text_rect.height() / 2.0).clamp(0.0, max_scroll);
+        let on_slider = |p: Pos2| p.y >= slider_top(state.scroll.y) && p.y <= slider_top(state.scroll.y) + slider_h;
+        if let Some(p) = resp.interact_pointer_pos()
+            && (resp.clicked() || resp.drag_started())
+            && !on_slider(p)
+        {
+            // jump: the clicked row comes to the middle of the editor
+            let row = (p.y - map_rect.min.y + map_offset(state.scroll.y)) / MAP_ROW;
+            state.scroll.y = (row * lh - text_rect.height() / 2.0).clamp(0.0, max_scroll_y);
+        } else if resp.dragged() {
+            // drag the slider: it covers the whole overview height when the file is taller than it
+            let travel = if map_h > map_rect.height() { (map_rect.height() - slider_h).max(1.0) } else { MAP_ROW / lh * max_scroll_y.max(1.0) };
+            state.scroll.y = (state.scroll.y + resp.drag_delta().y * max_scroll_y / travel.max(1.0)).clamp(0.0, max_scroll_y);
+        }
+        if resp.is_pointer_button_down_on() || resp.dragged() {
             ui.ctx().request_repaint();
         }
+        map_resp = Some(resp);
+    }
+
+    // own scrollbars (the built-in one would sit between the code and the overview): dragging or clicking a track
+    let max_scroll_x = (content_w - text_rect.width()).max(0.0);
+    let vthumb_h = (text_rect.height() / content_h.max(1.0) * vbar.height()).clamp(28.0, vbar.height().max(28.0));
+    let hthumb_w = (text_rect.width() / content_w.max(1.0) * hbar.width()).clamp(28.0, hbar.width().max(28.0));
+    let vresp = ui.interact(vbar, ui.id().with("vbar"), Sense::click_and_drag());
+    if max_scroll_y > 0.0
+        && let (true, Some(p)) = (vresp.is_pointer_button_down_on() || vresp.dragged(), vresp.interact_pointer_pos())
+    {
+        let f = ((p.y - vbar.min.y - vthumb_h / 2.0) / (vbar.height() - vthumb_h).max(1.0)).clamp(0.0, 1.0);
+        state.scroll.y = f * max_scroll_y;
+        ui.ctx().request_repaint();
+    }
+    let hresp = ui.interact(hbar, ui.id().with("hbar"), Sense::click_and_drag());
+    if max_scroll_x > 0.0
+        && let (true, Some(p)) = (hresp.is_pointer_button_down_on() || hresp.dragged(), hresp.interact_pointer_pos())
+    {
+        let f = ((p.x - hbar.min.x - hthumb_w / 2.0) / (hbar.width() - hthumb_w).max(1.0)).clamp(0.0, 1.0);
+        state.scroll.x = f * max_scroll_x;
+        ui.ctx().request_repaint();
     }
 
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(text_rect).layout(egui::Layout::top_down(egui::Align::Min)));
-    let scroll = egui::ScrollArea::both().auto_shrink([false, false]).scroll_offset(state.scroll).id_salt("editor_scroll");
+    let scroll = egui::ScrollArea::both().auto_shrink([false, false]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).scroll_offset(state.scroll).id_salt("editor_scroll");
     let mut hover_marker: Option<String> = None;
     let area = scroll.show_viewport(&mut child, |ui, viewport| {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(content_w.max(viewport.width()), content_h.max(viewport.height())), Sense::click_and_drag());
@@ -429,28 +473,38 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     }
 
     // ---------------------------------------------------------------- gutter
+    // same background as the code (JetBrains style); the caret row is highlighted across numbers and code
     let gp = ui.painter_at(gutter_rect);
-    gp.rect_filled(gutter_rect.shrink2(Vec2::new(5.0, 6.0)), CornerRadius::same(12), pal.gutter_bg);
     let gresp = ui.interact(gutter_rect, ui.id().with("gutter"), Sense::click());
     let hover_gutter = gresp.hovered();
     let first = ((state.scroll.y / lh).floor().max(0.0)) as usize;
     let last = ((((state.scroll.y + gutter_rect.height()) / lh).ceil()) as usize + 1).min(rows.len());
-    let num_right = gutter_rect.max.x - FOLD_W - MARK_W + 2.0;
+    let mark_x = gutter_rect.max.x - FOLD_W - MARK_W;
+    let num_right = mark_x - NUM_GAP;
+    let fold_x = gutter_rect.max.x - FOLD_W * 0.5;
     for row in first..last {
         let line_no = rows.at(row);
         let y = gutter_rect.min.y + row as f32 * lh - state.scroll.y;
+        if line_no == caret_line && sel_s == sel_e {
+            gp.rect_filled(Rect::from_min_size(Pos2::new(gutter_rect.min.x, y), Vec2::new(gutter_rect.width(), lh)), CornerRadius::ZERO, pal.current_line);
+        }
         if cfg.line_numbers {
             let color = if line_no == caret_line { pal.line_number_active } else { pal.line_number };
-            gp.text(Pos2::new(num_right, y + lh * 0.5), Align2::RIGHT_CENTER, line_no + 1, font.clone(), color);
+            gp.text(Pos2::new(num_right, y + lh * 0.5), Align2::RIGHT_CENTER, line_no + 1, num_font.clone(), color);
         }
         if let Some(r) = region_start.get(&line_no) {
             let folded = folds.contains(&r.key);
             if folded || hover_gutter {
-                let cr = Rect::from_center_size(Pos2::new(gutter_rect.max.x - FOLD_W * 0.5 - 2.0, y + lh * 0.5), Vec2::splat(12.0));
-                icons::paint(&gp, cr, if folded { Icon::ChevronRight } else { Icon::ChevronDown }, pal.line_number_active);
+                let cr = Rect::from_center_size(Pos2::new(fold_x, y + lh * 0.5), Vec2::splat(12.0));
+                icons::paint(&gp, cr, if folded { Icon::ChevronRight } else { Icon::ChevronDown }, pal.line_number);
             }
         }
     }
+    let mark_color = |k: MarkKind| match k {
+        MarkKind::Added => pal.git_added,
+        MarkKind::Modified => pal.git_modified,
+        MarkKind::Deleted => pal.error,
+    };
     for m in cfg.git_marks {
         let row = row_of_line(m.line);
         if rows.get(row) != Some(m.line) {
@@ -460,21 +514,17 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         if y + lh < gutter_rect.min.y || y > gutter_rect.max.y {
             continue;
         }
-        let x = gutter_rect.max.x - FOLD_W - 5.0;
         match m.kind {
-            MarkKind::Added => {
-                gp.rect_filled(Rect::from_min_size(Pos2::new(x, y + 1.0), Vec2::new(3.0, lh - 2.0)), CornerRadius::same(1), pal.git_added);
-            }
-            MarkKind::Modified => {
-                gp.rect_filled(Rect::from_min_size(Pos2::new(x, y + 1.0), Vec2::new(3.0, lh - 2.0)), CornerRadius::same(1), pal.git_modified);
-            }
             MarkKind::Deleted => {
-                gp.add(Shape::convex_polygon(vec![Pos2::new(x, y - 3.0), Pos2::new(x + 6.0, y), Pos2::new(x, y + 3.0)], pal.error.gamma_multiply(0.9), Stroke::NONE));
+                gp.add(Shape::convex_polygon(vec![Pos2::new(mark_x - 1.0, y - 3.5), Pos2::new(mark_x + 6.0, y), Pos2::new(mark_x - 1.0, y + 3.5)], mark_color(m.kind), Stroke::NONE));
+            }
+            k => {
+                gp.rect_filled(Rect::from_min_size(Pos2::new(mark_x, y), Vec2::new(3.0, lh)), CornerRadius::ZERO, mark_color(k));
             }
         }
     }
-    // the change markers sit left of the fold chevrons; hovering one shows a pointer, clicking it opens the old code
-    let mark_zone = |p: Pos2| p.x > gutter_rect.max.x - FOLD_W - MARK_W - 8.0 && p.x <= gutter_rect.max.x - FOLD_W - 2.0;
+    // hovering a change marker shows a pointer, clicking it opens the old code; the chevrons fold
+    let mark_zone = |p: Pos2| p.x >= mark_x - 4.0 && p.x <= mark_x + MARK_W + 4.0;
     let row_at = |p: Pos2| (((p.y - gutter_rect.min.y + state.scroll.y) / lh).floor().max(0.0)) as usize;
     let marked_line = |p: Pos2| rows.get(row_at(p)).filter(|line| cfg.git_marks.iter().any(|m| m.line == *line));
     if let Some(p) = ui.input(|i| i.pointer.hover_pos())
@@ -487,7 +537,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     if gresp.clicked()
         && let Some(p) = gresp.interact_pointer_pos()
     {
-        if p.x > gutter_rect.max.x - FOLD_W - 2.0 {
+        if p.x > gutter_rect.max.x - FOLD_W {
             if let Some(line) = rows.get(row_at(p))
                 && let Some(r) = region_start.get(&line)
             {
@@ -501,13 +551,75 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         }
     }
 
-    // ---------------------------------------------------------------- error stripe
-    let stripe = Rect::from_min_max(Pos2::new(text_rect.max.x - STRIPE_W, text_rect.min.y), text_rect.max);
-    let sp = ui.painter_at(stripe);
-    let h = stripe.height();
-    let to_y = |off: usize| stripe.min.y + (ed.line_of(off.min(ed.text().len())) as f32 / total_lines.max(1) as f32) * h;
+    // ---------------------------------------------------------------- code overview
+    let text_len = ed.text().len();
+    if let Some(resp) = &map_resp {
+        let mp = ui.painter_at(map_rect);
+        let offset = map_offset(state.scroll.y);
+        let first = (offset / MAP_ROW).floor().max(0.0) as usize;
+        let last = (((offset + map_rect.height()) / MAP_ROW).ceil() as usize + 1).min(rows.len());
+        let x0 = map_rect.min.x + 8.0;
+        let max_cols = ((map_rect.max.x - 6.0 - x0) / MAP_COL) as usize;
+        let mut mesh = egui::Mesh::default();
+        for row in first..last {
+            let Some(line_no) = rows.get(row) else { continue };
+            let ls = ed.line_start(line_no);
+            let line = ed.line_text(line_no);
+            if line.trim().is_empty() {
+                continue;
+            }
+            let le = ls + line.len();
+            let y = map_rect.min.y + row as f32 * MAP_ROW - offset;
+            let mut si = spans.partition_point(|s| s.end <= ls);
+            while si < spans.len() && spans[si].start < le {
+                let sp = &spans[si];
+                si += 1;
+                let a = sp.start.max(ls) - ls;
+                let b = sp.end.min(le) - ls;
+                if a > 600 || !line.is_char_boundary(a) || !line.is_char_boundary(b) {
+                    break;
+                }
+                let c0 = display_col(line, line[..a].chars().count());
+                if c0 >= max_cols {
+                    break;
+                }
+                let c1 = display_col(line, line[..b].chars().count()).min(max_cols);
+                if line[a..b].trim().is_empty() {
+                    continue;
+                }
+                let r = Rect::from_min_max(Pos2::new(x0 + c0 as f32 * MAP_COL, y), Pos2::new(x0 + c1 as f32 * MAP_COL, y + MAP_ROW - 0.4));
+                mesh.add_colored_rect(r, pal.syntax(sp.class, sp.depth, cfg.rainbow).gamma_multiply(0.7));
+            }
+        }
+        mp.add(Shape::mesh(mesh));
+        // changed lines: a thin bar along the left edge of the overview
+        for m in cfg.git_marks {
+            let row = row_of_line(m.line);
+            if rows.get(row) != Some(m.line) {
+                continue;
+            }
+            let y = map_rect.min.y + row as f32 * MAP_ROW - offset;
+            if y >= map_rect.min.y - MAP_ROW && y <= map_rect.max.y {
+                mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.min.x + 2.0, y), Vec2::new(2.0, MAP_ROW.max(if m.kind == MarkKind::Deleted { 2.0 } else { MAP_ROW }))), CornerRadius::ZERO, mark_color(m.kind));
+            }
+        }
+        // the visible part of the file
+        let hot = resp.hovered() || resp.dragged();
+        let top = slider_top(state.scroll.y);
+        let fill = if pal.dark { Color32::from_white_alpha(if hot { 22 } else { 11 }) } else { Color32::from_black_alpha(if hot { 22 } else { 11 }) };
+        mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.min.x, top), Vec2::new(map_rect.width(), slider_h)), CornerRadius::ZERO, fill);
+    }
+
+    // ---------------------------------------------------------------- scrollbars
+    // the vertical lane doubles as an overview ruler of the whole file: changes left, problems and matches right
+    let vp = ui.painter_at(vbar);
+    let n_rows = rows.len().max(1) as f32;
+    let ruler_y = |line: usize| vbar.min.y + 4.0 + row_of_line(line) as f32 / n_rows * (vbar.height() - 8.0);
+    for m in cfg.git_marks {
+        vp.rect_filled(Rect::from_min_size(Pos2::new(vbar.min.x + 2.0, ruler_y(m.line)), Vec2::new(3.0, 3.0)), CornerRadius::ZERO, mark_color(m.kind));
+    }
     for &(fs, _) in cfg.find {
-        sp.rect_filled(Rect::from_min_size(Pos2::new(stripe.min.x + 3.0, to_y(fs)), Vec2::new(STRIPE_W - 6.0, 2.0)), CornerRadius::ZERO, pal.find_current);
+        vp.rect_filled(Rect::from_min_size(Pos2::new(vbar.max.x - 6.0, ruler_y(ed.line_of(fs.min(text_len)))), Vec2::new(4.0, 2.0)), CornerRadius::ZERO, pal.find_current);
     }
     for m in cfg.markers {
         let color = match m.sev {
@@ -515,96 +627,21 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
             Sev::Warning => pal.warning,
             Sev::Weak => pal.weak_warning,
         };
-        sp.rect_filled(Rect::from_min_size(Pos2::new(stripe.min.x + 3.0, to_y(m.start)), Vec2::new(STRIPE_W - 6.0, 3.0)), CornerRadius::same(1), color);
+        vp.rect_filled(Rect::from_min_size(Pos2::new(vbar.max.x - 6.0, ruler_y(ed.line_of(m.start.min(text_len)))), Vec2::new(4.0, 3.0)), CornerRadius::ZERO, color);
     }
-    // ---------------------------------------------------------------- code overview
-    if map_w > 0.0 {
-        let text_len = ed.text().len();
-        let mp = ui.painter_at(map_rect);
-        mp.rect_filled(map_rect.shrink2(Vec2::new(4.0, 6.0)), CornerRadius::same(12), pal.gutter_bg);
-        let n = rows.len().max(1);
-        let sampled = map_unit < 1.0;
-        let bars = if sampled { map_inner.height().floor() as usize } else { n };
-        let step = if sampled { 1.0 } else { map_unit };
-        let key: MapKey = (spans_rev, n, map_inner.height() as i32, map_inner.width() as i32, pal.plain.to_array());
-        if state.minimap.as_ref().is_none_or(|(k, _)| *k != key) {
-            let mut mesh = egui::Mesh::default();
-            let col_w = ((map_inner.width() - 4.0) / 100.0).max(0.4);
-            for i in 0..bars {
-                let row = if sampled { ((i as f32 / map_unit) as usize).min(n - 1) } else { i };
-                let Some(line_no) = rows.get(row) else { continue };
-                let ls = ed.line_start(line_no);
-                let line = ed.line_text(line_no);
-                if line.trim().is_empty() {
-                    continue;
-                }
-                let le = ls + line.len();
-                let y = i as f32 * step;
-                let h = if step >= 2.5 { step - 1.0 } else { step.max(1.0) };
-                let mut si = spans.partition_point(|s| s.end <= ls);
-                while si < spans.len() && spans[si].start < le {
-                    let s = &spans[si];
-                    si += 1;
-                    let a = s.start.max(ls) - ls;
-                    let b = s.end.min(le) - ls;
-                    if a > 400 || !line.is_char_boundary(a) || !line.is_char_boundary(b) {
-                        break;
-                    }
-                    let c0 = display_col(line, line[..a].chars().count());
-                    let c1 = display_col(line, line[..b].chars().count());
-                    if line[a..b].trim().is_empty() || c0 >= 100 {
-                        continue;
-                    }
-                    let c = pal.syntax(s.class, s.depth, cfg.rainbow).gamma_multiply(0.8);
-                    mesh.add_colored_rect(Rect::from_min_max(Pos2::new(c0 as f32 * col_w, y), Pos2::new((c1.min(100) as f32 * col_w).max(c0 as f32 * col_w + 1.0), y + h)), c);
-                }
-            }
-            state.minimap = Some((key, mesh));
-        }
-        if let Some((_, mesh)) = &state.minimap {
-            let mut m = mesh.clone();
-            m.translate(map_inner.min.to_vec2() + Vec2::new(2.0, 0.0));
-            mp.add(Shape::mesh(m));
-        }
-        let y_of = |row: usize| map_inner.min.y + row as f32 * map_unit;
-        // what changed: a tint across the row plus a solid bar on the left edge
-        for m in cfg.git_marks {
-            let row = row_of_line(m.line);
-            if rows.get(row) != Some(m.line) {
-                continue;
-            }
-            let y = y_of(row);
-            let color = match m.kind {
-                MarkKind::Added => pal.git_added,
-                MarkKind::Modified => pal.git_modified,
-                MarkKind::Deleted => pal.error,
-            };
-            let h = map_unit.max(2.0);
-            if m.kind != MarkKind::Deleted {
-                mp.rect_filled(Rect::from_min_size(Pos2::new(map_inner.min.x - 2.0, y), Vec2::new(map_inner.width() + 4.0, h)), CornerRadius::ZERO, color.gamma_multiply(0.22));
-            }
-            mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.min.x + 4.0, y), Vec2::new(3.0, h)), CornerRadius::same(1), color);
-        }
-        // problems and search matches on the right edge
-        for &(fs, _) in cfg.find {
-            let row = row_of_line(ed.line_of(fs.min(text_len)));
-            mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.max.x - 8.0, y_of(row)), Vec2::new(4.0, map_unit.max(2.0))), CornerRadius::same(1), pal.find_current);
-        }
-        for m in cfg.markers {
-            let row = row_of_line(ed.line_of(m.start.min(text_len)));
-            let color = match m.sev {
-                Sev::Error => pal.error,
-                Sev::Warning => pal.warning,
-                Sev::Weak => pal.weak_warning,
-            };
-            mp.rect_filled(Rect::from_min_size(Pos2::new(map_rect.max.x - 8.0, y_of(row)), Vec2::new(4.0, map_unit.max(2.5))), CornerRadius::same(1), color);
-        }
-        // the visible part of the file
-        let top = map_inner.min.y + (state.scroll.y / lh) * map_unit;
-        let vis = ((text_rect.height() / lh) * map_unit).max(14.0).min(map_inner.height());
-        let view = Rect::from_min_size(Pos2::new(map_rect.min.x + 4.0, top.min(map_inner.max.y - vis).max(map_inner.min.y)), Vec2::new(map_rect.width() - 8.0, vis));
-        let hovered = ui.rect_contains_pointer(map_rect);
-        mp.rect_filled(view, CornerRadius::same(6), if hovered { pal.hover.gamma_multiply(2.2) } else { pal.hover.gamma_multiply(1.5) });
+    let thumb = |resp: &egui::Response| {
+        let a = if resp.dragged() { 70 } else if resp.hovered() { 50 } else { 30 };
+        if pal.dark { Color32::from_white_alpha(a) } else { Color32::from_black_alpha(a) }
+    };
+    if max_scroll_y > 0.0 {
+        let f = (state.scroll.y / max_scroll_y).clamp(0.0, 1.0);
+        let t = Rect::from_min_size(Pos2::new(vbar.min.x + 4.0, vbar.min.y + 4.0 + f * (vbar.height() - 8.0 - vthumb_h).max(0.0)), Vec2::new(BAR_W - 8.0, (vthumb_h - 8.0).max(16.0)));
+        vp.rect_filled(t, CornerRadius::same(3), thumb(&vresp));
+    }
+    if max_scroll_x > 0.0 {
+        let f = (state.scroll.x / max_scroll_x).clamp(0.0, 1.0);
+        let t = Rect::from_min_size(Pos2::new(hbar.min.x + 4.0 + f * (hbar.width() - 8.0 - hthumb_w).max(0.0), hbar.min.y + 4.0), Vec2::new((hthumb_w - 8.0).max(16.0), BAR_W - 8.0));
+        ui.painter_at(hbar).rect_filled(t, CornerRadius::same(3), thumb(&hresp));
     }
     state.spans = Some((spans_rev, spans));
     state.regions = Some((regions_rev, regions));

@@ -72,6 +72,12 @@ def run_one(script_path):
         script = tmp / "script.json"
         script.write_text(text, encoding="utf-8")
         json.loads(text)  # validate
+        if "@long_file" in text:
+            # a long committed file, so the gutter, the overview and the scrollbar have something to show
+            forms = [f"(defun fn-{i} (x)\n  \"Step {i}.\"\n  (let ((y (* x {i})))\n    (format t \"~a~%\" (+ y {i}))))\n" for i in range(1, 121)]
+            (proj / "src" / "long.lisp").write_text("\n".join(forms), encoding="utf-8")
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "long file"], cwd=proj, capture_output=True, check=True)
         if "@branches" in text:
             # a history with branches, a merge and a tag, for the commit graph
             def g(*args):
