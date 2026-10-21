@@ -6,6 +6,7 @@ pub mod editor;
 pub mod exec;
 pub mod git;
 pub mod index;
+pub mod localvcs;
 pub mod search;
 pub mod settings;
 pub mod workspace;

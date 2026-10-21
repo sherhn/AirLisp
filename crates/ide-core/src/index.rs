@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use lisp_syntax::outline::{Definition, outline};
 use lisp_syntax::{Dialect, symbols};
@@ -15,9 +16,19 @@ pub struct IndexedSymbol {
     pub def: Definition,
 }
 
+/// Flattened, sorted view of the index (built lazily, cached until the next update).
+pub struct Flat {
+    /// Sorted by lowercase name.
+    pub symbols: Vec<IndexedSymbol>,
+    /// Lowercase full names, parallel to `symbols`.
+    pub lc: Vec<String>,
+    by_key: HashMap<String, Vec<usize>>,
+}
+
 #[derive(Default)]
 pub struct ProjectIndex {
     by_file: HashMap<PathBuf, Vec<Definition>>,
+    cache: Mutex<Option<Arc<Flat>>>,
 }
 
 impl ProjectIndex {
@@ -29,52 +40,93 @@ impl ProjectIndex {
         idx
     }
 
+    fn invalidate(&self) {
+        *self.cache.lock().unwrap() = None;
+    }
+
     pub fn update_file_from_disk(&mut self, path: &Path) {
         let Some(d) = Dialect::from_path(path) else { return };
+        match fs::metadata(path) {
+            Ok(m) if m.len() > 4 * 1024 * 1024 => return, // generated / data files are not worth indexing
+            _ => {}
+        }
         match fs::read_to_string(path) {
             Ok(text) => self.update_file(path, &text, d),
             Err(_) => {
-                self.by_file.remove(path);
+                if self.by_file.remove(path).is_some() {
+                    self.invalidate();
+                }
             }
         }
     }
 
     pub fn update_file(&mut self, path: &Path, text: &str, d: Dialect) {
         let defs = outline(text, d);
-        if defs.is_empty() {
-            self.by_file.remove(path);
-        } else {
-            self.by_file.insert(path.to_path_buf(), defs);
+        let changed = if defs.is_empty() { self.by_file.remove(path).is_some() } else { { self.by_file.insert(path.to_path_buf(), defs); true } };
+        if changed {
+            self.invalidate();
         }
     }
 
     pub fn remove_file(&mut self, path: &Path) {
-        self.by_file.remove(path);
+        if self.by_file.remove(path).is_some() {
+            self.invalidate();
+        }
     }
 
     pub fn symbol_count(&self) -> usize {
-        self.all().len()
+        self.by_file.values().flatten().filter(|d| !d.operator.eq_ignore_ascii_case("in-package")).count()
     }
 
-    pub fn all(&self) -> Vec<IndexedSymbol> {
-        let mut v: Vec<IndexedSymbol> = self
+    /// All definitions, sorted by name (cached; cheap to call repeatedly).
+    pub fn all(&self) -> Arc<Flat> {
+        let mut guard = self.cache.lock().unwrap();
+        if let Some(f) = &*guard {
+            return f.clone();
+        }
+        let mut v: Vec<(String, IndexedSymbol)> = self
             .by_file
             .iter()
-            .flat_map(|(p, ds)| ds.iter().filter(|d| !d.operator.eq_ignore_ascii_case("in-package")).map(|d| IndexedSymbol { path: p.clone(), def: d.clone() }))
+            .flat_map(|(p, ds)| ds.iter().filter(|d| !d.operator.eq_ignore_ascii_case("in-package")).map(|d| (d.name.to_lowercase(), IndexedSymbol { path: p.clone(), def: d.clone() })))
             .collect();
-        v.sort_by(|a, b| a.def.name.to_lowercase().cmp(&b.def.name.to_lowercase()).then(a.path.cmp(&b.path)).then(a.def.start.cmp(&b.def.start)));
-        v
+        v.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.path.cmp(&b.1.path)).then(a.1.def.start.cmp(&b.1.def.start)));
+        let mut lc = Vec::with_capacity(v.len());
+        let mut symbols = Vec::with_capacity(v.len());
+        let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
+        for (i, (l, sym)) in v.into_iter().enumerate() {
+            by_key.entry(normalize(sym.def.name.split(' ').next().unwrap_or(""))).or_default().push(i);
+            lc.push(l);
+            symbols.push(sym);
+        }
+        let flat = Arc::new(Flat { symbols, lc, by_key });
+        *guard = Some(flat.clone());
+        flat
     }
 
     /// Definitions of `name` (package prefixes and case are ignored, as in Lisp).
     pub fn find_definitions(&self, name: &str) -> Vec<IndexedSymbol> {
-        let want = normalize(name);
-        self.all().into_iter().filter(|s| normalize(s.def.name.split(' ').next().unwrap_or("")) == want).collect()
+        let flat = self.all();
+        flat.by_key.get(&normalize(name)).map(|ix| ix.iter().map(|&i| flat.symbols[i].clone()).collect()).unwrap_or_default()
+    }
+
+    /// Up to `limit` symbols whose lowercase name starts with `prefix_lc` (binary search on the sorted names).
+    pub fn with_prefix(&self, prefix_lc: &str, limit: usize) -> Vec<IndexedSymbol> {
+        let flat = self.all();
+        let start = flat.lc.partition_point(|n| n.as_str() < prefix_lc);
+        flat.lc[start..].iter().zip(&flat.symbols[start..]).take_while(|(n, _)| n.starts_with(prefix_lc)).take(limit).map(|(_, s)| s.clone()).collect()
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Vec<(IndexedSymbol, FuzzyMatch)> {
-        let all = self.all();
-        search::rank(query, &all, |s| s.def.name.clone(), limit).into_iter().map(|(i, m)| (all[i].clone(), m)).collect()
+        let flat = self.all();
+        let mut hits: Vec<(usize, FuzzyMatch)> = Vec::new();
+        for (i, s) in flat.symbols.iter().enumerate() {
+            if let Some(m) = search::fuzzy_match(query, &s.def.name) {
+                hits.push((i, m));
+            }
+        }
+        hits.sort_by(|a, b| b.1.score.cmp(&a.1.score).then(a.0.cmp(&b.0)));
+        hits.truncate(limit);
+        hits.into_iter().map(|(i, m)| (flat.symbols[i].clone(), m)).collect()
     }
 }
 

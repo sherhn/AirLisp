@@ -105,7 +105,8 @@ pub fn outline(src: &str, dialect: Dialect) -> Vec<Definition> {
 
 pub fn outline_parsed(src: &str, p: &Parsed) -> Vec<Definition> {
     let mut out = Vec::new();
-    let line_of = |off: usize| src[..off].bytes().filter(|&b| b == b'\n').count();
+    let starts = crate::indent::line_starts(src);
+    let line_of = |off: usize| starts.partition_point(|&s| s <= off) - 1;
     for d in p.top_level() {
         // `#+sbcl (defun ...)`, `'(...)`: the form is the list that closes the datum
         if p.tokens[d.last].kind != TokenKind::Close {
@@ -182,7 +183,9 @@ pub fn outline_parsed(src: &str, p: &Parsed) -> Vec<Definition> {
 
 /// Find the definition whose form contains `offset`.
 pub fn definition_at(defs: &[Definition], offset: usize) -> Option<&Definition> {
-    defs.iter().find(|d| d.start <= offset && offset <= d.end)
+    // top-level definitions are ordered and disjoint: binary search
+    let i = defs.partition_point(|d| d.end < offset);
+    defs.get(i).filter(|d| d.start <= offset)
 }
 
 #[cfg(test)]

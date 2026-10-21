@@ -24,6 +24,20 @@ pub fn fuzzy_match(query: &str, candidate: &str) -> Option<FuzzyMatch> {
     if q.is_empty() {
         return Some(FuzzyMatch { score: 0, positions: vec![] });
     }
+    // cheap rejection before the DP: the query must be a case-insensitive subsequence of the candidate
+    {
+        let mut qi = q.iter().flat_map(|ch| ch.to_lowercase()).peekable();
+        for ch in candidate.chars() {
+            if let Some(&want) = qi.peek()
+                && ch.to_lowercase().next() == Some(want)
+            {
+                qi.next();
+            }
+        }
+        if qi.peek().is_some() {
+            return None;
+        }
+    }
     let c: Vec<char> = candidate.chars().collect();
     if q.len() > c.len() {
         return None;
@@ -203,7 +217,7 @@ pub fn walk_files(root: &Path) -> impl Iterator<Item = PathBuf> {
         .require_git(false)
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !matches!(name.as_ref(), ".git" | ".idea" | "node_modules" | "target" | "fasl-cache" | ".DS_Store")
+            !matches!(name.as_ref(), ".git" | ".idea" | "node_modules" | "target" | "fasl-cache" | ".lispcraft" | ".DS_Store")
         })
         .build()
         .filter_map(Result::ok)

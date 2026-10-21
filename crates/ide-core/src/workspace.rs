@@ -195,3 +195,137 @@ mod tests {
         assert!(create_lisp_project(d.path(), "hello world").is_err(), "non-empty target");
     }
 }
+
+/// Answers "is this path ignored by .gitignore?" for the project tree, honouring nested `.gitignore`
+/// files and `.git/info/exclude`. Rules of deeper directories override those of their parents.
+pub struct IgnoreMatcher {
+    root: PathBuf,
+    by_dir: std::collections::HashMap<PathBuf, Option<ignore::gitignore::Gitignore>>,
+    exclude: Option<ignore::gitignore::Gitignore>,
+}
+
+impl IgnoreMatcher {
+    pub fn new(root: &Path) -> IgnoreMatcher {
+        let exclude_file = root.join(".git").join("info").join("exclude");
+        let exclude = exclude_file.is_file().then(|| {
+            let mut b = ignore::gitignore::GitignoreBuilder::new(root);
+            b.add(&exclude_file);
+            b.build().ok()
+        });
+        IgnoreMatcher { root: root.to_path_buf(), by_dir: Default::default(), exclude: exclude.flatten() }
+    }
+
+    /// Drop cached `.gitignore` files (after the user edited one).
+    pub fn reset(&mut self) {
+        let root = self.root.clone();
+        *self = IgnoreMatcher::new(&root);
+    }
+
+    fn gitignore_of(&mut self, dir: &Path) -> Option<&ignore::gitignore::Gitignore> {
+        self.by_dir
+            .entry(dir.to_path_buf())
+            .or_insert_with(|| {
+                let f = dir.join(".gitignore");
+                if !f.is_file() {
+                    return None;
+                }
+                let mut b = ignore::gitignore::GitignoreBuilder::new(dir);
+                b.add(&f);
+                b.build().ok()
+            })
+            .as_ref()
+    }
+
+    pub fn is_ignored(&mut self, path: &Path, is_dir: bool) -> bool {
+        let Ok(rel) = path.strip_prefix(&self.root) else { return false };
+        if rel.as_os_str().is_empty() {
+            return false;
+        }
+        let mut verdict: Option<bool> = None;
+        if let Some(g) = &self.exclude {
+            match g.matched_path_or_any_parents(path, is_dir) {
+                ignore::Match::Ignore(_) => verdict = Some(true),
+                ignore::Match::Whitelist(_) => verdict = Some(false),
+                ignore::Match::None => {}
+            }
+        }
+        // directories from the root down to the path's parent
+        let mut dirs: Vec<PathBuf> = vec![self.root.clone()];
+        let mut cur = self.root.clone();
+        let comps: Vec<_> = rel.components().collect();
+        for c in &comps[..comps.len().saturating_sub(1)] {
+            cur = cur.join(c);
+            dirs.push(cur.clone());
+        }
+        for d in dirs {
+            if let Some(g) = self.gitignore_of(&d) {
+                match g.matched_path_or_any_parents(path, is_dir) {
+                    ignore::Match::Ignore(_) => verdict = Some(true),
+                    ignore::Match::Whitelist(_) => verdict = Some(false),
+                    ignore::Match::None => {}
+                }
+            }
+        }
+        verdict.unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod ignore_tests {
+    use super::*;
+    use crate::testutil::TempDir;
+
+    #[test]
+    fn root_and_nested_gitignore_rules() {
+        let d = TempDir::new("ign");
+        fs::create_dir_all(d.path().join("src/sub")).unwrap();
+        fs::create_dir_all(d.path().join("node_modules/dep")).unwrap();
+        fs::write(d.path().join(".gitignore"), "node_modules/\n*.fasl\n/build\n").unwrap();
+        fs::write(d.path().join("src/.gitignore"), "*.tmp\n!keep.fasl\n").unwrap();
+        let mut m = IgnoreMatcher::new(d.path());
+        assert!(m.is_ignored(&d.path().join("node_modules"), true));
+        assert!(m.is_ignored(&d.path().join("node_modules/dep/x.js"), false), "children of ignored dirs");
+        assert!(m.is_ignored(&d.path().join("a.fasl"), false));
+        assert!(m.is_ignored(&d.path().join("src/sub/b.fasl"), false));
+        assert!(!m.is_ignored(&d.path().join("src/keep.fasl"), false), "nested whitelist wins");
+        assert!(m.is_ignored(&d.path().join("src/x.tmp"), false));
+        assert!(!m.is_ignored(&d.path().join("x.tmp"), false), "nested rule does not leak upward");
+        assert!(m.is_ignored(&d.path().join("build"), true));
+        assert!(!m.is_ignored(&d.path().join("src/build"), true), "anchored pattern");
+        assert!(!m.is_ignored(&d.path().join("src/main.lisp"), false));
+        assert!(!m.is_ignored(d.path(), true));
+    }
+
+    #[test]
+    fn git_info_exclude_and_reset() {
+        let d = TempDir::new("ign2");
+        fs::create_dir_all(d.path().join(".git/info")).unwrap();
+        fs::write(d.path().join(".git/info/exclude"), "/.lispcraft/\nsecret.txt\n").unwrap();
+        let mut m = IgnoreMatcher::new(d.path());
+        assert!(m.is_ignored(&d.path().join(".lispcraft"), true));
+        assert!(m.is_ignored(&d.path().join("secret.txt"), false));
+        assert!(!m.is_ignored(&d.path().join("a.txt"), false));
+        fs::write(d.path().join(".gitignore"), "a.txt\n").unwrap();
+        assert!(!m.is_ignored(&d.path().join("a.txt"), false), "cached until reset");
+        m.reset();
+        assert!(m.is_ignored(&d.path().join("a.txt"), false));
+    }
+
+    #[test]
+    fn project_walks_skip_ignored_files() {
+        let d = TempDir::new("ign3");
+        fs::create_dir_all(d.path().join("node_modules")).unwrap();
+        fs::create_dir_all(d.path().join("vendor")).unwrap();
+        fs::write(d.path().join(".gitignore"), "vendor/\n").unwrap();
+        fs::write(d.path().join("node_modules/a.lisp"), "(defun nm ())").unwrap();
+        fs::write(d.path().join("vendor/b.lisp"), "(defun v ())").unwrap();
+        fs::write(d.path().join("c.lisp"), "(defun c ())").unwrap();
+        let files = list_files(d.path(), 100);
+        let names: Vec<String> = files.iter().map(|f| relative(d.path(), f)).collect();
+        assert!(names.contains(&"c.lisp".to_string()) && names.contains(&".gitignore".to_string()), "{names:?}");
+        assert!(!names.iter().any(|n| n.contains("vendor") || n.contains("node_modules")), "{names:?}");
+        let idx = crate::index::ProjectIndex::build(d.path());
+        assert!(idx.find_definitions("v").is_empty() && idx.find_definitions("nm").is_empty());
+        assert_eq!(idx.find_definitions("c").len(), 1);
+    }
+}

@@ -98,6 +98,7 @@ pub struct Editor {
     revision: u64,
     saved_revision: u64,
     parsed: RefCell<Option<(u64, Rc<Parsed>)>>,
+    lines: RefCell<Option<(u64, Rc<Vec<usize>>)>>,
     sel_stack: Vec<(usize, usize)>,
     pub line_ending: LineEnding,
 }
@@ -117,6 +118,7 @@ impl Editor {
             revision: 0,
             saved_revision: 0,
             parsed: RefCell::new(None),
+            lines: RefCell::new(None),
             sel_stack: Vec::new(),
             line_ending,
         }
@@ -186,36 +188,40 @@ impl Editor {
 
     // ---------------------------------------------------------------- positions
 
+    /// Start offsets of all lines, cached per revision (all edits bump the revision).
+    fn line_index(&self) -> Rc<Vec<usize>> {
+        if let Some((rev, li)) = &*self.lines.borrow()
+            && *rev == self.revision
+        {
+            return li.clone();
+        }
+        let li = Rc::new(lisp_syntax::indent::line_starts(&self.text));
+        *self.lines.borrow_mut() = Some((self.revision, li.clone()));
+        li
+    }
+
     pub fn line_count(&self) -> usize {
-        self.text.bytes().filter(|&b| b == b'\n').count() + 1
+        self.line_index().len()
     }
 
     pub fn line_start_of(&self, offset: usize) -> usize {
-        self.text[..offset].rfind('\n').map_or(0, |i| i + 1)
+        let li = self.line_index();
+        li[li.partition_point(|&s| s <= offset) - 1]
     }
 
     pub fn line_end_of(&self, offset: usize) -> usize {
-        self.text[offset..].find('\n').map_or(self.text.len(), |i| offset + i)
+        let li = self.line_index();
+        let i = li.partition_point(|&s| s <= offset);
+        if i < li.len() { li[i] - 1 } else { self.text.len() }
     }
 
     pub fn line_of(&self, offset: usize) -> usize {
-        self.text[..offset].bytes().filter(|&b| b == b'\n').count()
+        let li = self.line_index();
+        li.partition_point(|&s| s <= offset) - 1
     }
 
     pub fn line_start(&self, line: usize) -> usize {
-        if line == 0 {
-            return 0;
-        }
-        let mut seen = 0;
-        for (i, b) in self.text.bytes().enumerate() {
-            if b == b'\n' {
-                seen += 1;
-                if seen == line {
-                    return i + 1;
-                }
-            }
-        }
-        self.text.len()
+        self.line_index().get(line).copied().unwrap_or(self.text.len())
     }
 
     pub fn line_text(&self, line: usize) -> &str {
