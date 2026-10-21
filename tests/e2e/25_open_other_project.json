@@ -1,0 +1,22 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+  {"op": "log", "value": "opening another project asks: this window / new window / cancel"},
+  {"op": "ask_open_project", "path": "${PROJ}/scripts"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_popup", "value": "open_project"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_ask.png"},
+  {"op": "key", "value": "Escape"},
+  {"op": "frames", "value": 2},
+  {"op": "assert_popup", "value": "none"},
+  {"op": "assert_project_file", "value": "src/nav.lisp"},
+  {"op": "ask_open_project", "path": "${PROJ}/scripts"},
+  {"op": "frames", "value": 3},
+  {"op": "key", "value": "Enter"},
+  {"op": "frames", "value": 3},
+  {"op": "wait", "what": "index"},
+  {"op": "assert_popup", "value": "none"},
+  {"op": "assert_project_file", "value": "demo.als"},
+  {"op": "assert_project_file", "value": "src/nav.lisp", "present": false},
+  {"op": "quit"}
+]

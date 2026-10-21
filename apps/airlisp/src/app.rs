@@ -185,6 +185,25 @@ impl App {
 
     // ------------------------------------------------------------------ project
 
+    /// Open a project the way the user asked for it: with another project already open, ask whether it goes into
+    /// this window or a new one (as JetBrains IDEs do).
+    pub fn request_open_project(&mut self, path: &Path) {
+        if self.project.as_ref().is_some_and(|p| p.root != path) {
+            self.popup = Popup::OpenProject { path: path.to_path_buf() };
+        } else {
+            self.open_project(path);
+        }
+    }
+
+    /// Start another AirLisp process for `path`.
+    pub fn open_project_in_new_window(&mut self, path: &Path) {
+        let spawned = std::env::current_exe().and_then(|exe| std::process::Command::new(exe).arg(path).spawn());
+        match spawned {
+            Ok(_) => self.toast(i18n::fmt("Opened {} in a new window", &[&path.display()]), Sev::Weak),
+            Err(e) => self.toast(i18n::fmt("Cannot start a new window: {}", &[&e]), Sev::Error),
+        }
+    }
+
     pub fn open_project(&mut self, path: &Path) {
         if !path.is_dir() {
             self.toast(i18n::fmt("{} is not a folder", &[&path.display()]), Sev::Error);

@@ -170,6 +170,11 @@ impl App {
                 }
             }
             "close_project" => self.close_project(),
+            "ask_open_project" => {
+                if let Some(p) = path {
+                    self.request_open_project(&p);
+                }
+            }
             "clone_set" => {
                 if let Popup::Clone(c) = &mut self.popup {
                     if let Some(u) = step["value"].as_str() {
@@ -337,6 +342,7 @@ impl App {
                     Popup::Clone(_) => "clone",
                     Popup::LocalView(_) => "local_view",
                     Popup::About => "about",
+                    Popup::OpenProject { .. } => "open_project",
                     Popup::Info { .. } => "info",
                     Popup::Confirm { .. } => "confirm",
                     Popup::RenameFile { .. } => "rename_file",

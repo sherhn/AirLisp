@@ -282,7 +282,7 @@ impl App {
             "file.clone" => self.open_clone_dialog(),
             "file.open_project" => {
                 if let Some(dir) = rfd::FileDialog::new().set_title(tr("Open Project")).pick_folder() {
-                    self.open_project(&dir);
+                    self.request_open_project(&dir);
                 }
             }
             "file.open_file" => {
@@ -296,7 +296,7 @@ impl App {
             }
             "file.reopen_last" => {
                 if let Some(p) = self.settings.recent_projects.first().cloned() {
-                    self.open_project(std::path::Path::new(&p));
+                    self.request_open_project(std::path::Path::new(&p));
                 }
             }
             "file.save" | "file.save_all" => self.save_all(),

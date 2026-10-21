@@ -228,7 +228,7 @@ impl App {
         let dropped: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
         for p in dropped {
             if p.is_dir() {
-                self.open_project(&p);
+                self.request_open_project(&p);
             } else {
                 self.open_file(&p);
             }

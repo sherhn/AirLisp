@@ -416,6 +416,8 @@ pub enum Popup {
     Clone(Box<CloneState>),
     LocalView(Box<LocalViewState>),
     About,
+    /// Opening another project while one is open: this window, a new window or cancel.
+    OpenProject { path: PathBuf },
     Info { title: String, text: String },
     Confirm { kind: ConfirmKind, message: String },
     NewBranch { input: String, just_opened: bool },

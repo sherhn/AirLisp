@@ -56,7 +56,7 @@ impl App {
                     for p in recent {
                         if ui.button(&p).clicked() {
                             ui.close();
-                            self.open_project(std::path::Path::new(&p));
+                            self.request_open_project(std::path::Path::new(&p));
                         }
                     }
                 });
@@ -147,7 +147,7 @@ impl App {
                 }
             });
             if let Some(p) = open_other {
-                self.open_project(std::path::Path::new(&p));
+                self.request_open_project(std::path::Path::new(&p));
             }
             if let Some(c) = cmd {
                 self.run_command(ctx, c);

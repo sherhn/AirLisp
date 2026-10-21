@@ -221,7 +221,7 @@ impl App {
             self.settings.clone_dir = st.parent.trim().to_string();
             self.save_settings();
             self.toast(i18n::fmt("Cloned into {}", &[&dest.display()]), Sev::Weak);
-            self.open_project(&dest);
+            self.request_open_project(&dest);
             self.editor_focus = true;
             return;
         }

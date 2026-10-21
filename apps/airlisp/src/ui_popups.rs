@@ -455,7 +455,7 @@ impl App {
                 } else if ok {
                     match ide_core::workspace::create_lisp_project(std::path::Path::new(&parent), &name) {
                         Ok(root) => {
-                            self.open_project(&root);
+                            self.request_open_project(&root);
                             let main = root.join("src").join("main.lisp");
                             self.open_file(&main);
                         }
@@ -565,6 +565,48 @@ impl App {
                     self.editor_focus = true;
                 } else {
                     self.popup = Popup::About;
+                }
+            }
+            Popup::OpenProject { path } => {
+                enum Choice {
+                    This,
+                    New,
+                    Cancel,
+                }
+                let mut choice = if esc { Some(Choice::Cancel) } else { None };
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string_lossy().into_owned());
+                egui::Area::new(egui::Id::new("open_project_ask")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+                    let r = popup_frame(&pal).show(ui, |ui| {
+                        ui.set_width(440.0);
+                        ui.label(RichText::new(tr("Open Project")).font(fonts::semibold(16.0)));
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(i18n::fmt("Open {} in the current window or in a new one?", &[&name])).color(pal.text));
+                        ui.label(RichText::new(path.display().to_string()).color(pal.text_dim).size(12.0));
+                        ui.add_space(16.0);
+                        ui.horizontal(|ui| {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if widgets::primary_button(ui, &pal, tr("This Window")).clicked() {
+                                    choice = Some(Choice::This);
+                                }
+                                if widgets::secondary_button(ui, &pal, tr("New Window")).clicked() {
+                                    choice = Some(Choice::New);
+                                }
+                                if widgets::secondary_button(ui, &pal, tr("Cancel")).clicked() {
+                                    choice = Some(Choice::Cancel);
+                                }
+                            });
+                        });
+                    });
+                    widgets::sheen(ui.painter(), r.response.rect, &pal);
+                });
+                if choice.is_none() && ctx.input(|i| i.key_pressed(Key::Enter)) {
+                    choice = Some(Choice::This);
+                }
+                match choice {
+                    Some(Choice::This) => self.open_project(&path),
+                    Some(Choice::New) => self.open_project_in_new_window(&path),
+                    Some(Choice::Cancel) => self.editor_focus = true,
+                    None => self.popup = Popup::OpenProject { path },
                 }
             }
             Popup::Confirm { kind, message } => {
@@ -887,7 +929,7 @@ impl App {
             }
         });
         if let Some(p) = open {
-            self.open_project(&p);
+            self.request_open_project(&p);
         }
     }
 }
