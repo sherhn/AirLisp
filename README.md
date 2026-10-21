@@ -35,6 +35,9 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
   dimmed, excluded from search and indexing), cached outline and line index, background search and git status.
 * **Terminal, folding, run configurations** - a built-in terminal, code folding of forms (Ctrl+-/Ctrl+=),
   load/test ASDF systems from the run configuration picker.
+* **Branch graph** - the Git log draws all branches as coloured lanes with merges and branch/tag labels.
+* **Code overview** - a minimap next to the scrollbar shows the whole file with changed lines, problems and search hits; click or drag to scroll.
+* **Projects** - opening a project while another is open asks: this window or a new window.
 * **Get from Version Control** - File > Get from Version Control (or the welcome screen): paste a GitHub URL or `owner/repo`,
   pick a folder, optional branch / shallow clone, live progress; the repository is cloned and opened as a project.
 * **Works out of the box** - the distribution (`python tools/package.py`) bundles SBCL (public domain/BSD, license included),
