@@ -26,6 +26,7 @@ pub struct Doc {
     pub git_marks_rev: u64,
     /// Folded forms, identified by (text of the form's first line, occurrence index).
     pub folds: std::collections::HashSet<(String, usize)>,
+    pub outline_cache: Option<(u64, Vec<lisp_syntax::outline::Definition>)>,
 }
 
 fn mtime(p: &Path) -> Option<SystemTime> {
@@ -50,6 +51,7 @@ impl Doc {
             git_marks: vec![],
             git_marks_rev: u64::MAX,
             folds: Default::default(),
+            outline_cache: None,
         })
     }
 
@@ -67,7 +69,18 @@ impl Doc {
             git_marks: vec![],
             git_marks_rev: u64::MAX,
             folds: Default::default(),
+            outline_cache: None,
         }
+    }
+
+    /// Top-level definitions, cached per revision (parsing a big file every frame would freeze the UI).
+    pub fn defs(&mut self) -> &[lisp_syntax::outline::Definition] {
+        let rev = self.ed.revision();
+        if self.outline_cache.as_ref().is_none_or(|(r, _)| *r != rev) {
+            let p = self.ed.parsed();
+            self.outline_cache = Some((rev, lisp_syntax::outline::outline_parsed(self.ed.text(), &p)));
+        }
+        &self.outline_cache.as_ref().expect("just filled").1
     }
 
     pub fn name(&self) -> String {

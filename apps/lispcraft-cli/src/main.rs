@@ -28,6 +28,7 @@ COMMANDS:
   exec <file> <cmd-id>...   apply editor commands to a file and print the result (see 'commands')
   commands                  list all registered commands with their shortcuts
   new-project <dir> <name>  scaffold an ASDF project
+  index <dir>               build the project symbol index and report timings
   which                     show the detected Lisp implementation
   help                      this text
 ";
@@ -58,6 +59,25 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     match cmd.as_str() {
         "help" | "--help" | "-h" => {
             print!("{USAGE}");
+        }
+        "index" => {
+            let dir = rest.first().ok_or("usage: index <dir>")?;
+            let t = std::time::Instant::now();
+            let files = ide_core::workspace::list_files(Path::new(dir), usize::MAX);
+            println!("walk: {} files in {:?}", files.len(), t.elapsed());
+            let (mut read_t, mut outline_t, mut n) = (std::time::Duration::ZERO, std::time::Duration::ZERO, 0usize);
+            for f in files.iter().filter(|f| Dialect::from_path(f).is_some()).take(3000) {
+                let t0 = std::time::Instant::now();
+                let text = std::fs::read_to_string(f).unwrap_or_default();
+                read_t += t0.elapsed();
+                let t1 = std::time::Instant::now();
+                n += outline(&text, Dialect::CommonLisp).len();
+                outline_t += t1.elapsed();
+            }
+            println!("3000 files: read {read_t:?}, outline {outline_t:?} ({n} defs)");
+            let t = std::time::Instant::now();
+            let idx = ide_core::index::ProjectIndex::build(Path::new(dir));
+            println!("index: {} symbols in {:?}", idx.symbol_count(), t.elapsed());
         }
         "which" => {
             let i = lisp()?;

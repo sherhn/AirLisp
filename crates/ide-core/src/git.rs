@@ -67,7 +67,8 @@ fn run_in(dir: &Path, args: &[&str]) -> Result<String, String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
+        // no console window, below-normal priority so a big `git status` cannot starve the IDE
+        cmd.creation_flags(0x0800_0000 | 0x0000_4000);
     }
     let out = cmd.output().map_err(|e| format!("cannot run git: {e}"))?;
     if out.status.success() {
@@ -98,6 +99,17 @@ pub fn init(dir: &Path) -> Result<Repo, String> {
 }
 
 impl Repo {
+    /// A `.git` entry exists but may be broken (half-deleted, corrupt); ask git itself.
+    pub fn is_valid(&self) -> bool {
+        // git may silently use a parent repository when our `.git` is unusable: require the same top level
+        let Ok(top) = self.run(&["rev-parse", "--show-toplevel"]) else { return false };
+        let norm = |p: &Path| {
+            let c = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+            c.to_string_lossy().trim_start_matches(r"\\?\").replace('\\', "/").to_lowercase()
+        };
+        norm(Path::new(top.trim())) == norm(&self.root)
+    }
+
     fn run(&self, args: &[&str]) -> Result<String, String> {
         run_in(&self.root, args)
     }
@@ -116,7 +128,8 @@ impl Repo {
     }
 
     pub fn status(&self) -> Vec<Change> {
-        let Ok(out) = self.run(&["status", "--porcelain=v1", "-z", "--untracked-files=all"]) else { return vec![] };
+        // `normal` collapses wholly untracked directories into one `dir/` entry; `all` takes minutes on big trees
+        let Ok(out) = self.run(&["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=normal"]) else { return vec![] };
         let mut v = Vec::new();
         let mut parts = out.split('\0').filter(|s| !s.is_empty());
         while let Some(rec) = parts.next() {
@@ -231,7 +244,8 @@ impl Repo {
     /// Discard local changes to a tracked file; untracked files are deleted.
     pub fn rollback(&self, change: &Change) -> Result<(), String> {
         if change.kind == ChangeKind::Untracked {
-            return std::fs::remove_file(self.root.join(&change.path)).map_err(|e| e.to_string());
+            let p = self.root.join(change.path.trim_end_matches('/'));
+            return if p.is_dir() { std::fs::remove_dir_all(p) } else { std::fs::remove_file(p) }.map_err(|e| e.to_string());
         }
         if change.staged {
             self.unstage(std::slice::from_ref(&change.path))?;
@@ -366,5 +380,25 @@ mod tests {
         std::fs::write(d.path().join("a"), "x").unwrap();
         r.commit("c", &["a".into()]).unwrap();
         assert!(r.push().is_err());
+    }
+}
+
+#[cfg(test)]
+mod validity_tests {
+    use super::*;
+    use crate::testutil::TempDir;
+
+    #[test]
+    fn broken_dot_git_is_not_a_repository() {
+        if !git_available() {
+            return;
+        }
+        let d = TempDir::new("gitbroken");
+        std::fs::create_dir_all(d.path().join(".git")).unwrap();
+        let r = find_repo(d.path()).expect("a .git entry is found");
+        assert!(!r.is_valid(), "an empty .git directory is not a usable repository");
+        let good_dir = TempDir::new("gitok");
+        let ok = init(good_dir.path()).unwrap();
+        assert!(ok.is_valid());
     }
 }

@@ -7,6 +7,8 @@ use std::sync::mpsc::Receiver;
 use ide_core::diff::DiffLine;
 use ide_core::git::{Branch, Change, Commit, Repo};
 use ide_core::index::ProjectIndex;
+use ide_core::localvcs::LocalVcs;
+use ide_core::workspace::IgnoreMatcher;
 use ide_core::search::FileHit;
 use ide_core::workspace::Entry;
 use lisp_runtime::{ReplSession, RunHandle};
@@ -33,6 +35,7 @@ pub enum BottomTool {
 pub enum GitTab {
     Changes,
     Log,
+    Local,
 }
 
 pub struct GitSnapshot {
@@ -41,6 +44,7 @@ pub struct GitSnapshot {
     pub changes: Vec<Change>,
     pub branches: Vec<Branch>,
     pub log: Vec<Commit>,
+    pub truncated: bool,
 }
 
 pub struct GitState {
@@ -62,6 +66,9 @@ pub struct GitState {
     pub kinds: HashMap<PathBuf, ide_core::git::ChangeKind>,
     pub dirty_dirs: HashSet<PathBuf>,
     pub available: bool,
+    /// Local commits (checkpoints kept outside git).
+    pub local: Option<LocalVcs>,
+    pub changes_truncated: bool,
 }
 
 impl Default for GitState {
@@ -84,17 +91,35 @@ impl Default for GitState {
             kinds: HashMap::new(),
             dirty_dirs: HashSet::new(),
             available: true,
+            local: None,
+            changes_truncated: false,
         }
     }
 }
 
+#[derive(Clone)]
+pub struct TreeRow {
+    pub path: PathBuf,
+    pub depth: usize,
+    pub is_dir: bool,
+    pub expanded: bool,
+    pub name: String,
+    pub ignored: bool,
+}
+
 pub struct Project {
+    /// Bumped whenever the visible tree may have changed (expand/collapse, refresh).
+    pub tree_ver: u64,
+    pub tree_cache: Option<(u64, Vec<TreeRow>)>,
+    pub ignore: IgnoreMatcher,
     pub root: PathBuf,
     pub name: String,
     pub expanded: HashSet<PathBuf>,
     pub selected: Option<PathBuf>,
     pub dir_cache: HashMap<PathBuf, Vec<Entry>>,
     pub files: Vec<PathBuf>,
+    /// Project-relative paths parallel to `files` (computed once, used by Go to File).
+    pub files_rel: Vec<String>,
     pub index: ProjectIndex,
     pub index_rx: Option<Receiver<(ProjectIndex, Vec<PathBuf>)>>,
     pub branch: Option<String>,
@@ -272,6 +297,8 @@ pub enum ConfirmKind {
     Delete(PathBuf),
     Reload(usize),
     Rollback(String),
+    RestoreLocal(u64),
+    DeleteLocal(u64),
 }
 
 pub enum Popup {
@@ -289,6 +316,7 @@ pub enum Popup {
     Commit { just_opened: bool },
     Diff { title: String, lines: Vec<DiffLine>, scroll_to: Option<usize> },
     NewBranch { input: String, just_opened: bool },
+    LocalCommit { input: String, just_opened: bool },
     RenameFile { path: PathBuf, input: String, just_opened: bool },
 }
 

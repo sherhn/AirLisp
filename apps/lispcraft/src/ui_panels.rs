@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Color32, CornerRadius, Key, Margin, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use ide_core::git::ChangeKind;
+use ide_core::localvcs::Base;
 use lisp_syntax::outline::{SymbolKind, definition_at, outline};
 
 use crate::app::App;
@@ -12,14 +13,6 @@ use crate::fonts;
 use crate::icons::{self, Icon};
 use crate::state::*;
 use crate::widgets::{self, PANEL_HEADER_H, ROW_H};
-
-struct TreeRow {
-    path: PathBuf,
-    depth: usize,
-    is_dir: bool,
-    expanded: bool,
-    name: String,
-}
 
 fn kind_color(app: &App, k: SymbolKind) -> Color32 {
     let p = &app.pal;
@@ -70,14 +63,25 @@ impl App {
 
     // ------------------------------------------------------------------ project tree
 
-    fn collect_tree_rows(&mut self) -> Vec<TreeRow> {
-        let Some(root) = self.project.as_ref().map(|p| p.root.clone()) else { return vec![] };
+    /// Rows of the project tree. They are cached until something changes (expand/collapse, refresh, save),
+    /// because listing and ignore-matching a big project every frame would freeze the UI.
+    fn take_tree_rows(&mut self) -> Vec<TreeRow> {
+        let Some(p) = self.project.as_mut() else { return vec![] };
+        if let Some((ver, rows)) = p.tree_cache.take()
+            && ver == p.tree_ver
+        {
+            return rows;
+        }
+        let root = p.root.clone();
         fn walk(app: &mut App, dir: PathBuf, depth: usize, rows: &mut Vec<TreeRow>) {
             let entries = app.dir_entries(&dir);
             for e in entries {
-                let expanded = e.is_dir && app.project.as_ref().is_some_and(|p| p.expanded.contains(&e.path));
-                rows.push(TreeRow { path: e.path.clone(), depth, is_dir: e.is_dir, expanded, name: e.name.clone() });
-                if expanded {
+                let (expanded, ignored) = match app.project.as_mut() {
+                    Some(p) => (e.is_dir && p.expanded.contains(&e.path), p.ignore.is_ignored(&e.path, e.is_dir)),
+                    None => (false, false),
+                };
+                rows.push(TreeRow { path: e.path.clone(), depth, is_dir: e.is_dir, expanded, name: e.name.clone(), ignored });
+                if expanded && !ignored {
                     walk(app, e.path, depth + 1, rows);
                 }
             }
@@ -85,11 +89,17 @@ impl App {
         let mut rows = Vec::new();
         let name = self.project.as_ref().map(|p| p.name.clone()).unwrap_or_default();
         let expanded = self.project.as_ref().is_some_and(|p| p.expanded.contains(&root));
-        rows.push(TreeRow { path: root.clone(), depth: 0, is_dir: true, expanded, name });
+        rows.push(TreeRow { path: root.clone(), depth: 0, is_dir: true, expanded, name, ignored: false });
         if expanded {
             walk(self, root, 1, &mut rows);
         }
         rows
+    }
+
+    fn put_tree_rows(&mut self, rows: Vec<TreeRow>) {
+        if let Some(p) = self.project.as_mut() {
+            p.tree_cache = Some((p.tree_ver, rows));
+        }
     }
 
     pub fn draw_project_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -113,7 +123,7 @@ impl App {
             });
             return;
         }
-        let rows = self.collect_tree_rows();
+        let rows = self.take_tree_rows();
         let mut toggle: Option<PathBuf> = None;
         let mut open: Option<PathBuf> = None;
         let mut select: Option<PathBuf> = None;
@@ -121,8 +131,9 @@ impl App {
         let selected = self.project.as_ref().and_then(|p| p.selected.clone());
         let active_path = self.doc().and_then(|d| d.path.clone());
         let font = fonts::ui(13.5);
-        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
-            for row in &rows {
+        egui::ScrollArea::both().auto_shrink([false, false]).show_rows(ui, ROW_H, rows.len(), |ui, range| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for row in &rows[range] {
                 let w = ui.available_width().max(220.0);
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW_H), Sense::click());
                 let is_sel = selected.as_ref() == Some(&row.path);
@@ -132,16 +143,18 @@ impl App {
                     icons::paint(ui.painter(), Rect::from_min_size(Pos2::new(x, r.center().y - 6.0), Vec2::splat(12.0)), if row.expanded { Icon::ChevronDown } else { Icon::ChevronRight }, pal.text_dim);
                 }
                 let ir = Rect::from_min_size(Pos2::new(x + 18.0, r.center().y - 8.0), Vec2::splat(16.0));
-                let kind = self.git.kinds.get(&row.path).copied();
+                let kind = self.git_change_of(&row.path);
                 if row.is_dir {
-                    icons::paint(ui.painter(), ir, if row.expanded { Icon::FolderOpen } else { Icon::Folder }, pal.builtin.gamma_multiply(0.85));
+                    icons::paint(ui.painter(), ir, if row.expanded { Icon::FolderOpen } else { Icon::Folder }, if row.ignored { pal.text_dim.gamma_multiply(0.7) } else { pal.builtin.gamma_multiply(0.85) });
                 } else if lisp_syntax::dialect::is_lisp_file(&row.path) {
-                    icons::paint(ui.painter(), ir, Icon::Lisp, pal.keyword_form);
+                    icons::paint(ui.painter(), ir, Icon::Lisp, if row.ignored { pal.text_dim.gamma_multiply(0.7) } else { pal.keyword_form });
                 } else {
                     icons::paint(ui.painter(), ir, Icon::File, pal.text_dim);
                 }
                 let dirty_dir = row.is_dir && self.git.dirty_dirs.contains(&row.path) && row.depth > 0;
-                let color = if let Some(k) = kind {
+                let color = if row.ignored {
+                    pal.text_dim.gamma_multiply(0.7)
+                } else if let Some(k) = kind {
                     self.git_color(k)
                 } else if dirty_dir {
                     pal.git_modified
@@ -210,6 +223,7 @@ impl App {
                 });
             }
         });
+        self.put_tree_rows(rows);
         if let Some(p) = select
             && let Some(proj) = self.project.as_mut()
         {
@@ -217,9 +231,11 @@ impl App {
         }
         if let Some(p) = toggle
             && let Some(proj) = self.project.as_mut()
-            && !proj.expanded.remove(&p)
         {
-            proj.expanded.insert(p);
+            if !proj.expanded.remove(&p) {
+                proj.expanded.insert(p);
+            }
+            proj.tree_ver += 1;
         }
         if let Some(p) = open {
             self.open_file(&p);
@@ -257,21 +273,26 @@ impl App {
     pub fn draw_structure_panel(&mut self, ui: &mut egui::Ui) {
         let pal = self.pal;
         self.panel_header(ui, "Structure");
-        let Some(d) = self.doc() else {
+        if self.doc().is_none() {
             ui.add_space(12.0);
             ui.label(RichText::new("   No file is open").color(pal.text_dim));
             return;
+        }
+        // take the cached outline out of the document while drawing (no clone of a possibly huge list)
+        let (defs, caret) = {
+            let d = self.docs.get_mut(self.active).expect("checked above");
+            d.defs();
+            (d.outline_cache.take().map(|c| c.1).unwrap_or_default(), d.ed.caret())
         };
-        let defs = outline(d.ed.text(), d.ed.dialect());
-        let caret = d.ed.caret();
         let current = definition_at(&defs, caret).map(|x| x.start);
         let mut goto: Option<usize> = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            if defs.is_empty() {
-                ui.add_space(8.0);
-                ui.label(RichText::new("   Nothing to show").color(pal.text_dim));
-            }
-            for def in &defs {
+        if defs.is_empty() {
+            ui.add_space(8.0);
+            ui.label(RichText::new("   Nothing to show").color(pal.text_dim));
+        }
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, ROW_H, defs.len(), |ui, range| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for def in &defs[range] {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
                 widgets::row_background(ui, &pal, r, current == Some(def.start), resp.hovered());
                 let c = kind_color(self, def.kind);
@@ -284,6 +305,10 @@ impl App {
                 }
             }
         });
+        if let Some(d) = self.docs.get_mut(self.active) {
+            let rev = d.ed.revision();
+            d.outline_cache = Some((rev, defs));
+        }
         if let Some(o) = goto
             && let Some(d) = self.doc_mut()
         {
@@ -679,6 +704,10 @@ impl App {
 
     fn draw_find_results(&mut self, ui: &mut egui::Ui) {
         let pal = self.pal;
+        if self.find_results.hits.is_empty() && self.find_rx.is_some() {
+            self.empty_state(ui, Icon::Search, pal.accent, "Searching the project...");
+            return;
+        }
         if self.find_results.hits.is_empty() {
             self.empty_state(ui, Icon::Search, pal.text_dim, "No results. Ctrl+Shift+F searches the project, Alt+F7 finds usages.");
             return;
@@ -745,25 +774,18 @@ impl App {
 
     fn draw_git(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let pal = self.pal;
-        if !self.git.available {
-            self.empty_state(ui, Icon::Warning, pal.warning, "Git was not found on this machine. Install git to use version control.");
+        if self.project.is_none() {
+            self.empty_state(ui, Icon::Branch, pal.text_dim, "Open a project to use version control");
             return;
         }
-        if self.git.repo.is_none() {
-            self.empty_state(ui, Icon::Branch, pal.text_dim, "This project is not under version control");
-            ui.add_space(10.0);
-            ui.vertical_centered(|ui| {
-                if self.project.is_some() && widgets::primary_button(ui, &pal, "Create Git Repository").clicked() {
-                    self.run_command(ctx, "git.init");
-                }
-            });
-            return;
-        }
-        // sub tabs
         ui.add_space(8.0);
+        let mut commit_local = false;
+        let mut set_base: Option<Base> = None;
         ui.horizontal(|ui| {
             ui.add_space(12.0);
-            for (t, label) in [(GitTab::Changes, format!("Changes ({})", self.git.changes.len())), (GitTab::Log, "Log".to_string())] {
+            let local_n = self.git.local.as_ref().map_or(0, |l| l.commits().len());
+            let tabs = [(GitTab::Changes, format!("Changes ({})", self.git.changes.len())), (GitTab::Log, "Log".to_string()), (GitTab::Local, format!("Local ({local_n})"))];
+            for (t, label) in tabs {
                 let active = self.git.tab == t;
                 let g = ui.painter().layout_no_wrap(label.clone(), fonts::ui(13.0), pal.text);
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 24.0, 28.0), Sense::click());
@@ -777,11 +799,43 @@ impl App {
                     self.git.tab = t;
                 }
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(14.0);
+                if widgets::secondary_button(ui, &pal, "Local Commit").clicked() {
+                    commit_local = true;
+                }
+                let label = format!("Compare with: {}", crate::ui_chrome::elide(&self.base_label(), 34));
+                let resp = widgets::Pill::new(&label).icon(Icon::History, pal.text_dim).chevron().bordered().height(30.0).show(ui, &pal);
+                let commits: Vec<_> = self.git.local.as_ref().map(|l| l.commits().iter().rev().map(|c| (c.id, c.message.clone())).collect()).unwrap_or_default();
+                egui::Popup::menu(&resp).width(300.0).show(|ui| {
+                    if ui.button("HEAD (git)").clicked() {
+                        set_base = Some(Base::Head);
+                        ui.close();
+                    }
+                    if !commits.is_empty() {
+                        ui.separator();
+                        ui.label(RichText::new("Local commits").color(pal.text_dim).size(11.5));
+                    }
+                    for (id, msg) in commits {
+                        if ui.button(format!("#{id}  {}", crate::ui_chrome::elide(&msg, 36))).clicked() {
+                            set_base = Some(Base::Local(id));
+                            ui.close();
+                        }
+                    }
+                });
+            });
         });
         ui.add_space(6.0);
+        if commit_local {
+            self.popup = Popup::LocalCommit { input: String::new(), just_opened: true };
+        }
+        if let Some(b) = set_base {
+            self.local_set_base(b);
+        }
         match self.git.tab {
             GitTab::Changes => self.draw_git_changes(ui, ctx),
             GitTab::Log => self.draw_git_log(ui),
+            GitTab::Local => self.draw_local_commits(ui),
         }
     }
 
@@ -797,7 +851,22 @@ impl App {
 
     fn draw_git_changes(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let pal = self.pal;
-        let changes = self.git.changes.clone();
+        if self.git.repo.is_none() && !self.base_is_local() {
+            self.empty_state(ui, Icon::Branch, pal.text_dim, "This project is not a Git repository. Local commits work without git.");
+            ui.add_space(12.0);
+            ui.vertical_centered(|ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space((ui.available_width() / 2.0 - 190.0).max(0.0));
+                    if self.git.available && widgets::primary_button(ui, &pal, "Create Git Repository").clicked() {
+                        self.run_command(ctx, "git.init");
+                    }
+                    if widgets::secondary_button(ui, &pal, "Make a Local Commit").clicked() {
+                        self.popup = Popup::LocalCommit { input: String::new(), just_opened: true };
+                    }
+                });
+            });
+            return;
+        }
         let full_w = ui.available_width();
         let list_w = (full_w * 0.62).max(240.0);
         let mut toggle: Option<String> = None;
@@ -805,21 +874,28 @@ impl App {
         let mut open: Option<String> = None;
         let mut rollback: Option<String> = None;
         let mut stage: Option<(String, bool)> = None;
+        let changes = std::mem::take(&mut self.git.changes);
         ui.horizontal_top(|ui| {
             ui.allocate_ui(Vec2::new(list_w, ui.available_height()), |ui| {
                 if changes.is_empty() {
-                    self.empty_state(ui, Icon::Check, pal.ok, "No local changes");
+                    let msg = if self.base_is_local() { format!("No changes since {}", self.base_label()) } else { "No local changes".to_string() };
+                    self.empty_state(ui, Icon::Check, pal.ok, &msg);
                     return;
                 }
-                egui::ScrollArea::vertical().id_salt("git_changes").auto_shrink([false, false]).show(ui, |ui| {
-                    for c in &changes {
+                if self.git.changes_truncated {
+                    ui.label(RichText::new(format!("   Showing the first {} changes only", changes.len())).color(pal.warning).size(12.0));
+                }
+                egui::ScrollArea::vertical().id_salt("git_changes").auto_shrink([false, false]).show_rows(ui, ROW_H, changes.len(), |ui, range| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    for c in &changes[range] {
                         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
                         widgets::row_background(ui, &pal, r, false, resp.hovered());
                         let cb = Rect::from_min_size(Pos2::new(r.min.x + 14.0, r.center().y - 8.0), Vec2::splat(16.0));
                         self.checkbox(ui, cb, self.git.checked.contains(&c.path));
                         let col = self.git_color(c.kind);
-                        let (name, dir) = match c.path.rsplit_once('/') {
-                            Some((d, n)) => (n.to_string(), d.to_string()),
+                        let shown = c.path.trim_end_matches('/');
+                        let (name, dir) = match shown.rsplit_once('/') {
+                            Some((d, n)) => (format!("{n}{}", if c.path.ends_with('/') { "/" } else { "" }), d.to_string()),
                             None => (c.path.clone(), String::new()),
                         };
                         let br = Rect::from_min_size(Pos2::new(r.min.x + 40.0, r.center().y - 9.0), Vec2::splat(18.0));
@@ -852,7 +928,7 @@ impl App {
                                 open = Some(c.path.clone());
                                 ui.close();
                             }
-                            if ui.button(if c.staged { "Unstage" } else { "Stage" }).clicked() {
+                            if self.git.repo.is_some() && !self.base_is_local() && ui.button(if c.staged { "Unstage" } else { "Stage" }).clicked() {
                                 stage = Some((c.path.clone(), !c.staged));
                                 ui.close();
                             }
@@ -865,7 +941,6 @@ impl App {
                     }
                 });
             });
-            // commit pane
             ui.add_space(8.0);
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width() - 16.0);
@@ -881,18 +956,28 @@ impl App {
                 self.git.commit_msg = msg;
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    let can = sel > 0 && !self.git.commit_msg.trim().is_empty();
+                    let can = sel > 0 && !self.git.commit_msg.trim().is_empty() && self.git.repo.is_some();
                     ui.add_enabled_ui(can, |ui| {
                         if widgets::primary_button(ui, &pal, &format!("Commit ({sel})")).clicked() {
                             self.git_commit_selected();
                         }
                     });
-                    if widgets::secondary_button(ui, &pal, "Push").clicked() {
+                    if widgets::secondary_button(ui, &pal, "Local").clicked() {
+                        let m = self.git.commit_msg.clone();
+                        if self.local_commit(&m) {
+                            self.git.commit_msg.clear();
+                        }
+                    }
+                    if self.git.repo.is_some() && widgets::secondary_button(ui, &pal, "Push").clicked() {
                         self.run_command(ctx, "git.push");
                     }
                 });
             });
         });
+        // the list may have been refreshed while drawing; only put ours back if nothing new arrived
+        if self.git.changes.is_empty() {
+            self.git.changes = changes;
+        }
         if let Some(p) = toggle
             && !self.git.checked.remove(&p)
         {
@@ -902,9 +987,9 @@ impl App {
             self.git_show_diff(&p);
         }
         if let Some(p) = open
-            && let Some(r) = &self.git.repo
+            && let Some(root) = self.git.repo.as_ref().map(|r| r.root.clone()).or_else(|| self.project_root().map(PathBuf::from))
         {
-            let abs = r.root.join(&p);
+            let abs = root.join(&p);
             self.open_file(&abs);
         }
         if let Some(p) = rollback {
@@ -917,14 +1002,20 @@ impl App {
 
     fn draw_git_log(&mut self, ui: &mut egui::Ui) {
         let pal = self.pal;
+        if self.git.repo.is_none() {
+            self.empty_state(ui, Icon::History, pal.text_dim, "No git history: this project is not a Git repository");
+            return;
+        }
         if self.git.log.is_empty() {
             self.empty_state(ui, Icon::History, pal.text_dim, "No commits yet");
             return;
         }
         let log = self.git.log.clone();
         let mut show: Option<usize> = None;
-        egui::ScrollArea::vertical().id_salt("git_log").auto_shrink([false, false]).show(ui, |ui| {
-            for (i, c) in log.iter().enumerate() {
+        egui::ScrollArea::vertical().id_salt("git_log").auto_shrink([false, false]).show_rows(ui, ROW_H + 2.0, log.len(), |ui, range| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for i in range {
+                let c = &log[i];
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H + 2.0), Sense::click());
                 widgets::row_background(ui, &pal, r, false, resp.hovered());
                 let cy = r.center().y;
@@ -941,6 +1032,76 @@ impl App {
         });
         if let Some(i) = show {
             self.git_show_commit(i);
+        }
+    }
+
+    fn draw_local_commits(&mut self, ui: &mut egui::Ui) {
+        let pal = self.pal;
+        let commits: Vec<ide_core::localvcs::LocalCommit> = self.git.local.as_ref().map(|l| l.commits().iter().rev().cloned().collect()).unwrap_or_default();
+        let base = self.git.local.as_ref().map(|l| l.base().clone()).unwrap_or_default();
+        if commits.is_empty() {
+            self.empty_state(ui, Icon::History, pal.text_dim, "No local commits yet");
+            ui.add_space(6.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("A local commit is a snapshot kept outside of git (in .lispcraft/).\nAfter making one, diffs and change markers start from it - handy when you\ncannot commit upstream, e.g. working on someone else's repository.").color(pal.text_dim).size(12.0));
+            });
+            return;
+        }
+        let mut use_base: Option<Base> = None;
+        let mut restore: Option<u64> = None;
+        let mut delete: Option<u64> = None;
+        let mut show_changes: Option<u64> = None;
+        egui::ScrollArea::vertical().id_salt("local_commits").auto_shrink([false, false]).show_rows(ui, ROW_H + 8.0, commits.len(), |ui, range| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for i in range {
+                let c = &commits[i];
+                let is_base = base == Base::Local(c.id);
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H + 8.0), Sense::click());
+                widgets::row_background(ui, &pal, r, is_base, resp.hovered());
+                let cy = r.center().y;
+                let br = Rect::from_min_size(Pos2::new(r.min.x + 14.0, cy - 11.0), Vec2::new(40.0, 22.0));
+                ui.painter().rect_filled(br, CornerRadius::same(6), pal.accent.gamma_multiply(0.22));
+                ui.painter().text(br.center(), egui::Align2::CENTER_CENTER, format!("#{}", c.id), fonts::semibold(12.0), pal.accent);
+                let g = ui.painter().layout_no_wrap(c.message.clone(), fonts::semibold(13.5), pal.text);
+                let gw = g.size().x.min(r.width() * 0.5);
+                ui.painter().galley(Pos2::new(r.min.x + 66.0, cy - g.size().y / 2.0), g, pal.text);
+                let meta = format!("{}   -   {} file(s)", ide_core::localvcs::ago(c.time), c.files.len());
+                ui.painter().text(Pos2::new(r.min.x + 80.0 + gw, cy), egui::Align2::LEFT_CENTER, meta, fonts::ui(12.0), pal.text_dim);
+                if is_base {
+                    ui.painter().text(Pos2::new(r.max.x - 16.0, cy), egui::Align2::RIGHT_CENTER, "BASE", fonts::semibold(11.0), pal.accent);
+                }
+                if resp.double_clicked() {
+                    use_base = Some(Base::Local(c.id));
+                }
+                resp.context_menu(|ui| {
+                    if ui.button("Compare working tree with this commit").clicked() {
+                        use_base = Some(Base::Local(c.id));
+                        show_changes = Some(c.id);
+                        ui.close();
+                    }
+                    if ui.button("Restore working tree to this commit...").clicked() {
+                        restore = Some(c.id);
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("Delete").clicked() {
+                        delete = Some(c.id);
+                        ui.close();
+                    }
+                });
+            }
+        });
+        if let Some(b) = use_base {
+            self.local_set_base(b);
+        }
+        if show_changes.is_some() {
+            self.git.tab = GitTab::Changes;
+        }
+        if let Some(id) = restore {
+            self.popup = Popup::Confirm { kind: ConfirmKind::RestoreLocal(id), message: format!("Restore the working tree to local commit #{id}? Files changed since then are overwritten, files created since then are deleted.") };
+        }
+        if let Some(id) = delete {
+            self.popup = Popup::Confirm { kind: ConfirmKind::DeleteLocal(id), message: format!("Delete local commit #{id}?") };
         }
     }
 }

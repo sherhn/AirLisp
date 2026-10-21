@@ -68,6 +68,7 @@ impl App {
             "completion" => self.completion.active && !self.completion.items.is_empty(),
             "git_ready" => self.git.repo.is_some() && self.git.head.is_some() && self.git.rx.is_none(),
             "git_dirty" => self.git.rx.is_none() && !self.git.changes.is_empty(),
+            "git_settled" => self.git.rx.is_none(),
             "git_clean" => self.git.rx.is_none() && self.git.changes.is_empty(),
             "term_idle" => self.term.handle.is_none(),
             "term_contains" => {
@@ -134,6 +135,7 @@ impl App {
                 s.done = true;
                 let ok = s.failures.is_empty();
                 println!("SCRIPT {}: {} steps, {} failure(s)", if ok { "OK" } else { "FAILED" }, s.total, s.failures.len());
+                println!("max frame time: {:.0} ms", self.max_frame_ms);
                 for f in &s.failures {
                     println!("  - {f}");
                 }
@@ -160,6 +162,13 @@ impl App {
                 }
             }
             "close_project" => self.close_project(),
+            "expand" => {
+                if let (Some(p), Some(proj)) = (path, self.project.as_mut()) {
+                    proj.expanded.insert(p);
+                    proj.tree_ver += 1;
+                }
+            }
+            "find_in_files" => self.run_find_in_files(&sval, ide_core::search::TextQuery::default()),
             "key" => {
                 if let Some((key, mods)) = input::parse_key_combo(&sval) {
                     let s = self.script.as_mut().unwrap();
@@ -303,6 +312,7 @@ impl App {
                     Popup::Commit { .. } => "commit",
                     Popup::Diff { .. } => "diff",
                     Popup::NewBranch { .. } => "new_branch",
+                    Popup::LocalCommit { .. } => "local_commit",
                 };
                 if name != sval {
                     self.fail(format!("assert_popup: expected {sval}, got {name}"));
@@ -380,6 +390,41 @@ impl App {
                     self.fail(format!("assert_git_changes: expected {want}, got {names:?}"));
                 }
             }
+            "assert_base" => {
+                let want_local = sval == "local";
+                if self.base_is_local() != want_local {
+                    let l = self.base_label();
+                    self.fail(format!("assert_base: expected {sval}, got {l}"));
+                }
+            }
+            "assert_local_commits" => {
+                let want = step["value"].as_u64().unwrap_or(0) as usize;
+                let n = self.git.local.as_ref().map_or(0, |l| l.commits().len());
+                if n != want {
+                    self.fail(format!("assert_local_commits: expected {want}, got {n}"));
+                }
+            }
+            "assert_ignored" => {
+                let want = step["ignored"].as_bool().unwrap_or(true);
+                let is_dir = step["dir"].as_bool().unwrap_or(false);
+                let got = match self.project.as_mut() {
+                    Some(p) => {
+                        let abs = p.root.join(&sval);
+                        p.ignore.is_ignored(&abs, is_dir)
+                    }
+                    None => false,
+                };
+                if got != want {
+                    self.fail(format!("assert_ignored: {sval} expected ignored={want}, got {got}"));
+                }
+            }
+            "assert_project_file" => {
+                let want = step["present"].as_bool().unwrap_or(true);
+                let got = self.project.as_ref().is_some_and(|p| p.files_rel.iter().any(|f| *f == sval));
+                if got != want {
+                    self.fail(format!("assert_project_file: {sval} expected present={want}, got {got}"));
+                }
+            }
             "assert_branch" => {
                 let got = self.git.branch.clone().unwrap_or_default();
                 if got != sval {
@@ -395,7 +440,11 @@ impl App {
             "assert_marks" => {
                 let min = step["min"].as_u64().unwrap_or(1) as usize;
                 let n = self.docs.get_mut(self.active).map_or(0, |d| App::git_marks(d).len());
-                if n < min {
+                if let Some(exact) = step["exact"].as_u64() {
+                    if n != exact as usize {
+                        self.fail(format!("assert_marks: expected exactly {exact} gutter marks, got {n}"));
+                    }
+                } else if n < min {
                     self.fail(format!("assert_marks: expected >= {min} gutter marks, got {n}"));
                 }
             }

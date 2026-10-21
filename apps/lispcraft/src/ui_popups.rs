@@ -404,6 +404,29 @@ impl App {
                     self.popup = Popup::RenameFile { path, input, just_opened };
                 }
             }
+            Popup::LocalCommit { mut input, mut just_opened } => {
+                let (mut ok, mut cancel) = (enter, esc);
+                self.dialog_card(ctx, "local_commit", "Local Commit", 480.0, |ui| {
+                    let r = self.text_field(ui, &mut input, "Message (optional)");
+                    if just_opened {
+                        r.request_focus();
+                        just_opened = false;
+                    }
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("Saves a snapshot of your changes outside of git (in .lispcraft/, invisible to git).\nDiffs and change markers start from it afterwards.").color(self.pal.text_dim).size(12.0));
+                    let (o, c) = self.ok_cancel(ui, "Create");
+                    ok |= o;
+                    cancel |= c;
+                });
+                if cancel {
+                    self.editor_focus = true;
+                } else if ok {
+                    self.local_commit(&input);
+                    self.editor_focus = true;
+                } else {
+                    self.popup = Popup::LocalCommit { input, just_opened };
+                }
+            }
             Popup::NewBranch { mut input, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
                 self.dialog_card(ctx, "new_branch", "New Branch", 420.0, |ui| {
@@ -524,6 +547,8 @@ impl App {
         if ctrl_enter {
             ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter));
         }
+        let mut local = false;
+        let base_label = self.base_label();
         let (mut commit, mut commit_push, mut cancel) = (ctrl_enter && !self.git.checked.is_empty() && !self.git.commit_msg.trim().is_empty(), false, esc);
         let changes = self.git.changes.clone();
         let branch = self.git.branch.clone().unwrap_or_default();
@@ -541,7 +566,7 @@ impl App {
                     });
                 });
                 ui.add_space(12.0);
-                widgets::caption(ui, &pal, &format!("CHANGES  {}", changes.len()));
+                widgets::caption(ui, &pal, &format!("CHANGES  {}      COMPARED WITH  {}", changes.len(), base_label.to_uppercase()));
                 ui.add_space(4.0);
                 egui::Frame::new().fill(pal.input_bg).corner_radius(widgets::radius()).inner_margin(Margin::symmetric(4, 4)).show(ui, |ui| {
                     egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
@@ -587,7 +612,7 @@ impl App {
                 ui.add_space(14.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let can = !self.git.checked.is_empty() && !self.git.commit_msg.trim().is_empty();
+                        let can = !self.git.checked.is_empty() && !self.git.commit_msg.trim().is_empty() && self.git.repo.is_some();
                         ui.add_enabled_ui(can, |ui| {
                             if widgets::primary_button(ui, &pal, "Commit").clicked() {
                                 commit = true;
@@ -598,6 +623,9 @@ impl App {
                         });
                         if widgets::secondary_button(ui, &pal, "Cancel").clicked() {
                             cancel = true;
+                        }
+                        if widgets::secondary_button(ui, &pal, "Local Commit").on_hover_text("Snapshot outside of git; the diff starts from it").clicked() {
+                            local = true;
                         }
                     });
                 });
@@ -610,6 +638,17 @@ impl App {
         }
         if let Some(p) = diff {
             self.git_show_diff(&p);
+            return;
+        }
+        if local {
+            let m = self.git.commit_msg.clone();
+            if self.local_commit(&m) {
+                self.git.commit_msg.clear();
+                self.popup = Popup::None;
+                self.editor_focus = true;
+            } else {
+                self.popup = Popup::Commit { just_opened };
+            }
             return;
         }
         if commit || commit_push {
@@ -779,9 +818,11 @@ impl App {
                                 ConfirmKind::CloseDoc(_) => "Save",
                                 ConfirmKind::Delete(_) => "Delete",
                                 ConfirmKind::Rollback(_) => "Rollback",
+                                ConfirmKind::RestoreLocal(_) => "Restore",
+                                ConfirmKind::DeleteLocal(_) => "Delete",
                                 _ => "Yes",
                             };
-                            let danger = matches!(kind, ConfirmKind::Delete(_) | ConfirmKind::Rollback(_));
+                            let danger = matches!(kind, ConfirmKind::Delete(_) | ConfirmKind::Rollback(_) | ConfirmKind::RestoreLocal(_) | ConfirmKind::DeleteLocal(_));
                             let galley = ui.painter().layout_no_wrap(main_label.to_string(), fonts::semibold(13.5), Color32::WHITE);
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(galley.size().x + 32.0, 34.0), Sense::click());
                             let fill = if danger { pal.error } else { pal.accent };
@@ -833,15 +874,9 @@ impl App {
                                     let _ = d.reload();
                                 }
                             }
-                            ConfirmKind::Rollback(rel) => {
-                                if let Some(change) = self.git.changes.iter().find(|c| c.path == rel).cloned() {
-                                    self.git_run_sync("Rollback", move |r| r.rollback(&change).map(|_| String::new()));
-                                    for d in self.docs.iter_mut() {
-                                        d.git_base = None;
-                                        d.sync_with_disk();
-                                    }
-                                }
-                            }
+                            ConfirmKind::Rollback(rel) => self.rollback_file(&rel),
+                            ConfirmKind::RestoreLocal(id) => self.local_restore(id),
+                            ConfirmKind::DeleteLocal(id) => self.local_delete(id),
                         }
                     }
                 }

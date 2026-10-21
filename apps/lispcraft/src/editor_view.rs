@@ -34,6 +34,7 @@ pub struct ViewState {
     pub last_input_time: f64,
     spans: Option<(u64, Vec<Span>)>,
     regions: Option<(u64, Vec<Region>)>,
+    max_cols: Option<(u64, usize)>,
     pub last_viewport_lines: usize,
     pub last_text_rect: Option<Rect>,
 }
@@ -135,8 +136,8 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
             folds.remove(&key);
         }
     }
-    let rows = folding::visible_lines(total_lines, &regions, folds);
-    let row_of_line = |line: usize| rows.partition_point(|&l| l < line).min(rows.len().saturating_sub(1));
+    let rows = folding::rows(total_lines, &regions, folds);
+    let row_of_line = |line: usize| rows.row_of_line(line);
     let region_start: std::collections::HashMap<usize, &Region> = regions.iter().map(|r| (r.start_line, r)).collect();
 
     let full = ui.available_rect_before_wrap();
@@ -147,7 +148,14 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let mut out = ViewOut { text_rect: Some(text_rect), ..Default::default() };
 
     let text = ed.text();
-    let max_cols = text.lines().map(|l| display_col(l, l.chars().count())).max().unwrap_or(0);
+    let max_cols = match state.max_cols {
+        Some((r, c)) if r == rev => c,
+        _ => {
+            let c = text.lines().map(|l| display_col(l, l.chars().count())).max().unwrap_or(0);
+            state.max_cols = Some((rev, c));
+            c
+        }
+    };
     let content_w = (max_cols as f32 + 10.0) * cw + STRIPE_W + TEXT_PAD;
     let content_h = rows.len() as f32 * lh + text_rect.height() * 0.45;
 
@@ -178,7 +186,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
 
         let mut caret_rect = None;
         for row in first..last {
-            let line_no = rows[row];
+            let line_no = rows.at(row);
             let ls = ed.line_start(line_no);
             let line = ed.line_text(line_no);
             let le = ls + line.len();
@@ -322,7 +330,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         let pos_to_offset = |p: Pos2, ed: &Editor| -> usize {
             let rel = p - origin;
             let row = ((p.y - rect.min.y) / lh).floor().clamp(0.0, (rows.len().max(1) - 1) as f32) as usize;
-            let line_no = rows.get(row).copied().unwrap_or(0);
+            let line_no = rows.get(row).unwrap_or(0);
             let line = ed.line_text(line_no);
             let disp = (rel.x / cw + 0.5).floor().max(0.0) as usize;
             ed.offset_of(line_no, char_col_from_display(line, disp))
@@ -400,7 +408,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let last = ((((state.scroll.y + gutter_rect.height()) / lh).ceil()) as usize + 1).min(rows.len());
     let num_right = gutter_rect.max.x - FOLD_W - MARK_W + 2.0;
     for row in first..last {
-        let line_no = rows[row];
+        let line_no = rows.at(row);
         let y = gutter_rect.min.y + row as f32 * lh - state.scroll.y;
         if cfg.line_numbers {
             let color = if line_no == caret_line { pal.line_number_active } else { pal.line_number };
@@ -416,7 +424,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     }
     for m in cfg.git_marks {
         let row = row_of_line(m.line);
-        if rows.get(row) != Some(&m.line) {
+        if rows.get(row) != Some(m.line) {
             continue;
         }
         let y = gutter_rect.min.y + row as f32 * lh - state.scroll.y;
@@ -441,7 +449,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         && p.x > gutter_rect.max.x - FOLD_W - 2.0
     {
         let row = (((p.y - gutter_rect.min.y + state.scroll.y) / lh).floor().max(0.0)) as usize;
-        if let Some(&line) = rows.get(row)
+        if let Some(line) = rows.get(row)
             && let Some(r) = region_start.get(&line)
         {
             out.fold_toggle = Some(r.key.clone());

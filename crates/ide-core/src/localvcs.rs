@@ -150,9 +150,24 @@ impl LocalVcs {
     /// Paths that may differ from the base: everything git reports plus (without git) the working tree.
     fn candidate_paths(&self, repo: Option<&Repo>) -> BTreeSet<String> {
         match repo {
-            Some(r) => r.status().into_iter().map(|c| c.path).collect(),
+            Some(r) => self.expand_dirs(r.status().into_iter().map(|c| c.path).collect()),
             None => crate::workspace::list_files(&self.root, MAX_FILES_NO_GIT).into_iter().map(|p| crate::workspace::relative(&self.root, &p)).collect(),
         }
+    }
+
+    /// `git status` reports wholly untracked directories as `dir/`; list their files (bounded).
+    fn expand_dirs(&self, paths: Vec<String>) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        for p in paths {
+            if let Some(dir) = p.strip_suffix('/') {
+                for f in crate::workspace::list_files(&self.root.join(dir), MAX_FILES_NO_GIT).into_iter().take(MAX_FILES_NO_GIT) {
+                    out.insert(crate::workspace::relative(&self.root, &f));
+                }
+            } else {
+                out.insert(p);
+            }
+        }
+        out
     }
 
     /// Content of `rel` at git HEAD (None without git / untracked).

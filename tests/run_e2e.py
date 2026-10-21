@@ -11,6 +11,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import stat
 import tempfile
 import time
 
@@ -27,6 +28,8 @@ FIXTURE_FILES = {
     "src/nav.lisp": "(defun alpha (x)\n  (* x 2))\n\n(defun beta (y)\n  (alpha y))\n",
     "src/messy.lisp": "(defun f (x)\n(let ((a 1)\n(b 2))\n(+ a b x)))\n",
     "src/bad.lisp": "(defun broken (x\n  (+ x 1)\n",
+    "src/skip.fasl": "compiled",
+    "build/out.txt": "generated",
 }
 
 
@@ -40,10 +43,12 @@ def make_fixture(tmp):
         raise SystemExit(f"cannot create fixture: {r.stderr}")
     proj = tmp / "demo"
     for rel, content in FIXTURE_FILES.items():
+        (proj / rel).parent.mkdir(parents=True, exist_ok=True)
         (proj / rel).write_text(content, encoding="utf-8")
     # every fixture is a git repository with one commit, so Git features have something to show
     def git(*args):
         subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=proj, capture_output=True, check=True)
+    (proj / ".gitignore").write_text("*.fasl\n/build/\n", encoding="utf-8")
     git("init", "-q", "-b", "main")
     git("config", "user.email", "e2e@example.com")
     git("config", "user.name", "E2E")
@@ -63,6 +68,12 @@ def run_one(script_path):
         script = tmp / "script.json"
         script.write_text(text, encoding="utf-8")
         json.loads(text)  # validate
+        if "@no_git" in text:
+            def _unlock(func, path, exc):
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+
+            shutil.rmtree(proj / ".git", onexc=_unlock)
         env = dict(os.environ, LISPCRAFT_CONFIG_DIR=str(tmp / "cfg"))
         t0 = time.time()
         try:
@@ -73,7 +84,10 @@ def run_one(script_path):
         ok = p.returncode == 0 and "SCRIPT OK" in out
         return name, ok, out, time.time() - t0
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        if os.environ.get("KEEP"):
+            print(f"  kept fixture: {tmp}")
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main():

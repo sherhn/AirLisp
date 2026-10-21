@@ -93,7 +93,7 @@ impl App {
             });
             ui.menu_button("Refactor", |ui| self.menu_items(ui, ctx, &["refactor.rename"]));
             ui.menu_button("Git", |ui| {
-                self.menu_items(ui, ctx, &["git.commit", "git.push", "git.pull", "-", "git.branches", "git.new_branch", "-", "git.diff", "git.rollback", "git.stage_file", "-", "git.refresh", "git.init"]);
+                self.menu_items(ui, ctx, &["git.commit", "git.local_commit", "git.reset_base", "git.push", "git.pull", "-", "git.branches", "git.new_branch", "-", "git.diff", "git.rollback", "git.stage_file", "-", "git.refresh", "git.init"]);
             });
             ui.menu_button("Run", |ui| self.menu_items(ui, ctx, &["run.run_file", "run.compile_file", "run.stop", "-", "run.load_system", "run.test_system"]));
             ui.menu_button("Tools", |ui| self.menu_items(ui, ctx, &["repl.eval", "repl.eval_last", "repl.load_file", "repl.restart", "repl.clear", "repl.focus", "-", "view.terminal"]));
@@ -152,6 +152,13 @@ impl App {
                 self.run_command(ctx, c);
             }
 
+            // ---- local commit works for every project, git or not
+            if self.project.is_some() && self.git.branch.is_none() {
+                ui.add_space(4.0);
+                if widgets::icon_button(ui, &pal, Icon::History, 34.0, pal.text_dim, "Local Commit (Ctrl+Alt+K)").clicked() {
+                    self.run_command(ctx, "git.local_commit");
+                }
+            }
             // ---- branch widget and VCS actions
             if let Some(branch) = self.git.branch.clone() {
                 let resp = Pill::new(&branch).icon(Icon::Branch, pal.text_dim).chevron().height(34.0).show(ui, &pal);
@@ -201,6 +208,9 @@ impl App {
                     }
                     if r.clicked() {
                         self.run_command(ctx, "git.commit");
+                    }
+                    if widgets::icon_button(ui, &pal, Icon::History, 34.0, if self.base_is_local() { pal.accent } else { pal.text_dim }, "Local Commit (Ctrl+Alt+K)").clicked() {
+                        self.run_command(ctx, "git.local_commit");
                     }
                     if widgets::icon_button(ui, &pal, Icon::ArrowUp, 34.0, pal.text_dim, "Push (Ctrl+Shift+K)").clicked() {
                         self.run_command(ctx, "git.push");
@@ -423,6 +433,10 @@ impl App {
 
     pub fn draw_breadcrumbs(&mut self, ui: &mut egui::Ui) {
         let pal = self.pal;
+        let def_label = self.docs.get_mut(self.active).and_then(|d| {
+            let caret = d.ed.caret();
+            lisp_syntax::outline::definition_at(d.defs(), caret).map(|def| format!("{} {}", def.operator, def.name))
+        });
         let Some(d) = self.doc() else { return };
         let mut parts: Vec<String> = Vec::new();
         match (&d.path, self.project_root()) {
@@ -433,9 +447,8 @@ impl App {
             (Some(p), _) => parts.push(p.to_string_lossy().into_owned()),
             (None, _) => parts.push(d.name()),
         }
-        let defs = lisp_syntax::outline::outline(d.ed.text(), d.ed.dialect());
-        if let Some(def) = lisp_syntax::outline::definition_at(&defs, d.ed.caret()) {
-            parts.push(format!("{} {}", def.operator, def.name));
+        if let Some(l) = def_label {
+            parts.push(l);
         }
         let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), CRUMB_H), Sense::hover());
         ui.painter().rect_filled(r, CornerRadius::ZERO, pal.editor_bg);
@@ -464,6 +477,10 @@ impl App {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
                 icons::paint(ui.painter(), r, Icon::Branch, pal.text_dim);
                 ui.label(RichText::new(b).color(pal.text_dim).font(fonts::ui(12.0)));
+                ui.add_space(8.0);
+            }
+            if self.base_is_local() {
+                ui.label(RichText::new(format!("diff vs {}", self.base_label())).color(pal.accent).font(fonts::ui(12.0)));
                 ui.add_space(8.0);
             }
             if !self.status.is_empty() {

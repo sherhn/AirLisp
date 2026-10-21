@@ -544,6 +544,14 @@ impl App {
                     self.toast("This project is not a Git repository (Git > Create Git Repository)", Sev::Weak);
                 }
             }
+            "git.local_commit" => {
+                if self.project.is_some() {
+                    self.popup = Popup::LocalCommit { input: String::new(), just_opened: true };
+                } else {
+                    self.toast("Open a project first", Sev::Weak);
+                }
+            }
+            "git.reset_base" => self.local_set_base(ide_core::localvcs::Base::Head),
             "git.push" => {
                 self.save_all();
                 self.git_run_async("Push", |r| r.push());
@@ -621,9 +629,17 @@ impl App {
 
     pub fn run_find_dialog(&mut self, query: &str, replace: Option<&str>, case_sensitive: bool, whole_word: bool) {
         let opts = TextQuery { case_sensitive, whole_word };
-        self.run_find_in_files(query, opts);
-        if let Some(rep) = replace {
-            let hits = self.find_results.hits.clone();
+        let Some(rep) = replace else {
+            self.run_find_in_files(query, opts);
+            return;
+        };
+        {
+            let Some(root) = self.project_root().map(std::path::Path::to_path_buf) else {
+                self.toast("Open a project first", Sev::Weak);
+                return;
+            };
+            self.save_all();
+            let hits = ide_core::search::find_in_files(&root, query, opts, 20_000);
             let mut files: Vec<std::path::PathBuf> = hits.iter().map(|h| h.path.clone()).collect();
             files.sort();
             files.dedup();

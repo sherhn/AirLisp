@@ -9,7 +9,7 @@ use ide_core::commands::{self, Keymap};
 use ide_core::index::{self, ProjectIndex};
 use ide_core::search::{self, TextQuery};
 use ide_core::settings::Settings;
-use ide_core::workspace;
+use ide_core::workspace::{self, IgnoreMatcher};
 use lisp_runtime::compiler;
 use lisp_runtime::{Implementation, ReplEvent, ReplSession, RunEvent, discover, runner};
 use lisp_syntax::outline::outline;
@@ -62,6 +62,10 @@ pub struct App {
     pub term: crate::app_terminal::TerminalState,
     pub run_config: crate::app_run::RunConfig,
     pub script: Option<crate::script::Script>,
+    /// Longest frame seen so far (ms) and the worst offender's frame number, for freeze diagnostics.
+    pub max_frame_ms: f32,
+    pub find_rx: Option<mpsc::Receiver<(String, Vec<search::FileHit>)>>,
+    pub frame_no: u64,
     /// Double-Shift detection: (shift currently down, another key was used meanwhile, time of the last clean tap).
     pub shift_tap: (bool, bool, f64),
 }
@@ -113,6 +117,9 @@ impl App {
             term: Default::default(),
             run_config: Default::default(),
             script: None,
+            max_frame_ms: 0.0,
+            find_rx: None,
+            frame_no: 0,
             shift_tap: (false, false, -10.0),
             settings,
         }
@@ -172,7 +179,7 @@ impl App {
         let mut expanded = HashSet::new();
         expanded.insert(root.clone());
         let branch = workspace::git_branch(&root);
-        self.project = Some(Project { root: root.clone(), name, expanded, selected: None, dir_cache: HashMap::new(), files: vec![], index: ProjectIndex::default(), index_rx: Some(rx), branch });
+        self.project = Some(Project { tree_ver: 0, tree_cache: None, ignore: IgnoreMatcher::new(&root), root: root.clone(), name, expanded, selected: None, dir_cache: HashMap::new(), files: vec![], files_rel: vec![], index: ProjectIndex::default(), index_rx: Some(rx), branch });
         self.settings.push_recent_project(&root.to_string_lossy());
         self.left_tool = Some(LeftTool::Project);
         self.compiler_problems.clear();
@@ -198,8 +205,10 @@ impl App {
             && let Ok((idx, files)) = rx.try_recv()
         {
             p.index = idx;
+            p.files_rel = files.iter().map(|f| workspace::relative(&p.root, f)).collect();
             p.files = files;
             p.index_rx = None;
+            p.tree_ver += 1;
         }
     }
 
@@ -217,6 +226,8 @@ impl App {
         let Some(root) = self.project.as_ref().map(|p| p.root.clone()) else { return };
         if let Some(p) = self.project.as_mut() {
             p.dir_cache.clear();
+            p.tree_ver += 1;
+            p.ignore.reset();
             p.branch = workspace::git_branch(&root);
             if p.index_rx.is_none() {
                 let (tx, rx) = mpsc::channel();
@@ -374,7 +385,9 @@ impl App {
         };
         if let (Some(p), Some(proj)) = (path.as_ref(), self.project.as_mut()) {
             proj.index.update_file(p, &text, dialect);
+            // a save may create or change files shown in the tree
             proj.dir_cache.clear();
+            proj.tree_ver += 1;
         }
         self.git.last_refresh = -100.0;
         true
@@ -431,6 +444,11 @@ impl App {
 
     pub fn tick(&mut self, ctx: &egui::Context) {
         self.now = ctx.input(|i| i.time);
+        self.frame_no += 1;
+        let dt = ctx.input(|i| i.unstable_dt) * 1000.0;
+        if self.frame_no > 5 && dt > self.max_frame_ms && dt < 120_000.0 {
+            self.max_frame_ms = dt;
+        }
         self.toasts.retain(|t| t.until > self.now);
         if self.hint.as_ref().is_some_and(|h| h.1 < self.now) {
             self.hint = None;
@@ -439,6 +457,12 @@ impl App {
         self.poll_repl();
         self.poll_run();
         self.poll_compile();
+        if let Some(rx) = &self.find_rx
+            && let Ok((title, hits)) = rx.try_recv()
+        {
+            self.find_results = FindResults { title, hits };
+            self.find_rx = None;
+        }
         self.git_poll();
         self.poll_terminal();
         self.git_update_bases();
@@ -455,9 +479,6 @@ impl App {
             for n in reloaded {
                 self.toast(format!("{n} reloaded from disk"), Sev::Weak);
             }
-            if let Some(p) = self.project.as_mut() {
-                p.dir_cache.clear();
-            }
         }
         // save on focus loss
         let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
@@ -467,6 +488,14 @@ impl App {
                     self.save_doc(i);
                 }
             }
+        }
+        // coming back to the window: the file system may have changed meanwhile
+        if focused && !self.window_focused
+            && let Some(p) = self.project.as_mut()
+        {
+            p.dir_cache.clear();
+            p.tree_ver += 1;
+            p.ignore.reset();
         }
         self.window_focused = focused;
     }
@@ -975,8 +1004,16 @@ impl App {
             return;
         };
         self.save_all();
-        let hits = search::find_in_files(&root, query, opts, 3000);
-        self.find_results = FindResults { title: format!("Find '{query}'"), hits };
+        // searching a big project can take seconds: do it off the UI thread
+        let (tx, rx) = mpsc::channel();
+        let q = query.to_string();
+        let title = format!("Find '{query}'");
+        self.find_results = FindResults { title: format!("{title} - searching..."), hits: vec![] };
+        self.find_rx = Some(rx);
+        std::thread::spawn(move || {
+            let hits = search::find_in_files(&root, &q, opts, 3000);
+            let _ = tx.send((title, hits));
+        });
         self.bottom_tool = Some(BottomTool::Find);
     }
 
@@ -1056,7 +1093,7 @@ impl App {
         };
         // definitions in the project
         if let Some(p) = &self.project {
-            for sym in p.index.all() {
+            for sym in p.index.with_prefix(&low, 80) {
                 let name = sym.def.name.split(' ').next().unwrap_or("").to_string();
                 let k = match sym.def.kind {
                     outline_kind if outline_kind.badge() == "m" => "m",
@@ -1068,7 +1105,10 @@ impl App {
         }
         // identifiers in the current file
         let p = d.ed.parsed();
-        for t in &p.tokens {
+        // large files: only look at the neighbourhood of the caret
+        let (lo, hi) = if d.ed.text().len() > 300_000 { (caret.saturating_sub(100_000), caret + 100_000) } else { (0, usize::MAX) };
+        let first_tok = p.tokens.partition_point(|t| t.end < lo);
+        for t in p.tokens[first_tok..].iter().take_while(|t| t.start <= hi) {
             if t.kind == TokenKind::Symbol && t.end != caret {
                 push(t.text(d.ed.text()).to_string(), "s", 2, &mut items);
             }
@@ -1219,28 +1259,35 @@ impl App {
         let mut out: Vec<Item> = Vec::new();
         let files_items = |limit: usize, section: &'static str| -> Vec<Item> {
             let mut v = Vec::new();
-            let all: Vec<PathBuf> = {
-                let mut a: Vec<PathBuf> = self.recent_files.clone();
-                if let Some(p) = &self.project {
-                    for f in &p.files {
-                        if !a.contains(f) {
-                            a.push(f.clone());
-                        }
-                    }
-                }
-                a
+            let recent: Vec<(&PathBuf, String)> = self.recent_files.iter().map(|f| (f, self.rel(f))).collect();
+            let recent_set: std::collections::HashSet<&PathBuf> = self.recent_files.iter().collect();
+            let project_files: Vec<(&PathBuf, &String)> = self.project.as_ref().map(|p| p.files.iter().zip(p.files_rel.iter()).filter(|(f, _)| !recent_set.contains(f)).collect()).unwrap_or_default();
+            let mk = |f: &PathBuf, rel: &str, hits: Vec<usize>| Item {
+                label: f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                detail: rel.to_string(),
+                badge: "F".into(),
+                section,
+                target: PTarget::File(f.clone()),
+                hits,
+                shortcut: String::new(),
             };
             if query.trim().is_empty() {
-                for f in all.iter().take(limit) {
-                    v.push(Item { label: f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), detail: self.rel(f), badge: "F".into(), section, target: PTarget::File(f.clone()), hits: vec![], shortcut: String::new() });
+                for (f, rel) in recent.iter().map(|(f, r)| (*f, r.as_str())).chain(project_files.iter().map(|(f, r)| (*f, r.as_str()))).take(limit) {
+                    v.push(mk(f, rel, vec![]));
                 }
             } else {
-                let rels: Vec<String> = all.iter().map(|f| self.rel(f)).collect();
-                for (i, m) in search::rank(query, &rels, |s| s.clone(), limit * 3).into_iter().take(limit) {
-                    let name = all[i].file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                    let ni = rels[i].chars().count() - name.chars().count();
+                let mut scored: Vec<(i32, &PathBuf, &str, search::FuzzyMatch)> = Vec::new();
+                for (f, rel) in recent.iter().map(|(f, r)| (*f, r.as_str())).chain(project_files.iter().map(|(f, r)| (*f, r.as_str()))) {
+                    if let Some(m) = search::fuzzy_match(query, rel) {
+                        scored.push((m.score, f, rel, m));
+                    }
+                }
+                scored.sort_by(|a, b| b.0.cmp(&a.0));
+                for (_, f, rel, m) in scored.into_iter().take(limit) {
+                    let name = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    let ni = rel.chars().count() - name.chars().count();
                     let hits: Vec<usize> = search::fuzzy_match(query, &name).map(|m| m.positions).unwrap_or_else(|| m.positions.iter().filter(|&&p| p >= ni).map(|p| p - ni).collect());
-                    v.push(Item { label: name, detail: rels[i].clone(), badge: "F".into(), section, target: PTarget::File(all[i].clone()), hits, shortcut: String::new() });
+                    v.push(mk(f, rel, hits));
                 }
             }
             v
@@ -1251,7 +1298,8 @@ impl App {
                 return p
                     .index
                     .all()
-                    .into_iter()
+                    .symbols
+                    .iter()
                     .take(limit)
                     .map(|s| Item { label: s.def.name.clone(), detail: self.rel(&s.path), badge: s.def.kind.badge().into(), section, target: PTarget::Symbol { path: s.path.clone(), offset: s.def.name_start }, hits: vec![], shortcut: String::new() })
                     .collect();

@@ -67,6 +67,42 @@ pub fn visible_lines(total_lines: usize, regions: &[Region], folds: &HashSet<Fol
     out
 }
 
+/// Visible lines as a table. Without folds it is the identity mapping and costs nothing, even for
+/// files with hundreds of thousands of lines.
+pub enum Rows {
+    All(usize),
+    Some(Vec<usize>),
+}
+
+impl Rows {
+    pub fn len(&self) -> usize {
+        match self {
+            Rows::All(n) => *n,
+            Rows::Some(v) => v.len(),
+        }
+    }
+    pub fn get(&self, row: usize) -> Option<usize> {
+        match self {
+            Rows::All(n) => (row < *n).then_some(row),
+            Rows::Some(v) => v.get(row).copied(),
+        }
+    }
+    pub fn at(&self, row: usize) -> usize {
+        self.get(row).unwrap_or(0)
+    }
+    /// Row of `line`; a hidden line maps to the row of the fold it is hidden in.
+    pub fn row_of_line(&self, line: usize) -> usize {
+        match self {
+            Rows::All(n) => line.min(n.saturating_sub(1)),
+            Rows::Some(v) => v.partition_point(|&l| l < line).min(v.len().saturating_sub(1)),
+        }
+    }
+}
+
+pub fn rows(total_lines: usize, regions: &[Region], folds: &HashSet<FoldKey>) -> Rows {
+    if folds.is_empty() { Rows::All(total_lines) } else { Rows::Some(visible_lines(total_lines, regions, folds)) }
+}
+
 /// The innermost region that contains `line` (start line excluded when `strict`).
 pub fn region_at(regions: &[Region], line: usize) -> Option<&Region> {
     regions.iter().filter(|r| r.start_line <= line && line <= r.end_line).min_by_key(|r| r.end_line - r.start_line)

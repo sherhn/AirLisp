@@ -204,6 +204,8 @@ cmds! {
     "git.new_branch", "New Branch...", Git, [];
     "git.diff", "Show Diff", Git, ["Ctrl+Alt+Shift+D"];
     "git.rollback", "Rollback Changes...", Git, ["Ctrl+Alt+Z"];
+    "git.local_commit", "Local Commit...", Git, ["Ctrl+Alt+K"];
+    "git.reset_base", "Compare with HEAD (Reset Diff Base)", Git, [];
     "git.refresh", "Refresh Git Status", Git, [];
     "git.init", "Create Git Repository", Git, [];
     "git.stage_file", "Add File to Git", Git, [];

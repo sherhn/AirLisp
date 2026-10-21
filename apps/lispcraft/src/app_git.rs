@@ -6,35 +6,85 @@ use std::sync::mpsc;
 
 use ide_core::diff::{self, LineKind};
 use ide_core::git::{self, ChangeKind};
+use ide_core::localvcs::{Base, LocalVcs};
+
+const MAX_CHANGES: usize = 5000;
 
 use crate::app::App;
 use crate::editor_view::Sev;
 use crate::state::*;
 
 impl App {
-    /// (Re)discover the repository of the current project.
+    /// (Re)discover the repository and the local commit store of the current project.
     pub fn git_attach(&mut self) {
         self.git = GitState::default();
         self.git.available = git::git_available();
-        if !self.git.available {
-            return;
-        }
         if let Some(root) = self.project_root().map(Path::to_path_buf) {
-            self.git.repo = git::find_repo(&root);
+            self.git.local = Some(LocalVcs::open(&root));
+            if self.git.available {
+                self.git.repo = git::find_repo(&root).filter(|r| r.is_valid());
+            }
         }
         self.git_refresh();
     }
 
+    /// Is a local commit (checkpoint) the base of diffs right now?
+    pub fn base_is_local(&self) -> bool {
+        matches!(self.git.local.as_ref().map(|l| l.base()), Some(Base::Local(_)))
+    }
+
+    /// Human readable name of the current diff base.
+    pub fn base_label(&self) -> String {
+        match self.git.local.as_ref().map(|l| l.base().clone()) {
+            Some(Base::Local(id)) => {
+                let msg = self.git.local.as_ref().and_then(|l| l.commit(id)).map(|c| c.message.clone()).unwrap_or_default();
+                format!("local #{id}: {msg}")
+            }
+            _ => "HEAD".to_string(),
+        }
+    }
+
+    /// Root used for relative paths: the git repository root, else the project root.
+    fn vcs_root(&self) -> Option<PathBuf> {
+        self.git.repo.as_ref().map(|r| r.root.clone()).or_else(|| self.project_root().map(Path::to_path_buf))
+    }
+
     pub fn git_refresh(&mut self) {
-        let Some(repo) = self.git.repo.clone() else { return };
         if self.git.rx.is_some() {
+            return;
+        }
+        // do not compete with the initial project indexing for the disk; the periodic refresh retries
+        if self.project.as_ref().is_some_and(|p| p.index_rx.is_some()) {
+            return;
+        }
+        let repo = self.git.repo.clone();
+        let local = self.git.local.clone();
+        if repo.is_none() && !self.base_is_local() {
             return;
         }
         let (tx, rx) = mpsc::channel();
         self.git.rx = Some(rx);
         self.git.last_refresh = self.now;
         std::thread::spawn(move || {
-            let snap = GitSnapshot { branch: repo.branch(), head: repo.head_hash(), changes: repo.status(), branches: repo.branches(), log: repo.log(80) };
+            let base_id = match local.as_ref().map(|l| l.base().clone()) {
+                Some(Base::Local(id)) => Some(id),
+                _ => None,
+            };
+            let mut changes = match (base_id, &local) {
+                (Some(id), Some(l)) => l.changes_vs(id, repo.as_ref()),
+                _ => repo.as_ref().map(|r| r.status()).unwrap_or_default(),
+            };
+            changes.sort_by(|a, b| a.path.cmp(&b.path));
+            let truncated = changes.len() > MAX_CHANGES;
+            changes.truncate(MAX_CHANGES);
+            let snap = GitSnapshot {
+                branch: repo.as_ref().and_then(|r| r.branch()),
+                head: repo.as_ref().and_then(|r| r.head_hash()),
+                changes,
+                branches: repo.as_ref().map(|r| r.branches()).unwrap_or_default(),
+                log: repo.as_ref().map(|r| r.log(80)).unwrap_or_default(),
+                truncated,
+            };
             let _ = tx.send(snap);
         });
     }
@@ -49,6 +99,7 @@ impl App {
             self.git.head = snap.head;
             self.git.branches = snap.branches;
             self.git.log = snap.log;
+            self.git.changes_truncated = snap.truncated;
             // keep the user's check marks for files that are still changed; check new ones by default
             let old: HashSet<String> = self.git.changes.iter().map(|c| c.path.clone()).collect();
             let now: HashSet<String> = snap.changes.iter().map(|c| c.path.clone()).collect();
@@ -64,6 +115,10 @@ impl App {
                 for d in self.docs.iter_mut() {
                     d.git_base = None;
                 }
+            }
+            // the file system may have changed (git operations, external tools): redraw the tree
+            if let Some(p) = self.project.as_mut() {
+                p.tree_ver += 1;
             }
         }
         if let Some(rx) = &self.git.op_rx
@@ -85,23 +140,23 @@ impl App {
             }
         }
         // periodic refresh while idle
-        if self.git.repo.is_some() && self.git.rx.is_none() && self.now - self.git.last_refresh > 4.0 {
+        if (self.git.repo.is_some() || self.base_is_local()) && self.git.rx.is_none() && self.now - self.git.last_refresh > 4.0 {
             self.git_refresh();
         }
     }
 
     fn git_rebuild_kinds(&mut self) {
-        let Some(repo) = &self.git.repo else { return };
+        let Some(root) = self.vcs_root() else { return };
         let mut kinds: HashMap<PathBuf, ChangeKind> = HashMap::new();
         let mut dirs: HashSet<PathBuf> = HashSet::new();
         for c in &self.git.changes {
-            let abs = repo.root.join(&c.path);
+            let abs = root.join(c.path.trim_end_matches('/'));
             let mut p = abs.parent();
             while let Some(d) = p {
                 if !dirs.insert(d.to_path_buf()) {
                     break;
                 }
-                if d == repo.root {
+                if d == root {
                     break;
                 }
                 p = d.parent();
@@ -112,21 +167,39 @@ impl App {
         self.git.dirty_dirs = dirs;
     }
 
-    /// Make sure every open document knows its HEAD content (for gutter markers).
+    /// Text of `abs` in the current diff base. `None`: no base (markers off); `Some(None)`: the file is
+    /// absent from the base (every line is new); `Some(Some(text))`: base content, LF normalised.
+    pub fn base_text_of(&self, abs: &Path) -> Option<Option<String>> {
+        let root = self.vcs_root()?;
+        let rel = abs.strip_prefix(&root).ok()?.to_string_lossy().replace('\\', "/");
+        let repo = self.git.repo.as_ref();
+        match self.git.local.as_ref() {
+            Some(l) if matches!(l.base(), Base::Local(_)) => Some(l.base_text(&rel, repo).map(|t| t.replace("\r\n", "\n"))),
+            _ => repo.map(|r| r.head_content(&rel).map(|t| t.replace("\r\n", "\n"))),
+        }
+    }
+
+    /// Make sure every open document knows its base content (for gutter markers).
     pub fn git_update_bases(&mut self) {
-        let Some(repo) = self.git.repo.clone() else { return };
-        for d in self.docs.iter_mut() {
-            if d.git_base.is_some() {
-                continue;
+        let todo: Vec<(usize, PathBuf)> = self.docs.iter().enumerate().filter(|(_, d)| d.git_base.is_none()).filter_map(|(i, d)| d.path.clone().map(|p| (i, p))).collect();
+        for (i, p) in todo {
+            if let Some(base) = self.base_text_of(&p) {
+                let d = &mut self.docs[i];
+                d.git_base = Some(base);
+                d.git_marks_rev = u64::MAX;
             }
-            let Some(p) = &d.path else { continue };
-            d.git_base = Some(repo.rel(p).and_then(|rel| repo.head_content(&rel)).map(|t| t.replace("\r\n", "\n")));
-            d.git_marks_rev = u64::MAX;
         }
     }
 
     pub fn git_change_of(&self, path: &Path) -> Option<ChangeKind> {
-        self.git.kinds.get(path).copied()
+        if let Some(k) = self.git.kinds.get(path) {
+            return Some(*k);
+        }
+        // files inside a wholly untracked directory (reported by git as one `dir/` entry)
+        if self.git.kinds.is_empty() {
+            return None;
+        }
+        path.ancestors().skip(1).take(40).find_map(|a| self.git.kinds.get(a).filter(|k| **k == ChangeKind::Untracked).copied())
     }
 
     pub fn git_run_sync(&mut self, what: &str, f: impl FnOnce(&git::Repo) -> Result<String, String>) -> bool {
@@ -185,8 +258,14 @@ impl App {
 
     pub fn git_commit_selected(&mut self) -> bool {
         self.save_all();
+        let Some(repo) = self.git.repo.clone() else {
+            self.toast("This project is not a Git repository - use a local commit instead", Sev::Weak);
+            return false;
+        };
         let msg = self.git.commit_msg.clone();
-        let paths: Vec<String> = self.git.changes.iter().filter(|c| self.git.checked.contains(&c.path)).map(|c| c.path.clone()).collect();
+        // with a local commit as the diff base the list may contain files git does not consider changed
+        let real: HashSet<String> = repo.status().into_iter().map(|c| c.path).collect();
+        let paths: Vec<String> = self.git.changes.iter().filter(|c| self.git.checked.contains(&c.path) && real.contains(&c.path)).map(|c| c.path.clone()).collect();
         let ok = self.git_run_sync("Commit", move |r| r.commit(&msg, &paths).map(|h| format!("committed {h}")));
         if ok {
             self.git.commit_msg.clear();
@@ -198,13 +277,18 @@ impl App {
     }
 
     pub fn git_show_diff(&mut self, rel: &str) {
-        let Some(repo) = self.git.repo.clone() else { return };
-        let abs = repo.root.join(rel);
+        if rel.ends_with('/') {
+            self.toast("This is an untracked folder - open the files inside to see their changes", Sev::Weak);
+            return;
+        }
+        let Some(root) = self.vcs_root() else { return };
+        let abs = root.join(rel);
         let new = self.docs.iter().find(|d| d.path.as_deref() == Some(abs.as_path())).map(|d| d.ed.text().to_string()).or_else(|| std::fs::read_to_string(&abs).ok()).unwrap_or_default().replace("\r\n", "\n");
-        let old = repo.head_content(rel).unwrap_or_default().replace("\r\n", "\n");
+        let old = self.base_text_of(&abs).flatten().unwrap_or_default();
         let lines = diff::diff_lines(&old, &new);
         let first = lines.iter().position(|l| l.kind != LineKind::Same);
-        self.popup = Popup::Diff { title: rel.to_string(), lines, scroll_to: first };
+        let title = if self.base_is_local() { format!("{rel}   (vs {})", self.base_label()) } else { rel.to_string() };
+        self.popup = Popup::Diff { title, lines, scroll_to: first };
     }
 
     pub fn git_show_commit(&mut self, idx: usize) {
@@ -307,5 +391,116 @@ impl App {
             _ => d.folds.clear(),
         }
         d.view.scroll_to_caret = true;
+    }
+}
+
+// ---------------------------------------------------------------------- local commits
+
+impl App {
+    fn after_base_change(&mut self) {
+        for d in self.docs.iter_mut() {
+            d.git_base = None;
+            d.git_marks_rev = u64::MAX;
+        }
+        self.git.rx = None;
+        self.git.last_refresh = -100.0;
+        self.git.checked.clear();
+        self.git.changes.clear();
+        self.git_refresh();
+        if let Some(p) = self.project.as_mut() {
+            p.tree_ver += 1;
+        }
+    }
+
+    /// Create a local commit (checkpoint) of the working tree; it becomes the diff base.
+    pub fn local_commit(&mut self, message: &str) -> bool {
+        self.save_all();
+        let repo = self.git.repo.clone();
+        let Some(local) = self.git.local.as_mut() else {
+            self.toast("Open a project first", Sev::Weak);
+            return false;
+        };
+        match local.create(message, repo.as_ref()) {
+            Ok(id) => {
+                self.after_base_change();
+                self.toast(format!("Local commit #{id} created - the diff now starts from it"), Sev::Weak);
+                true
+            }
+            Err(e) => {
+                self.toast(format!("Local commit failed: {e}"), Sev::Error);
+                false
+            }
+        }
+    }
+
+    pub fn local_set_base(&mut self, base: Base) {
+        let Some(local) = self.git.local.as_mut() else { return };
+        match local.set_base(base) {
+            Ok(()) => {
+                self.after_base_change();
+                let label = self.base_label();
+                self.toast(format!("Comparing with {label}"), Sev::Weak);
+            }
+            Err(e) => self.toast(format!("Cannot change base: {e}"), Sev::Error),
+        }
+    }
+
+    pub fn local_restore(&mut self, id: u64) {
+        self.save_all();
+        let repo = self.git.repo.clone();
+        let Some(local) = self.git.local.clone() else { return };
+        match local.restore(id, repo.as_ref()) {
+            Ok(n) => {
+                for d in self.docs.iter_mut() {
+                    d.sync_with_disk();
+                }
+                self.after_base_change();
+                self.refresh_project();
+                self.toast(format!("Restored local commit #{id} ({n} file(s) changed)"), Sev::Weak);
+            }
+            Err(e) => self.toast(format!("Restore failed: {e}"), Sev::Error),
+        }
+    }
+
+    pub fn local_delete(&mut self, id: u64) {
+        let Some(local) = self.git.local.as_mut() else { return };
+        match local.delete(id) {
+            Ok(()) => {
+                self.after_base_change();
+                self.toast(format!("Local commit #{id} deleted"), Sev::Weak);
+            }
+            Err(e) => self.toast(format!("Delete failed: {e}"), Sev::Error),
+        }
+    }
+
+    /// Discard local edits of one file: back to the diff base (git HEAD or the local commit).
+    pub fn rollback_file(&mut self, rel: &str) {
+        if self.base_is_local() {
+            let Some(root) = self.vcs_root() else { return };
+            let abs = root.join(rel);
+            let res = match self.base_text_of(&abs).flatten() {
+                Some(t) => std::fs::write(&abs, t),
+                None => std::fs::remove_file(&abs),
+            };
+            match res {
+                Ok(()) => {
+                    for d in self.docs.iter_mut() {
+                        d.sync_with_disk();
+                    }
+                    self.git.last_refresh = -100.0;
+                    self.git_refresh();
+                    self.refresh_project();
+                }
+                Err(e) => self.toast(format!("Rollback failed: {e}"), Sev::Error),
+            }
+            return;
+        }
+        if let Some(change) = self.git.changes.iter().find(|c| c.path == rel).cloned() {
+            self.git_run_sync("Rollback", move |r| r.rollback(&change).map(|_| String::new()));
+            for d in self.docs.iter_mut() {
+                d.git_base = None;
+                d.sync_with_disk();
+            }
+        }
     }
 }
