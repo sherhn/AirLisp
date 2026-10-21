@@ -76,6 +76,7 @@ impl App {
                 self.term.log.iter().any(|l| l.text.contains(t))
             }
             "popup" => !matches!(self.popup, Popup::None),
+            "no_popup" => matches!(self.popup, Popup::None),
             _ => true,
         }
     }
@@ -162,6 +163,22 @@ impl App {
                 }
             }
             "close_project" => self.close_project(),
+            "clone_set" => {
+                if let Popup::Clone(c) = &mut self.popup {
+                    if let Some(u) = step["value"].as_str() {
+                        c.url = u.to_string();
+                    }
+                    if let Some(d) = step["dir"].as_str() {
+                        c.parent = d.to_string();
+                        c.dir_touched = true;
+                    }
+                    if let Some(b) = step["branch"].as_str() {
+                        c.branch = b.to_string();
+                    }
+                } else {
+                    self.fail("clone_set: the clone dialog is not open".to_string());
+                }
+            }
             "expand" => {
                 if let (Some(p), Some(proj)) = (path, self.project.as_mut()) {
                     proj.expanded.insert(p);
@@ -305,6 +322,7 @@ impl App {
                     Popup::NewProject { .. } => "new_project",
                     Popup::FindInFiles { .. } => "find_in_files",
                     Popup::Settings { .. } => "settings",
+                    Popup::Clone(_) => "clone",
                     Popup::About => "about",
                     Popup::Info { .. } => "info",
                     Popup::Confirm { .. } => "confirm",

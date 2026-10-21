@@ -39,6 +39,8 @@ pub struct Settings {
     pub last_project: Option<String>,
     /// Explicit path to the Lisp binary; empty = auto-detect.
     pub lisp_path: String,
+    /// Default parent folder for "Get from Version Control"; empty = ~/AirLispProjects.
+    pub clone_dir: String,
     pub open_files: Vec<String>,
     pub active_file: Option<String>,
     pub show_project_panel: bool,
@@ -58,6 +60,7 @@ impl Default for Settings {
             recent_projects: vec![],
             last_project: None,
             lisp_path: String::new(),
+            clone_dir: String::new(),
             open_files: vec![],
             active_file: None,
             show_project_panel: true,

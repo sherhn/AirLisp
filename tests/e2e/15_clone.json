@@ -1,0 +1,28 @@
+[
+  {"op": "log", "value": "Get from Version Control: clone a local repository and open it as a project"},
+  {"op": "command", "value": "file.clone"},
+  {"op": "assert_popup", "value": "clone"},
+  {"op": "frames", "value": 3},
+  {"op": "clone_set", "value": "not a url"},
+  {"op": "key", "value": "Enter"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_popup", "value": "clone"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_error.png"},
+  {"op": "clone_set", "value": "${PROJ}", "dir": "${PROJ}_clones"},
+  {"op": "frames", "value": 3},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_filled.png"},
+  {"op": "key", "value": "Enter"},
+  {"op": "wait", "what": "no_popup", "timeout": 60},
+  {"op": "wait", "what": "index"},
+  {"op": "assert_project_file", "value": "src/main.lisp"},
+  {"op": "wait", "what": "git_ready", "timeout": 30},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_opened.png"},
+
+  {"op": "log", "value": "settings pages"},
+  {"op": "key", "value": "Ctrl+Alt+S"},
+  {"op": "assert_popup", "value": "settings"},
+  {"op": "frames", "value": 3},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_settings.png"},
+  {"op": "key", "value": "Escape"},
+  {"op": "quit"}
+]

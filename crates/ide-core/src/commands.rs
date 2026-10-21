@@ -59,6 +59,7 @@ cmds! {
     "file.new", "New File...", File, ["Alt+Insert"];
     "file.new_project", "New Project...", File, [];
     "file.open_project", "Open Project...", File, ["Ctrl+Shift+O"];
+    "file.clone", "Get from Version Control...", File, [];
     "file.open_file", "Open File...", File, ["Ctrl+O"];
     "file.reopen_last", "Reopen Last Project", File, [];
     "file.save", "Save", File, ["Ctrl+S"];

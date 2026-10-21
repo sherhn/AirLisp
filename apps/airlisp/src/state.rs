@@ -301,6 +301,34 @@ pub enum ConfirmKind {
     DeleteLocal(u64),
 }
 
+/// Messages from the background clone thread.
+pub enum CloneMsg {
+    Line(String),
+    Done(Result<(), String>),
+}
+
+pub struct CloneRun {
+    pub rx: std::sync::mpsc::Receiver<CloneMsg>,
+    pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub progress: f32,
+    pub status: String,
+    pub dest: PathBuf,
+}
+
+/// The "Get from Version Control" dialog.
+pub struct CloneState {
+    pub url: String,
+    pub dir: String,
+    /// The user edited the directory by hand: stop deriving it from the repository name.
+    pub dir_touched: bool,
+    pub parent: String,
+    pub branch: String,
+    pub shallow: bool,
+    pub error: Option<String>,
+    pub just_opened: bool,
+    pub run: Option<CloneRun>,
+}
+
 pub enum Popup {
     None,
     Palette(PaletteState),
@@ -309,7 +337,8 @@ pub enum Popup {
     NewFile { dir: PathBuf, input: String, is_dir: bool, just_opened: bool },
     NewProject { parent: String, name: String, just_opened: bool },
     FindInFiles { query: String, replace: String, case_sensitive: bool, whole_word: bool, just_opened: bool, replace_mode: bool },
-    Settings { lisp_path: String, detected: String, filter: String },
+    Settings { lisp_path: String, detected: String, filter: String, page: usize },
+    Clone(Box<CloneState>),
     About,
     Info { title: String, text: String },
     Confirm { kind: ConfirmKind, message: String },

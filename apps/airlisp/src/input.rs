@@ -278,6 +278,7 @@ impl App {
                 let parent = dirs_home().to_string_lossy().into_owned();
                 self.popup = Popup::NewProject { parent, name: "my-project".into(), just_opened: true };
             }
+            "file.clone" => self.open_clone_dialog(),
             "file.open_project" => {
                 if let Some(dir) = rfd::FileDialog::new().set_title("Open Project").pick_folder() {
                     self.open_project(&dir);
@@ -357,7 +358,7 @@ impl App {
                 }
             }
             "app.settings" => {
-                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default(), filter: String::new() };
+                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default(), filter: String::new(), page: 0 };
             }
             "app.exit" => {
                 if self.has_unsaved() {
@@ -533,7 +534,7 @@ impl App {
             "view.rainbow" => self.settings.rainbow_brackets = !self.settings.rainbow_brackets,
             "help.about" => self.popup = Popup::About,
             "help.keymap" => {
-                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default(), filter: String::new() };
+                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default(), filter: String::new(), page: 0 };
             }
             // ---- git
             "git.commit" => {
