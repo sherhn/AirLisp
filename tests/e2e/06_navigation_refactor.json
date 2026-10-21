@@ -35,6 +35,8 @@
   {"op": "assert_popup", "value": "find_in_files"},
   {"op": "text", "value": "gamma"},
   {"op": "key", "value": "Enter"},
+  {"op": "frames", "value": 2},
+  {"op": "wait", "what": "find_done"},
   {"op": "assert_find_results", "min": 2},
 
   {"op": "log", "value": "Quick documentation"},

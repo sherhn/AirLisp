@@ -378,6 +378,29 @@ mod tests {
     }
 
     #[test]
+    fn log_all_has_parents_refs_and_every_branch() {
+        let Some((d, r)) = repo() else { return };
+        std::fs::write(d.path().join("a.lisp"), "x
+").unwrap();
+        r.commit("base", &["a.lisp".into()]).unwrap();
+        let main = r.branch().unwrap();
+        r.create_branch("feature").unwrap();
+        std::fs::write(d.path().join("f.lisp"), "f
+").unwrap();
+        r.commit("on feature", &["f.lisp".into()]).unwrap();
+        r.checkout(&main).unwrap();
+        // the current branch alone does not see the feature commit, the all-branches log does
+        assert_eq!(r.log(10).len(), 1);
+        let all = r.log_all(10);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].subject, "on feature");
+        assert_eq!(all[0].parents, vec![all[1].hash.clone()]);
+        assert!(all[0].refs.iter().any(|x| x == "feature"));
+        assert!(all[1].refs.iter().any(|x| x.starts_with("HEAD -> ")));
+        assert!(all[1].parents.is_empty());
+    }
+
+    #[test]
     fn find_repo_walks_up() {
         let Some((d, r)) = repo() else { return };
         std::fs::create_dir_all(d.path().join("sub/deeper")).unwrap();

@@ -290,7 +290,6 @@ pub const RU: &[(&str, &str)] = &[
     ("Show the gutter with line numbers", "Показывать поле с номерами строк"),
     ("Whitespace", "Пробельные символы"),
     ("Code overview", "Обзор кода"),
-    ("Open Project", "Открыть проект"),
     ("This Window", "В этом окне"),
     ("New Window", "В новом окне"),
     ("Open {} in the current window or in a new one?", "Открыть {} в этом окне или в новом?"),
