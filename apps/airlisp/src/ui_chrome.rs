@@ -543,7 +543,6 @@ impl App {
                 let p = ui.painter();
                 p.rect_filled(rect.translate(Vec2::new(0.0, 3.0)).expand(1.0), CornerRadius::same(12), Color32::from_black_alpha(70));
                 p.rect_filled(rect, CornerRadius::same(10), pal.popup_bg);
-                p.rect_stroke(rect, CornerRadius::same(10), Stroke::new(1.0, pal.border), StrokeKind::Inside);
                 p.rect_filled(Rect::from_min_size(rect.min + Vec2::new(0.0, 10.0), Vec2::new(3.0, h - 20.0)), CornerRadius::same(2), color);
                 icons::paint(p, Rect::from_min_size(rect.min + Vec2::new(18.0, 16.0), Vec2::splat(16.0)), icon, color);
                 p.text(Pos2::new(rect.min.x + 46.0, rect.center().y), Align2::LEFT_CENTER, text, font, pal.text);

@@ -600,7 +600,7 @@ impl App {
                 widgets::caption(ui, &pal, "MESSAGE");
                 ui.add_space(4.0);
                 let mut msg = std::mem::take(&mut self.git.commit_msg);
-                egui::Frame::new().fill(pal.input_bg).stroke(Stroke::new(1.0, pal.border)).corner_radius(widgets::radius()).inner_margin(Margin::same(10)).show(ui, |ui| {
+                egui::Frame::new().fill(pal.input_bg).corner_radius(widgets::radius()).inner_margin(Margin::same(10)).show(ui, |ui| {
                     let r = ui.add(egui::TextEdit::multiline(&mut msg).hint_text("Describe your changes").desired_rows(4).desired_width(f32::INFINITY).frame(egui::Frame::NONE).font(fonts::ui(13.5)));
                     if just_opened {
                         r.request_focus();
@@ -904,7 +904,7 @@ impl App {
         egui::Area::new(egui::Id::new("completion")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
             egui::Frame::new()
                 .fill(pal.popup_bg)
-                .stroke(Stroke::new(1.0, pal.border))
+                
                 .corner_radius(CornerRadius::same(12))
                 .inner_margin(Margin::same(6))
                 .shadow(egui::Shadow { offset: [0, 6], blur: 24, spread: 0, color: Color32::from_black_alpha(110) })
@@ -957,7 +957,7 @@ impl App {
         p.x = p.x.min(screen.max.x - 460.0).max(8.0);
         p.y = p.y.max(8.0);
         egui::Area::new(egui::Id::new("hint")).order(egui::Order::Tooltip).fixed_pos(p).interactable(false).show(ctx, |ui| {
-            egui::Frame::new().fill(pal.popup_bg).stroke(Stroke::new(1.0, pal.border)).corner_radius(CornerRadius::same(9)).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+            egui::Frame::new().fill(pal.popup_bg).corner_radius(CornerRadius::same(9)).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
                 ui.label(RichText::new(text).monospace().size(12.5));
             });
         });

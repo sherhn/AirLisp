@@ -484,7 +484,7 @@ impl App {
         let pal = self.pal;
         let font = egui::FontId::monospace(self.settings.font_size);
         let mut resp = None;
-        egui::Frame::new().fill(pal.input_bg).stroke(Stroke::new(1.0, pal.border)).corner_radius(widgets::radius()).inner_margin(Margin::symmetric(12, 6)).outer_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
+        egui::Frame::new().fill(pal.input_bg).corner_radius(widgets::radius()).inner_margin(Margin::symmetric(12, 6)).outer_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(prompt).font(font.clone()).color(pal.ok));
                 let buf = if which == 0 { &mut self.repl.input } else { &mut self.term.input };
@@ -944,7 +944,7 @@ impl App {
                 ui.set_width(ui.available_width() - 16.0);
                 let sel = self.git.checked.len();
                 let mut msg = std::mem::take(&mut self.git.commit_msg);
-                egui::Frame::new().fill(pal.input_bg).stroke(Stroke::new(1.0, pal.border)).corner_radius(widgets::radius()).inner_margin(Margin::same(10)).show(ui, |ui| {
+                egui::Frame::new().fill(pal.input_bg).corner_radius(widgets::radius()).inner_margin(Margin::same(10)).show(ui, |ui| {
                     let h = (ui.available_height() - 56.0).max(60.0);
                     let r = ui.add_sized([ui.available_width(), h], egui::TextEdit::multiline(&mut msg).hint_text("Commit message").frame(egui::Frame::NONE).font(fonts::ui(13.5)));
                     if r.clicked() || r.gained_focus() {
