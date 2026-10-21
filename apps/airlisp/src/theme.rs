@@ -22,6 +22,12 @@ pub struct Palette {
     pub tab_active_bg: Color32,
     pub popup_bg: Color32,
     pub input_bg: Color32,
+    // glass look
+    pub base_top: Color32,
+    pub base_bottom: Color32,
+    pub glass: Color32,
+    pub sheen: Color32,
+    pub shadow: Color32,
     // editor
     pub caret: Color32,
     pub line_number: Color32,
@@ -65,30 +71,35 @@ impl Palette {
     pub fn dark() -> Palette {
         Palette {
             dark: true,
-            window_bg: c(0x2B2D30),
-            panel_bg: c(0x2B2D30),
-            editor_bg: c(0x1E1F22),
-            gutter_bg: c(0x1E1F22),
-            border: c(0x393B40),
-            hover: c(0x393B40),
-            selected: c(0x2E436E),
-            accent: c(0x3574F0),
-            text: c(0xDFE1E5),
-            text_dim: c(0x868A91),
+            window_bg: c(0x15161A),
+            panel_bg: c(0x202127),
+            editor_bg: c(0x17181C),
+            gutter_bg: c(0x17181C),
+            border: Color32::from_white_alpha(10),
+            hover: Color32::from_white_alpha(17),
+            selected: Color32::from_rgba_unmultiplied(110, 155, 255, 58),
+            accent: c(0x5A86F5),
+            text: c(0xE8EAEE),
+            text_dim: c(0x8D92A0),
             text_on_accent: c(0xFFFFFF),
-            tab_active_bg: c(0x1E1F22),
-            popup_bg: c(0x2B2D30),
-            input_bg: c(0x1E1F22),
-            caret: c(0xCED0D6),
-            line_number: c(0x4B5059),
-            line_number_active: c(0xA1A3AB),
-            current_line: c(0x26282E),
-            selection: c(0x214283),
-            match_bracket: c(0x43494A),
+            tab_active_bg: Color32::from_white_alpha(20),
+            popup_bg: c(0x25272E),
+            input_bg: c(0x2A2C34),
+            base_top: c(0x1B1C22),
+            base_bottom: c(0x0E0F12),
+            glass: Color32::from_rgba_unmultiplied(40, 42, 50, 250),
+            sheen: Color32::from_white_alpha(22),
+            shadow: Color32::from_black_alpha(120),
+            caret: c(0xE8EAEE),
+            line_number: c(0x4F5360),
+            line_number_active: c(0xA3A8B5),
+            current_line: Color32::from_white_alpha(9),
+            selection: Color32::from_rgba_unmultiplied(90, 134, 245, 84),
+            match_bracket: Color32::from_white_alpha(34),
             find_match: c(0x32593D),
             find_current: c(0x3D6C4A),
-            indent_guide: c(0x2E3033),
-            whitespace: c(0x45484D),
+            indent_guide: Color32::from_white_alpha(12),
+            whitespace: Color32::from_white_alpha(36),
             error: c(0xF75464),
             warning: c(0xF2C55C),
             weak_warning: c(0x6F7A8C),
@@ -115,30 +126,35 @@ impl Palette {
     pub fn light() -> Palette {
         Palette {
             dark: false,
-            window_bg: c(0xF7F8FA),
-            panel_bg: c(0xF7F8FA),
+            window_bg: c(0xE4E6EC),
+            panel_bg: c(0xF5F6F9),
             editor_bg: c(0xFFFFFF),
             gutter_bg: c(0xFFFFFF),
-            border: c(0xEBECF0),
-            hover: c(0xDFE1E5),
-            selected: c(0xD4E2FF),
-            accent: c(0x3574F0),
-            text: c(0x000000),
-            text_dim: c(0x6C707E),
+            border: Color32::from_black_alpha(14),
+            hover: Color32::from_black_alpha(14),
+            selected: Color32::from_rgba_unmultiplied(61, 108, 240, 40),
+            accent: c(0x3D6CF0),
+            text: c(0x1B1D22),
+            text_dim: c(0x6B707C),
             text_on_accent: c(0xFFFFFF),
-            tab_active_bg: c(0xFFFFFF),
+            tab_active_bg: Color32::from_black_alpha(16),
             popup_bg: c(0xFFFFFF),
-            input_bg: c(0xFFFFFF),
-            caret: c(0x000000),
-            line_number: c(0xAEB3C2),
-            line_number_active: c(0x6C707E),
-            current_line: c(0xFCFAED),
-            selection: c(0xA6D2FF),
-            match_bracket: c(0xC8E0FF),
+            input_bg: c(0xECEDF2),
+            base_top: c(0xEEF0F5),
+            base_bottom: c(0xDCDFE7),
+            glass: Color32::from_rgba_unmultiplied(255, 255, 255, 250),
+            sheen: Color32::from_white_alpha(200),
+            shadow: Color32::from_black_alpha(48),
+            caret: c(0x1B1D22),
+            line_number: c(0xB4B8C4),
+            line_number_active: c(0x5F6470),
+            current_line: Color32::from_rgba_unmultiplied(61, 108, 240, 14),
+            selection: Color32::from_rgba_unmultiplied(61, 108, 240, 70),
+            match_bracket: Color32::from_rgba_unmultiplied(61, 108, 240, 50),
             find_match: c(0xCDEBC9),
             find_current: c(0xA9DBA3),
-            indent_guide: c(0xEBECF0),
-            whitespace: c(0xD1D3DA),
+            indent_guide: Color32::from_black_alpha(14),
+            whitespace: Color32::from_black_alpha(40),
             error: c(0xDB3B4B),
             warning: c(0xC29E0B),
             weak_warning: c(0x8C8C8C),
@@ -201,8 +217,8 @@ impl Palette {
         v.extreme_bg_color = self.input_bg;
         v.text_edit_bg_color = Some(self.input_bg);
         v.faint_bg_color = self.hover;
-        v.window_stroke = egui::Stroke::new(1.0, self.border);
-        v.override_text_color = Some(self.text);
+        v.window_stroke = egui::Stroke::NONE;
+        v.weak_text_color = Some(self.text_dim);
         v.selection.bg_fill = self.selection;
         v.selection.stroke = egui::Stroke::new(1.0, self.accent);
         v.hyperlink_color = self.accent;
@@ -215,7 +231,7 @@ impl Palette {
         for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
             w.fg_stroke = egui::Stroke::new(1.0, self.text);
         }
-        v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, self.border);
+        v.widgets.noninteractive.bg_stroke = egui::Stroke::NONE;
         v.widgets.noninteractive.bg_fill = self.panel_bg;
         v.widgets.inactive.bg_fill = self.hover;
         v.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;

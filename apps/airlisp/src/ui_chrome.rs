@@ -46,7 +46,7 @@ impl App {
             ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.menu_button("File", |ui| {
-                self.menu_items(ui, ctx, &["file.new", "file.new_project", "file.open_project", "file.open_file", "file.reopen_last"]);
+                self.menu_items(ui, ctx, &["file.new", "file.new_project", "file.open_project", "file.clone", "file.open_file", "file.reopen_last"]);
                 let recent = self.settings.recent_projects.clone();
                 ui.menu_button("Recent Projects", |ui| {
                     if recent.is_empty() {
@@ -278,13 +278,13 @@ impl App {
 
     fn strip_button(&mut self, ui: &mut egui::Ui, icon: Icon, active: bool, tip: &str, badge: Option<Color32>) -> bool {
         let pal = self.pal;
-        let (r, resp) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::click());
+        let (r, resp) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::click());
         if active {
-            ui.painter().rect_filled(r, CornerRadius::same(10), pal.selected);
+            ui.painter().rect_filled(r, CornerRadius::same(14), pal.selected);
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(10), pal.hover);
+            ui.painter().rect_filled(r, CornerRadius::same(14), pal.hover);
         }
-        icons::paint(ui.painter(), r.shrink(9.0), icon, if active { pal.text } else { pal.text_dim });
+        icons::paint(ui.painter(), r.shrink(10.0), icon, if active { pal.accent } else { pal.text_dim });
         if let Some(c) = badge {
             ui.painter().circle_filled(r.right_top() + Vec2::new(-8.0, 8.0), 4.0, c);
         }
@@ -328,10 +328,8 @@ impl App {
     pub fn draw_tabs(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let pal = self.pal;
         let (strip, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), TAB_H), Sense::hover());
-        ui.painter().rect_filled(strip, CornerRadius::ZERO, pal.panel_bg);
-        widgets::divider(ui, &pal, strip.max.y - 0.5, strip.min.x, strip.max.x);
         let font = fonts::ui(13.5);
-        let mut x = strip.min.x + 8.0;
+        let mut x = strip.min.x + 12.0;
         let mut to_close: Option<usize> = None;
         let mut to_activate: Option<usize> = None;
         let names: Vec<(String, bool, bool)> = self.docs.iter().map(|d| (d.name(), d.ed.is_modified(), d.conflict)).collect();
@@ -342,12 +340,11 @@ impl App {
             let r = Rect::from_min_size(Pos2::new(x, strip.min.y), Vec2::new(w, TAB_H));
             let resp = ui.interact(r, ui.id().with(("tab", i)), Sense::click());
             let active = i == self.active;
-            let hit = r.shrink2(Vec2::new(0.0, 5.0));
+            let hit = r.shrink2(Vec2::new(0.0, 8.0));
             if active {
-                ui.painter().rect_filled(hit, CornerRadius::same(8), pal.selected.gamma_multiply(0.45));
-                ui.painter().rect_filled(Rect::from_min_size(Pos2::new(r.min.x + 12.0, r.max.y - 3.0), Vec2::new(w - 24.0, 3.0)), CornerRadius::same(2), pal.accent);
+                ui.painter().rect_filled(hit, CornerRadius::same(12), pal.tab_active_bg);
             } else if resp.hovered() {
-                ui.painter().rect_filled(hit, CornerRadius::same(8), pal.hover);
+                ui.painter().rect_filled(hit, CornerRadius::same(12), pal.hover);
             }
             let ir = Rect::from_min_size(Pos2::new(r.min.x + 14.0, r.center().y - 8.0), Vec2::splat(16.0));
             let is_lisp = self.docs[i].path.as_deref().is_none_or(lisp_syntax::dialect::is_lisp_file);

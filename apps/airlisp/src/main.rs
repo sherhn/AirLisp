@@ -12,6 +12,7 @@ mod editor_view;
 mod folding;
 mod fonts;
 mod icons;
+mod lucide;
 mod input;
 mod script;
 mod state;
@@ -22,6 +23,8 @@ mod ui_titlebar;
 mod ui_panels;
 mod widgets;
 mod ui_popups;
+mod ui_settings;
+mod ui_clone;
 
 use std::path::PathBuf;
 

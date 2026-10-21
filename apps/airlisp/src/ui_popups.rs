@@ -17,12 +17,7 @@ use crate::ui_panels::badge_color;
 use crate::widgets;
 
 fn popup_frame(pal: &crate::theme::Palette) -> egui::Frame {
-    egui::Frame::new()
-        .fill(pal.popup_bg)
-        .stroke(Stroke::new(1.0, pal.border))
-        .corner_radius(CornerRadius::same(14))
-        .inner_margin(Margin::same(16))
-        .shadow(egui::Shadow { offset: [0, 10], blur: 36, spread: 0, color: Color32::from_black_alpha(120) })
+    widgets::glass_frame(pal)
 }
 
 fn highlighted(text: &str, hits: &[usize], font: FontId, base: Color32, hit: Color32) -> egui::text::LayoutJob {
@@ -52,7 +47,11 @@ enum PaletteAction {
 
 impl App {
     pub fn draw_popups(&mut self, ctx: &egui::Context) {
+        if self.popup.is_open() && !matches!(self.popup, Popup::Palette(_)) {
+            widgets::scrim(ctx, &self.pal);
+        }
         self.draw_palette(ctx);
+        self.draw_clone(ctx);
         self.draw_input_dialogs(ctx);
         self.draw_commit_dialog(ctx);
         self.draw_diff(ctx);
@@ -884,109 +883,6 @@ impl App {
         }
     }
 
-    // ------------------------------------------------------------------ settings
-
-    fn draw_settings(&mut self, ctx: &egui::Context) {
-        let Popup::Settings { .. } = self.popup else { return };
-        let pal = self.pal;
-        let Popup::Settings { mut lisp_path, mut detected, mut filter } = std::mem::replace(&mut self.popup, Popup::None) else { return };
-        let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
-        let mut changed_theme = false;
-        let mut redetect = false;
-        egui::Area::new(egui::Id::new("settings")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
-            popup_frame(&pal).show(ui, |ui| {
-                ui.set_width(720.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Settings").font(fonts::semibold(17.0)));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if widgets::icon_button(ui, &pal, Icon::Close, 30.0, pal.text_dim, "Close (Esc)").clicked() {
-                            close = true;
-                        }
-                    });
-                });
-                ui.add_space(12.0);
-                egui::ScrollArea::vertical().max_height(480.0).auto_shrink([false, true]).show(ui, |ui| {
-                    widgets::caption(ui, &pal, "APPEARANCE");
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        ui.label("Theme");
-                        let before = self.settings.theme;
-                        egui::ComboBox::from_id_salt("theme").selected_text(match self.settings.theme { Theme::Dark => "Dark", Theme::Light => "Light" }).show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.settings.theme, Theme::Dark, "Dark");
-                            ui.selectable_value(&mut self.settings.theme, Theme::Light, "Light");
-                        });
-                        changed_theme = before != self.settings.theme;
-                    });
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        ui.label("Editor font size");
-                        ui.add(egui::Slider::new(&mut self.settings.font_size, ide_core::settings::MIN_FONT..=ide_core::settings::MAX_FONT).step_by(1.0));
-                    });
-                    ui.add_space(16.0);
-                    widgets::caption(ui, &pal, "EDITOR");
-                    ui.add_space(6.0);
-                    ui.checkbox(&mut self.settings.show_line_numbers, "Show line numbers");
-                    ui.checkbox(&mut self.settings.show_whitespace, "Show whitespace");
-                    ui.checkbox(&mut self.settings.rainbow_brackets, "Rainbow brackets");
-                    ui.checkbox(&mut self.settings.auto_popup, "Show completion popup automatically");
-                    ui.checkbox(&mut self.settings.auto_save_on_focus_loss, "Save files when the window loses focus");
-                    ui.add_space(16.0);
-                    widgets::caption(ui, &pal, "LISP");
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        ui.label("SBCL executable");
-                        let r = ui.add(egui::TextEdit::singleline(&mut lisp_path).hint_text("auto-detect").desired_width(360.0));
-                        if r.lost_focus() {
-                            redetect = true;
-                        }
-                        if widgets::secondary_button(ui, &pal, "Browse...").clicked()
-                            && let Some(f) = rfd::FileDialog::new().pick_file()
-                        {
-                            lisp_path = f.to_string_lossy().into_owned();
-                            redetect = true;
-                        }
-                    });
-                    let status = if detected.is_empty() { "No Lisp implementation detected".to_string() } else { format!("Using {detected}") };
-                    ui.label(RichText::new(status).color(if detected.is_empty() { pal.error } else { pal.ok }).size(12.0));
-                    ui.add_space(16.0);
-                    widgets::caption(ui, &pal, "KEYMAP (INTELLIJ DEFAULT)");
-                    ui.add_space(6.0);
-                    ui.add(egui::TextEdit::singleline(&mut filter).hint_text("Filter actions").desired_width(f32::INFINITY));
-                    ui.add_space(6.0);
-                    let f = filter.to_lowercase();
-                    egui::Grid::new("keymap").striped(true).num_columns(3).spacing([18.0, 6.0]).show(ui, |ui| {
-                        for c in commands::COMMANDS.iter().filter(|c| !c.shortcuts.is_empty() && (f.is_empty() || c.title.to_lowercase().contains(&f) || c.shortcuts.iter().any(|s| s.to_lowercase().contains(&f)))) {
-                            if c.id.starts_with("caret.") || c.id.starts_with("select.") {
-                                continue;
-                            }
-                            ui.label(RichText::new(c.category.title()).color(pal.text_dim));
-                            ui.label(c.title);
-                            ui.label(RichText::new(c.shortcuts.iter().map(|s| commands::display_shortcut(s)).collect::<Vec<_>>().join(",  ")).monospace().color(pal.text_dim));
-                            ui.end_row();
-                        }
-                    });
-                });
-            });
-        });
-        if changed_theme {
-            self.theme_changed();
-            self.pal.apply(ctx);
-        }
-        if redetect {
-            self.settings.lisp_path = lisp_path.clone();
-            self.lisp = lisp_runtime::discover::find_sbcl(&self.settings.lisp_path);
-            detected = self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default();
-        }
-        if close {
-            self.settings.lisp_path = lisp_path;
-            self.lisp = lisp_runtime::discover::find_sbcl(&self.settings.lisp_path);
-            self.save_settings();
-            self.editor_focus = true;
-        } else {
-            self.popup = Popup::Settings { lisp_path, detected, filter };
-        }
-    }
-
     // ------------------------------------------------------------------ completion & hint
 
     fn draw_completion(&mut self, ctx: &egui::Context) {
@@ -1195,6 +1091,9 @@ impl App {
                 }
                 if widgets::secondary_button(ui, &pal, "Open...").clicked() {
                     self.run_command(ctx, "file.open_project");
+                }
+                if widgets::secondary_button(ui, &pal, "Get from VCS").clicked() {
+                    self.run_command(ctx, "file.clone");
                 }
             });
             ui.add_space(28.0);

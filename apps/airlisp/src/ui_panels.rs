@@ -326,8 +326,7 @@ impl App {
         let problems = self.all_problems();
         let err_count = problems.iter().filter(|p| p.sev == Sev::Error).count();
         let (hr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), PANEL_HEADER_H), Sense::hover());
-        widgets::divider(ui, &pal, hr.max.y - 0.5, hr.min.x, hr.max.x);
-        let mut x = hr.min.x + 10.0;
+        let mut x = hr.min.x + 12.0;
         let tabs = [
             (BottomTool::Repl, "REPL".to_string()),
             (BottomTool::Run, "Run".to_string()),
@@ -344,14 +343,13 @@ impl App {
             let w = g.size().x + 26.0;
             let r = Rect::from_min_size(Pos2::new(x, hr.min.y), Vec2::new(w, hr.height()));
             let resp = ui.interact(r, ui.id().with(("btab", label.clone())), Sense::click());
-            if resp.hovered() && !active {
-                ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 5.0)), CornerRadius::same(8), pal.hover);
+            if active {
+                ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 8.0)), CornerRadius::same(12), pal.tab_active_bg);
+            } else if resp.hovered() {
+                ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 8.0)), CornerRadius::same(12), pal.hover);
             }
             let color = if t == BottomTool::Problems && err_count > 0 { pal.error } else if active { pal.text } else { pal.text_dim };
             ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, label, font, color);
-            if active {
-                ui.painter().rect_filled(Rect::from_min_size(Pos2::new(r.min.x + 10.0, r.max.y - 3.0), Vec2::new(w - 20.0, 3.0)), CornerRadius::same(2), pal.accent);
-            }
             if resp.clicked() {
                 switch_to = Some(t);
             }

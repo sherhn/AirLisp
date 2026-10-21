@@ -141,7 +141,6 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let region_start: std::collections::HashMap<usize, &Region> = regions.iter().map(|r| (r.start_line, r)).collect();
 
     let full = ui.available_rect_before_wrap();
-    ui.painter().rect_filled(full, CornerRadius::ZERO, pal.editor_bg);
     let gutter_rect = Rect::from_min_size(full.min, Vec2::new(gutter_w, full.height()));
     let text_rect = Rect::from_min_max(Pos2::new(full.min.x + gutter_w, full.min.y), full.max);
     state.last_text_rect = Some(text_rect);
@@ -401,7 +400,6 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
 
     // ---------------------------------------------------------------- gutter
     let gp = ui.painter_at(gutter_rect);
-    gp.rect_filled(gutter_rect, CornerRadius::ZERO, pal.gutter_bg);
     let gresp = ui.interact(gutter_rect, ui.id().with("gutter"), Sense::click());
     let hover_gutter = gresp.hovered();
     let first = ((state.scroll.y / lh).floor().max(0.0)) as usize;

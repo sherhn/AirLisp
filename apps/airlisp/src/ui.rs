@@ -5,7 +5,7 @@ use eframe::egui::{self, CornerRadius, Frame, Margin};
 use crate::app::App;
 use crate::editor_view::{self, ViewCfg};
 use crate::state::*;
-use crate::widgets::{STATUS_H, STRIP_W, TOOLBAR_H};
+use crate::widgets::{self, STATUS_H, STRIP_W, TOOLBAR_H};
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
@@ -42,21 +42,42 @@ impl eframe::App for App {
             self.popup = Popup::Confirm { kind: ConfirmKind::Exit, message: "You have unsaved changes. Exit without saving?".into() };
         }
 
-        let chrome = Frame::new().fill(pal.panel_bg);
-        egui::Panel::top("titlebar").exact_size(crate::ui_titlebar::TITLEBAR_H).frame(chrome).show(ui, |ui| self.draw_titlebar(ui, &ctx));
-        egui::Panel::top("toolbar").exact_size(TOOLBAR_H).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_toolbar(ui, &ctx));
-        egui::Panel::bottom("status").exact_size(STATUS_H).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_status_bar(ui, &ctx));
-        egui::Panel::left("strip").exact_size(STRIP_W).resizable(false).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_tool_strip(ui, &ctx));
+        // soft gradient window background; tool windows float above it as rounded cards
+        widgets::paint_base(ui.painter(), ui.max_rect(), &pal);
+        let none = Frame::NONE;
+        let gap = widgets::GAP;
+        egui::Panel::top("titlebar").exact_size(crate::ui_titlebar::TITLEBAR_H).show_separator_line(false).frame(none).show(ui, |ui| self.draw_titlebar(ui, &ctx));
+        egui::Panel::top("toolbar").exact_size(TOOLBAR_H).show_separator_line(false).frame(none).show(ui, |ui| self.draw_toolbar(ui, &ctx));
+        egui::Panel::bottom("status").exact_size(STATUS_H).show_separator_line(false).frame(none).show(ui, |ui| self.draw_status_bar(ui, &ctx));
+        egui::Panel::left("strip").exact_size(STRIP_W).resizable(false).show_separator_line(false).frame(none).show(ui, |ui| self.draw_tool_strip(ui, &ctx));
         if let Some(t) = self.left_tool {
-            egui::Panel::left("left_tool").resizable(true).default_size(270.0).size_range(160.0..=700.0).frame(chrome.stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| match t {
-                LeftTool::Project => self.draw_project_panel(ui, &ctx),
-                LeftTool::Structure => self.draw_structure_panel(ui),
+            let margin = Margin { left: 0, right: gap, top: 0, bottom: gap };
+            egui::Panel::left("left_tool").resizable(true).default_size(290.0).size_range(180.0..=700.0).show_separator_line(false).frame(none.inner_margin(margin)).show(ui, |ui| {
+                widgets::card_frame(&pal, pal.panel_bg).show(ui, |ui| {
+                    ui.set_min_size(ui.available_size());
+                    match t {
+                        LeftTool::Project => self.draw_project_panel(ui, &ctx),
+                        LeftTool::Structure => self.draw_structure_panel(ui),
+                    }
+                });
             });
         }
         if self.bottom_tool.is_some() {
-            egui::Panel::bottom("bottom_tool").resizable(true).default_size(260.0).size_range(100.0..=900.0).frame(Frame::new().fill(pal.window_bg).stroke(egui::Stroke::new(1.0, pal.border))).show(ui, |ui| self.draw_bottom_panel(ui, &ctx));
+            let margin = Margin { left: 0, right: gap, top: gap, bottom: gap };
+            egui::Panel::bottom("bottom_tool").resizable(true).default_size(280.0).size_range(120.0..=900.0).show_separator_line(false).frame(none.inner_margin(margin)).show(ui, |ui| {
+                widgets::card_frame(&pal, pal.panel_bg).show(ui, |ui| {
+                    ui.set_min_size(ui.available_size());
+                    self.draw_bottom_panel(ui, &ctx);
+                });
+            });
         }
-        egui::CentralPanel::default().frame(Frame::new().fill(pal.editor_bg)).show(ui, |ui| self.draw_central(ui, &ctx));
+        let margin = Margin { left: 0, right: gap, top: 0, bottom: if self.bottom_tool.is_some() { 0 } else { gap } };
+        egui::CentralPanel::default().frame(none.inner_margin(margin)).show(ui, |ui| {
+            widgets::card_frame(&pal, pal.editor_bg).show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                self.draw_central(ui, &ctx);
+            });
+        });
 
         self.tick_palette();
         self.draw_popups(&ctx);
