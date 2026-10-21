@@ -1,0 +1,19 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "open", "path": "${PROJ}/src/scratch.lisp"},
+  {"op": "wait", "what": "index"},
+  {"op": "log", "value": "Ctrl+V (Event::Paste) reaches text fields, not only the editor"},
+  {"op": "set_text", "value": "foo bar foo\nFoo"},
+  {"op": "key", "value": "Ctrl+F"},
+  {"op": "frames", "value": 3},
+  {"op": "paste", "value": "foo"},
+  {"op": "frames", "value": 2},
+  {"op": "assert_find", "matches": 3},
+  {"op": "key", "value": "Escape"},
+  {"op": "command", "value": "file.clone"},
+  {"op": "frames", "value": 3},
+  {"op": "paste", "value": "owner/repo"},
+  {"op": "frames", "value": 2},
+  {"op": "assert_clone_url", "value": "owner/repo"},
+  {"op": "quit"}
+]

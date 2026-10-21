@@ -13,7 +13,7 @@ path = "src/main.rs"
 lisp-syntax.workspace = true
 ide-core.workspace = true
 lisp-runtime.workspace = true
-eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "clipboard", "x11", "wayland"] }
 rfd = "0.17"
 serde_json.workspace = true
 png = "0.18"

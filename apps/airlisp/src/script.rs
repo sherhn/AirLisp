@@ -273,6 +273,11 @@ impl App {
                     self.fail(format!("assert_find: expected {want} matches, got {}", self.find.matches.len()));
                 }
             }
+            "assert_clone_url" => match &self.popup {
+                Popup::Clone(c) if c.url == sval => {}
+                Popup::Clone(c) => self.fail(format!("assert_clone_url: expected {sval:?}, got {:?}", c.url)),
+                _ => self.fail("assert_clone_url: the clone dialog is not open".to_string()),
+            },
             "assert_hint" => {
                 let ok = self.hint.as_ref().is_some_and(|h| h.0.contains(&sval));
                 if !ok {
