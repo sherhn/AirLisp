@@ -69,6 +69,8 @@ pub struct GitState {
     pub changes: Vec<Change>,
     pub branches: Vec<Branch>,
     pub log: Vec<Commit>,
+    /// Lane layout of `log` (the branch graph).
+    pub graph: Vec<ide_core::graph::GraphRow>,
     pub rx: Option<Receiver<GitSnapshot>>,
     pub last_refresh: f64,
     pub commit_msg: String,
@@ -101,6 +103,7 @@ impl Default for GitState {
             changes: vec![],
             branches: vec![],
             log: vec![],
+            graph: vec![],
             rx: None,
             last_refresh: -100.0,
             commit_msg: String::new(),

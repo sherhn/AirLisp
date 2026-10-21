@@ -83,7 +83,7 @@ impl App {
                 head: repo.as_ref().and_then(|r| r.head_hash()),
                 changes,
                 branches: repo.as_ref().map(|r| r.branches()).unwrap_or_default(),
-                log: repo.as_ref().map(|r| r.log(80)).unwrap_or_default(),
+                log: repo.as_ref().map(|r| r.log_all(200)).unwrap_or_default(),
                 truncated,
             };
             let _ = tx.send(snap);
@@ -99,6 +99,7 @@ impl App {
             self.git.branch = snap.branch;
             self.git.head = snap.head;
             self.git.branches = snap.branches;
+            self.git.graph = ide_core::graph::layout(&snap.log);
             self.git.log = snap.log;
             self.git.changes_truncated = snap.truncated;
             // keep the user's check marks for files that are still changed; check new tracked ones by default

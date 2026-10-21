@@ -283,6 +283,14 @@ impl App {
                 Popup::Clone(c) => self.fail(format!("assert_clone_url: expected {sval:?}, got {:?}", c.url)),
                 _ => self.fail("assert_clone_url: the clone dialog is not open".to_string()),
             },
+            "assert_graph" => {
+                let lanes = self.git.graph.iter().map(|g| g.width).max().unwrap_or(0);
+                let want_lanes = step["min_lanes"].as_u64().unwrap_or(1) as usize;
+                let want_commits = step["min_commits"].as_u64().unwrap_or(1) as usize;
+                if lanes < want_lanes || self.git.graph.len() < want_commits {
+                    self.fail(format!("assert_graph: {} commits in {lanes} lanes, wanted at least {want_commits} in {want_lanes}", self.git.graph.len()));
+                }
+            }
             "assert_hint" => {
                 let ok = self.hint.as_ref().is_some_and(|h| h.0.contains(&sval));
                 if !ok {

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use eframe::egui::{self, Color32, CornerRadius, Key, Margin, Pos2, Rect, RichText, Sense, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Key, Margin, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use lisp_syntax::outline::{SymbolKind, definition_at};
 
 use crate::app::App;
@@ -875,27 +875,112 @@ impl App {
             return;
         }
         let log = self.git.log.clone();
+        let graph = std::mem::take(&mut self.git.graph);
+        let cols = graph.iter().map(|g| g.width).max().unwrap_or(1).clamp(1, MAX_LANES);
+        let head = self.git.head.clone();
         let mut show: Option<usize> = None;
-        egui::ScrollArea::vertical().id_salt("git_log").auto_shrink([false, false]).show_rows(ui, ROW_H + 2.0, log.len(), |ui, range| {
+        let row_h = ROW_H + 2.0;
+        egui::ScrollArea::vertical().id_salt("git_log").auto_shrink([false, false]).show_rows(ui, row_h, log.len(), |ui, range| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for i in range {
                 let c = &log[i];
-                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H + 2.0), Sense::click());
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
                 widgets::row_background(ui, &pal, r, false, resp.hovered());
                 let cy = r.center().y;
-                ui.painter().circle_filled(Pos2::new(r.min.x + 24.0, cy), 4.0, if i == 0 { pal.accent } else { pal.text_dim });
-                ui.painter().text(Pos2::new(r.min.x + 44.0, cy), egui::Align2::LEFT_CENTER, &c.short, egui::FontId::monospace(12.5), pal.text_dim);
+                let lane_x = |l: usize| r.min.x + 22.0 + l.min(MAX_LANES - 1) as f32 * LANE_W;
+                let mut tx = r.min.x + 22.0 + cols as f32 * LANE_W + 8.0;
+                if let Some(g) = graph.get(i) {
+                    let p = ui.painter();
+                    let stroke = |color: usize| Stroke::new(1.8, lane_color(color));
+                    let node = Pos2::new(lane_x(g.lane), cy);
+                    for &(l, col) in &g.through {
+                        p.line_segment([Pos2::new(lane_x(l), r.min.y), Pos2::new(lane_x(l), r.max.y)], stroke(col));
+                    }
+                    for &(l, col) in &g.incoming {
+                        lane_edge(p, Pos2::new(lane_x(l), r.min.y), node, stroke(col));
+                    }
+                    for &(l, col) in &g.outgoing {
+                        lane_edge(p, node, Pos2::new(lane_x(l), r.max.y), stroke(col));
+                    }
+                    let is_head = head.as_deref() == Some(c.hash.as_str());
+                    if c.parents.len() > 1 {
+                        p.circle_filled(node, 5.0, pal.panel_bg);
+                        p.circle_stroke(node, 4.0, Stroke::new(2.0, lane_color(g.color)));
+                    } else {
+                        p.circle_filled(node, 4.5, lane_color(g.color));
+                    }
+                    if is_head {
+                        p.circle_stroke(node, 7.5, Stroke::new(1.5, pal.text));
+                    }
+                } else {
+                    ui.painter().circle_filled(Pos2::new(lane_x(0), cy), 4.0, pal.text_dim);
+                }
+                ui.painter().text(Pos2::new(tx, cy), egui::Align2::LEFT_CENTER, &c.short, egui::FontId::monospace(12.5), pal.text_dim);
+                tx += 70.0;
                 let g = ui.painter().layout_no_wrap(c.subject.clone(), fonts::ui(13.5), pal.text);
-                let gw = g.size().x.min(r.width() * 0.5);
-                ui.painter().galley(Pos2::new(r.min.x + 112.0, cy - g.size().y / 2.0), g, pal.text);
-                ui.painter().text(Pos2::new(r.min.x + 128.0 + gw, cy), egui::Align2::LEFT_CENTER, format!("{}   {}", c.author, c.when), fonts::ui(12.0), pal.text_dim);
+                let gw = g.size().x.min((r.max.x - tx) * 0.5).max(40.0);
+                let clip = ui.painter().with_clip_rect(Rect::from_min_max(Pos2::new(tx, r.min.y), Pos2::new(tx + gw, r.max.y)));
+                clip.galley(Pos2::new(tx, cy - g.size().y / 2.0), g, pal.text);
+                tx += gw + 10.0;
+                for name in &c.refs {
+                    tx = ref_chip(ui.painter(), &pal, Pos2::new(tx, cy), name) + 6.0;
+                }
+                ui.painter().text(Pos2::new(r.max.x - 12.0, cy), egui::Align2::RIGHT_CENTER, format!("{}   {}", c.author, c.when), fonts::ui(12.0), pal.text_dim);
                 if resp.clicked() {
                     show = Some(i);
                 }
             }
         });
+        self.git.graph = graph;
         if let Some(i) = show {
             self.git_show_commit(i);
         }
     }
+}
+
+
+const LANE_W: f32 = 16.0;
+const MAX_LANES: usize = 8;
+
+/// Branch line colours; the graph cycles through them.
+fn lane_color(i: usize) -> Color32 {
+    const COLORS: [Color32; 8] = [
+        Color32::from_rgb(0x5A, 0x86, 0xF5),
+        Color32::from_rgb(0x4C, 0xB0, 0x7A),
+        Color32::from_rgb(0xE0, 0xA0, 0x40),
+        Color32::from_rgb(0xB0, 0x7C, 0xE8),
+        Color32::from_rgb(0xE0, 0x6C, 0x75),
+        Color32::from_rgb(0x3C, 0xB8, 0xC4),
+        Color32::from_rgb(0xD6, 0x6F, 0xB0),
+        Color32::from_rgb(0x8C, 0xA8, 0x4B),
+    ];
+    COLORS[i % COLORS.len()]
+}
+
+/// A graph edge between two points: straight when they share a lane, an S-curve otherwise.
+fn lane_edge(p: &egui::Painter, from: Pos2, to: Pos2, stroke: Stroke) {
+    if (from.x - to.x).abs() < 0.5 {
+        p.line_segment([from, to], stroke);
+    } else {
+        let mid = (from.y + to.y) / 2.0;
+        p.add(egui::epaint::CubicBezierShape::from_points_stroke([from, Pos2::new(from.x, mid), Pos2::new(to.x, mid), to], false, Color32::TRANSPARENT, stroke));
+    }
+}
+
+/// A small label for a branch/tag/HEAD decoration; returns the x where it ends.
+fn ref_chip(p: &egui::Painter, pal: &crate::theme::Palette, at: Pos2, raw: &str) -> f32 {
+    let (text, color) = if let Some(cur) = raw.strip_prefix("HEAD -> ") {
+        (cur.to_string(), pal.accent)
+    } else if let Some(tag) = raw.strip_prefix("tag: ") {
+        (tag.to_string(), pal.warning)
+    } else if raw.contains('/') {
+        (raw.to_string(), pal.text_dim)
+    } else {
+        (raw.to_string(), pal.ok)
+    };
+    let g = p.layout_no_wrap(text, fonts::semibold(11.5), color);
+    let rect = Rect::from_min_size(Pos2::new(at.x, at.y - 9.0), Vec2::new(g.size().x + 14.0, 18.0));
+    p.rect_filled(rect, CornerRadius::same(7), color.gamma_multiply(0.2));
+    p.galley(Pos2::new(rect.min.x + 7.0, rect.center().y - g.size().y / 2.0), g, color);
+    rect.max.x
 }

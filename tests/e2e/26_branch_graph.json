@@ -1,0 +1,12 @@
+[
+  {"op": "log", "value": "@branches: the Git log draws the branch graph with labels"},
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+  {"op": "wait", "what": "git_ready", "timeout": 30},
+  {"op": "key", "value": "Alt+9"},
+  {"op": "assert_bottom", "value": "git"},
+  {"op": "frames", "value": 4},
+  {"op": "assert_graph", "min_lanes": 2, "min_commits": 6},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}.png"},
+  {"op": "quit"}
+]

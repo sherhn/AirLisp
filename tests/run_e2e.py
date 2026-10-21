@@ -72,6 +72,28 @@ def run_one(script_path):
         script = tmp / "script.json"
         script.write_text(text, encoding="utf-8")
         json.loads(text)  # validate
+        if "@branches" in text:
+            # a history with branches, a merge and a tag, for the commit graph
+            def g(*args):
+                subprocess.run(["git", "-c", "commit.gpgsign=false", *args], cwd=proj, capture_output=True, check=True)
+
+            g("checkout", "-q", "-b", "feature")
+            (proj / "feature.txt").write_text("f1\n", encoding="utf-8")
+            g("add", "-A")
+            g("commit", "-q", "-m", "feature: first step")
+            (proj / "feature.txt").write_text("f1\nf2\n", encoding="utf-8")
+            g("commit", "-q", "-am", "feature: second step")
+            g("checkout", "-q", "main")
+            (proj / "main.txt").write_text("m1\n", encoding="utf-8")
+            g("add", "-A")
+            g("commit", "-q", "-m", "main: independent work")
+            g("merge", "-q", "--no-ff", "feature", "-m", "Merge branch feature")
+            g("tag", "v0.1")
+            g("checkout", "-q", "-b", "hotfix", "HEAD~1")
+            (proj / "fix.txt").write_text("x\n", encoding="utf-8")
+            g("add", "-A")
+            g("commit", "-q", "-m", "hotfix: patch")
+            g("checkout", "-q", "main")
         if "@no_git" in text:
             def _unlock(func, path, exc):
                 os.chmod(path, stat.S_IWRITE)

@@ -49,6 +49,9 @@ pub struct Commit {
     pub author: String,
     pub when: String,
     pub subject: String,
+    pub parents: Vec<String>,
+    /// Branch, tag and HEAD decorations (`HEAD -> main`, `origin/main`, `tag: v1`).
+    pub refs: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -190,13 +193,34 @@ impl Repo {
         p.strip_prefix(&self.root).ok().map(|r| r.to_string_lossy().replace('\\', "/"))
     }
 
+    /// The newest `n` commits of the current branch.
     pub fn log(&self, n: usize) -> Vec<Commit> {
-        let fmt = "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s";
-        let Ok(out) = self.run(&["log", &format!("-n{n}"), fmt]) else { return vec![] };
+        self.log_with(n, false)
+    }
+
+    /// The newest `n` commits of every branch, in the order a graph needs (children before parents).
+    pub fn log_all(&self, n: usize) -> Vec<Commit> {
+        self.log_with(n, true)
+    }
+
+    fn log_with(&self, n: usize, all: bool) -> Vec<Commit> {
+        let fmt = "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%P%x1f%D%x1f%s";
+        let count = format!("-n{n}");
+        let mut args = vec!["log", &count, "--topo-order", fmt];
+        if all {
+            args.insert(1, "--all");
+        }
+        let Ok(out) = self.run(&args) else { return vec![] };
         out.lines()
             .filter_map(|l| {
                 let mut p = l.split('\u{1f}');
-                Some(Commit { hash: p.next()?.into(), short: p.next()?.into(), author: p.next()?.into(), when: p.next()?.into(), subject: p.next().unwrap_or("").into() })
+                let hash: String = p.next()?.into();
+                let short = p.next()?.into();
+                let author = p.next()?.into();
+                let when = p.next()?.into();
+                let parents = p.next()?.split_whitespace().map(String::from).collect();
+                let refs = p.next()?.split(", ").filter(|r| !r.is_empty()).map(String::from).collect();
+                Some(Commit { hash, short, author, when, subject: p.next().unwrap_or("").into(), parents, refs })
             })
             .collect()
     }
