@@ -1,11 +1,10 @@
 //! Custom window frame: the OS title bar is removed (`with_decorations(false)`), so the app draws its
 //! own title bar (logo, main menu, title, minimize/maximize/close), drag-to-move and edge resizing.
 
-use eframe::egui::{self, Align2, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, ViewportCommand};
+use eframe::egui::{self, Color32, CornerRadius, CursorIcon, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, ViewportCommand};
 
 use crate::app::App;
 use crate::fonts;
-use crate::icons::{self, Icon};
 use crate::widgets;
 
 pub const TITLEBAR_H: f32 = widgets::MENU_H + 4.0;

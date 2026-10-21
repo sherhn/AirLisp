@@ -1,12 +1,14 @@
-//! The design system: a "frosted glass" look built from tonal layers of grey (no borders), floating
+//! The design system: a flat "glass" look built from tonal layers of grey (no borders, no shadows), floating
 //! rounded cards over a soft gradient, translucent hover/selection states and generous spacing.
 
-use eframe::egui::{self, Align2, Color32, CornerRadius, Margin, Mesh, Painter, Pos2, Rect, Sense, Shadow, Shape, Stroke, Vec2};
+use eframe::egui::{self, Align, Align2, Color32, CornerRadius, FontId, Margin, Mesh, Painter, Pos2, Rect, Sense, Shape, Stroke, StrokeKind, Vec2};
 
 use crate::fonts;
 use crate::icons::{self, Icon};
 use crate::theme::Palette;
 
+/// Height of a text field / segmented control row.
+pub const FIELD_H: f32 = 36.0;
 pub const MENU_H: f32 = 36.0;
 pub const TOOLBAR_H: f32 = 54.0;
 pub const STRIP_W: f32 = 56.0;
@@ -37,14 +39,14 @@ pub fn paint_base(painter: &Painter, rect: Rect, pal: &Palette) {
     painter.add(Shape::mesh(m));
 }
 
-/// A floating tool-window card: filled, rounded, softly shadowed, no border.
-pub fn card_frame(pal: &Palette, fill: Color32) -> egui::Frame {
-    egui::Frame::new().fill(fill).corner_radius(CornerRadius::same(CARD_RADIUS)).shadow(Shadow { offset: [0, 6], blur: 22, spread: 0, color: pal.shadow })
+/// A floating tool-window card: filled and rounded, no border, no shadow.
+pub fn card_frame(_pal: &Palette, fill: Color32) -> egui::Frame {
+    egui::Frame::new().fill(fill).corner_radius(CornerRadius::same(CARD_RADIUS))
 }
 
-/// Translucent "glass" surface for popups and dialogs (no border; a soft sheen on the top edge instead).
+/// "Glass" surface for popups and dialogs (no border, no shadow; a soft sheen on the top edge instead).
 pub fn glass_frame(pal: &Palette) -> egui::Frame {
-    egui::Frame::new().fill(pal.glass).corner_radius(CornerRadius::same(CARD_RADIUS + 2)).inner_margin(Margin::same(18)).shadow(Shadow { offset: [0, 14], blur: 48, spread: 2, color: pal.shadow })
+    egui::Frame::new().fill(pal.glass).corner_radius(CornerRadius::same(CARD_RADIUS + 2)).inner_margin(Margin::same(18))
 }
 
 /// Thin highlight along the top edge of a glass surface (a light reflection, not a border).
@@ -164,19 +166,218 @@ pub fn secondary_button(ui: &mut egui::Ui, pal: &Palette, label: &str) -> egui::
     resp
 }
 
-/// Rounded text input surface (tonal fill, no border) with an optional leading icon.
-pub fn input_frame<R>(ui: &mut egui::Ui, pal: &Palette, leading: Option<Icon>, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    let inner = egui::Frame::new().fill(pal.input_bg).corner_radius(CornerRadius::same(12)).inner_margin(Margin::symmetric(12, 5)).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            if let Some(i) = leading {
-                let (r, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
-                icons::paint(ui.painter(), r, i, pal.text_dim);
-            }
-            add(ui)
-        })
-        .inner
-    });
-    inner.inner
+/// A single-line text input: a rounded tonal field of fixed height whose text (and hint) is centred vertically,
+/// with an optional leading icon. Clicking anywhere on the field focuses it.
+pub struct TextField<'a> {
+    text: &'a mut String,
+    hint: &'a str,
+    icon: Option<Icon>,
+    width: Option<f32>,
+    height: f32,
+    font: FontId,
+    id: Option<egui::Id>,
+    enabled: bool,
+}
+
+impl<'a> TextField<'a> {
+    pub fn new(text: &'a mut String) -> Self {
+        TextField { text, hint: "", icon: None, width: None, height: FIELD_H, font: fonts::ui(13.5), id: None, enabled: true }
+    }
+    pub fn hint(mut self, h: &'a str) -> Self {
+        self.hint = h;
+        self
+    }
+    pub fn icon(mut self, i: Icon) -> Self {
+        self.icon = Some(i);
+        self
+    }
+    pub fn icon_opt(mut self, i: Option<Icon>) -> Self {
+        self.icon = i;
+        self
+    }
+    /// Fixed width (default: the rest of the available width).
+    pub fn width(mut self, w: f32) -> Self {
+        self.width = Some(w);
+        self
+    }
+    pub fn height(mut self, h: f32) -> Self {
+        self.height = h;
+        self
+    }
+    pub fn font(mut self, f: FontId) -> Self {
+        self.font = f;
+        self
+    }
+    pub fn id(mut self, id: egui::Id) -> Self {
+        self.id = Some(id);
+        self
+    }
+    pub fn enabled(mut self, on: bool) -> Self {
+        self.enabled = on;
+        self
+    }
+    pub fn show(self, ui: &mut egui::Ui, pal: &Palette) -> egui::Response {
+        // derived from (not equal to) the id the allocation below gets, or the focusable edit clashes with that hover-only widget
+        let id = self.id.unwrap_or_else(|| ui.next_auto_id().with("text_field"));
+        let w = self.width.unwrap_or_else(|| ui.available_width()).max(40.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, self.height), Sense::hover());
+        let bg = ui.interact(rect, id.with("field_bg"), Sense::click());
+        ui.painter().rect_filled(rect, CornerRadius::same(12), if self.enabled { pal.input_bg } else { pal.input_bg.gamma_multiply(0.6) });
+        let mut x = rect.min.x + 12.0;
+        if let Some(i) = self.icon {
+            icons::paint(ui.painter(), Rect::from_center_size(Pos2::new(x + 8.0, rect.center().y), Vec2::splat(16.0)), i, pal.text_dim);
+            x += 26.0;
+        }
+        let inner = Rect::from_min_max(Pos2::new(x, rect.min.y), Pos2::new((rect.max.x - 10.0).max(x + 10.0), rect.max.y));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(Align::Center)));
+        let te = egui::TextEdit::singleline(self.text)
+            .id(id)
+            .hint_text(egui::RichText::new(self.hint).font(self.font.clone()).color(pal.text_dim))
+            .font(self.font)
+            .text_color(pal.text)
+            .frame(egui::Frame::NONE)
+            .margin(Margin::ZERO)
+            .align(Align2::LEFT_CENTER)
+            .desired_width(inner.width())
+            .min_size(Vec2::new(inner.width(), self.height));
+        let resp = child.add_enabled(self.enabled, te);
+        if self.enabled && bg.clicked() {
+            ui.memory_mut(|m| m.request_focus(id));
+        }
+        resp
+    }
+}
+
+/// Focus `resp` once when a dialog has just opened. egui lays a new popup out invisibly for one frame (the sizing pass),
+/// where a focus request is lost, so the flag is only consumed in a real frame.
+pub fn focus_once(ui: &egui::Ui, resp: &egui::Response, flag: &mut bool) {
+    if *flag && !ui.is_sizing_pass() {
+        resp.request_focus();
+        *flag = false;
+    }
+}
+
+/// A full-width row of fixed `height` whose children are laid out right-to-left and centred vertically
+/// (plain `with_layout(right_to_left(Center))` would stretch to all the available height).
+pub fn right_row<R>(ui: &mut egui::Ui, height: f32, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::right_to_left(Align::Center)));
+    add(&mut child)
+}
+
+/// A multi-line text area on a tonal card with even padding (text starts at the top-left).
+pub fn text_area(ui: &mut egui::Ui, pal: &Palette, text: &mut String, hint: &str, height: f32, id: Option<egui::Id>) -> egui::Response {
+    let w = ui.available_width();
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, height), Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::same(12), pal.input_bg);
+    let inner = rect.shrink2(Vec2::new(12.0, 10.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+    let mut te = egui::TextEdit::multiline(text)
+        .hint_text(egui::RichText::new(hint).font(fonts::ui(13.5)).color(pal.text_dim))
+        .font(fonts::ui(13.5))
+        .text_color(pal.text)
+        .frame(egui::Frame::NONE)
+        .margin(Margin::ZERO)
+        .desired_width(inner.width())
+        .min_size(inner.size());
+    if let Some(id) = id {
+        te = te.id(id);
+    }
+    egui::ScrollArea::vertical().id_salt(("text_area", rect.min.x as i32, rect.min.y as i32)).auto_shrink([false, false]).show(&mut child, |ui| ui.add(te)).inner
+}
+
+/// The rounded checkbox square used by [`checkbox`] and by checkable lists.
+pub fn checkbox_box(painter: &Painter, rect: Rect, on: bool, pal: &Palette) {
+    if on {
+        painter.rect_filled(rect, CornerRadius::same(5), pal.accent);
+        icons::paint(painter, rect.shrink(rect.width() * 0.16), Icon::Check, Color32::WHITE);
+    } else {
+        painter.rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.4, pal.text_dim), StrokeKind::Inside);
+    }
+}
+
+/// A checkbox that can also show "some of the items are selected" (an accent box with a dash).
+pub fn checkbox_state(painter: &Painter, rect: Rect, state: ide_core::changes::Check, pal: &Palette) {
+    use ide_core::changes::Check;
+    match state {
+        Check::On => checkbox_box(painter, rect, true, pal),
+        Check::Off => checkbox_box(painter, rect, false, pal),
+        Check::Mixed => {
+            painter.rect_filled(rect, CornerRadius::same(5), pal.accent);
+            let y = rect.center().y;
+            painter.line_segment([Pos2::new(rect.min.x + rect.width() * 0.26, y), Pos2::new(rect.max.x - rect.width() * 0.26, y)], Stroke::new(2.0, Color32::WHITE));
+        }
+    }
+}
+
+/// Checkbox with a label to its right.
+pub fn checkbox(ui: &mut egui::Ui, pal: &Palette, on: &mut bool, label: &str) -> egui::Response {
+    let font = fonts::ui(13.5);
+    let g = ui.painter().layout_no_wrap(label.to_string(), font.clone(), pal.text);
+    let (rect, mut resp) = ui.allocate_exact_size(Vec2::new(18.0 + 8.0 + g.size().x + 4.0, 28.0), Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let b = Rect::from_center_size(Pos2::new(rect.min.x + 9.0, rect.center().y), Vec2::splat(18.0));
+    checkbox_box(ui.painter(), b, *on, pal);
+    ui.painter().galley(Pos2::new(rect.min.x + 26.0, rect.center().y - g.size().y / 2.0), g, pal.text);
+    resp
+}
+
+/// A small toggleable pill ("Cc", "W", ...): accent-tinted when on.
+pub fn toggle_chip(ui: &mut egui::Ui, pal: &Palette, label: &str, on: &mut bool, tooltip: &str) -> egui::Response {
+    let font = fonts::semibold(12.5);
+    let g = ui.painter().layout_no_wrap(label.to_string(), font.clone(), pal.text);
+    let (rect, mut resp) = ui.allocate_exact_size(Vec2::new((g.size().x + 20.0).max(32.0), 30.0), Sense::click());
+    if resp.clicked() {
+        *on = !*on;
+        resp.mark_changed();
+    }
+    let r = CornerRadius::same(10);
+    if *on {
+        ui.painter().rect_filled(rect, r, pal.selected);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(rect, r, pal.hover);
+    }
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, font, if *on { pal.accent } else { pal.text_dim });
+    if tooltip.is_empty() { resp } else { resp.on_hover_text(tooltip) }
+}
+
+/// Horizontal slider with a value readout on its left. Returns true when the value changed.
+pub fn slider(ui: &mut egui::Ui, pal: &Palette, value: &mut f32, range: std::ops::RangeInclusive<f32>, step: f32) -> bool {
+    let (lo, hi) = (*range.start(), *range.end());
+    let id = ui.next_auto_id();
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(36.0 + 12.0 + 168.0, 28.0), Sense::hover());
+    let track = Rect::from_min_max(Pos2::new(rect.min.x + 48.0 + 8.0, rect.center().y - 2.0), Pos2::new(rect.max.x - 8.0, rect.center().y + 2.0));
+    let hit = Rect::from_min_max(Pos2::new(track.min.x - 8.0, rect.min.y), Pos2::new(track.max.x + 8.0, rect.max.y));
+    let resp = ui.interact(hit, id, Sense::click_and_drag());
+    let mut changed = false;
+    if (resp.dragged() || resp.clicked() || resp.is_pointer_button_down_on())
+        && let Some(p) = resp.interact_pointer_pos()
+    {
+        let t = ((p.x - track.min.x) / track.width()).clamp(0.0, 1.0);
+        let mut v = lo + t * (hi - lo);
+        if step > 0.0 {
+            v = (v / step).round() * step;
+        }
+        let v = v.clamp(lo, hi);
+        if (v - *value).abs() > f32::EPSILON {
+            *value = v;
+            changed = true;
+        }
+    }
+    let t = ((*value - lo) / (hi - lo)).clamp(0.0, 1.0);
+    let hx = track.min.x + t * track.width();
+    let p = ui.painter();
+    p.rect_filled(track, CornerRadius::same(2), pal.hover.gamma_multiply(1.8));
+    p.rect_filled(Rect::from_min_max(track.min, Pos2::new(hx, track.max.y)), CornerRadius::same(2), pal.accent);
+    let r = if resp.dragged() || resp.hovered() { 9.0 } else { 8.0 };
+    p.circle_filled(Pos2::new(hx, rect.center().y), r, pal.accent);
+    p.circle_filled(Pos2::new(hx, rect.center().y), r - 3.5, Color32::WHITE);
+    let text = if step >= 1.0 { format!("{}", *value as i32) } else { format!("{:.1}", *value) };
+    p.text(Pos2::new(rect.min.x + 40.0, rect.center().y), Align2::RIGHT_CENTER, text, fonts::semibold(13.5), pal.text);
+    changed
 }
 
 /// iOS-style switch.
@@ -200,11 +401,11 @@ pub fn segmented(ui: &mut egui::Ui, pal: &Palette, options: &[&str], selected: u
     let font = fonts::ui(13.0);
     let widths: Vec<f32> = options.iter().map(|o| ui.painter().layout_no_wrap(o.to_string(), font.clone(), pal.text).size().x + 28.0).collect();
     let total: f32 = widths.iter().sum::<f32>() + 8.0;
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(total, 34.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(total, FIELD_H - 2.0), Sense::hover());
     ui.painter().rect_filled(rect, CornerRadius::same(12), pal.input_bg);
     let mut x = rect.min.x + 4.0;
     for (i, o) in options.iter().enumerate() {
-        let r = Rect::from_min_size(Pos2::new(x, rect.min.y + 4.0), Vec2::new(widths[i], 26.0));
+        let r = Rect::from_min_size(Pos2::new(x, rect.min.y + 4.0), Vec2::new(widths[i], rect.height() - 8.0));
         let resp = ui.interact(r, ui.id().with(("seg", i, *o)), Sense::click());
         if i == selected {
             ui.painter().rect_filled(r, CornerRadius::same(9), pal.tab_active_bg);

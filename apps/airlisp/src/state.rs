@@ -4,6 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
+use eframe::egui::Pos2;
+
 use ide_core::diff::DiffLine;
 use ide_core::git::{Branch, Change, Commit, Repo};
 use ide_core::index::ProjectIndex;
@@ -13,12 +15,14 @@ use ide_core::search::FileHit;
 use ide_core::workspace::Entry;
 use lisp_runtime::{ReplSession, RunHandle};
 
-use crate::editor_view::Sev;
+use crate::editor_view::{Sev, ViewState};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LeftTool {
     Project,
     Structure,
+    /// The Commit window: changed files, commit message, buttons.
+    Commit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,9 +35,20 @@ pub enum BottomTool {
     Terminal,
 }
 
+/// The editor area divided into two panes. The focused pane shows `docs[active]`; the other one shows the
+/// document whose id is `other` (ids, not indices, so closing tabs cannot repoint it).
+pub struct Split {
+    /// Panes side by side (true) or stacked (false).
+    pub vertical: bool,
+    pub other: u64,
+    /// The focused pane is the right / bottom one.
+    pub second_focused: bool,
+    /// Scroll state of the unfocused pane while both panes show the same document.
+    pub view: ViewState,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitTab {
-    Changes,
     Log,
     Local,
 }
@@ -69,6 +84,12 @@ pub struct GitState {
     /// Local commits (checkpoints kept outside git).
     pub local: Option<LocalVcs>,
     pub changes_truncated: bool,
+    /// Commit window: collapsed groups / directories (see `ide_core::changes::collapse_key`).
+    pub collapsed: HashSet<String>,
+    /// Commit window: show files under their directories.
+    pub by_dir: bool,
+    /// Put the keyboard focus into the commit message on the next frame.
+    pub focus_msg: bool,
 }
 
 impl Default for GitState {
@@ -86,13 +107,16 @@ impl Default for GitState {
             checked: HashSet::new(),
             busy: None,
             op_rx: None,
-            tab: GitTab::Changes,
+            tab: GitTab::Log,
             selected_commit: None,
             kinds: HashMap::new(),
             dirty_dirs: HashSet::new(),
             available: true,
             local: None,
             changes_truncated: false,
+            collapsed: HashSet::new(),
+            by_dir: true,
+            focus_msg: false,
         }
     }
 }
@@ -298,6 +322,8 @@ pub enum ConfirmKind {
     Reload(usize),
     Rollback(String),
     RestoreLocal(u64),
+    /// Put one file back into its state in a local commit: (commit id, relative path).
+    RestoreLocalFile(u64, String),
     DeleteLocal(u64),
 }
 
@@ -329,6 +355,44 @@ pub struct CloneState {
     pub run: Option<CloneRun>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalViewMode {
+    /// The diff of the selected file against the state before the commit.
+    Changes,
+    /// The whole file as it was in the commit.
+    Code,
+}
+
+/// The local commit browser: files of one commit, their diff or full code, and navigation between commits.
+pub struct LocalViewState {
+    pub id: u64,
+    /// What the commit changed (relative to the previous local commit, or HEAD for the first one).
+    pub files: Vec<Change>,
+    pub sel: usize,
+    pub mode: LocalViewMode,
+    /// The (commit, file index) the cached `diff` / `code` belong to.
+    pub loaded: Option<(u64, usize)>,
+    pub diff: Vec<DiffLine>,
+    pub code: Vec<String>,
+    pub scroll_to: Option<usize>,
+}
+
+/// The small window next to the gutter that shows the old code of a changed block.
+#[derive(Clone, Debug)]
+pub struct HunkPopup {
+    /// Gutter line (0-based) that was clicked.
+    pub line: usize,
+    /// Editor revision / scroll position the popup was made for: it closes when either changes.
+    pub rev: u64,
+    pub scroll_y: f32,
+    pub hunk: ide_core::diff::Hunk,
+    pub anchor: Pos2,
+    pub doc_path: PathBuf,
+    pub base_label: String,
+    /// The file does not exist in the base at all (untracked / new).
+    pub is_new_file: bool,
+}
+
 pub enum Popup {
     None,
     Palette(PaletteState),
@@ -339,11 +403,10 @@ pub enum Popup {
     FindInFiles { query: String, replace: String, case_sensitive: bool, whole_word: bool, just_opened: bool, replace_mode: bool },
     Settings { lisp_path: String, detected: String, filter: String, page: usize },
     Clone(Box<CloneState>),
+    LocalView(Box<LocalViewState>),
     About,
     Info { title: String, text: String },
     Confirm { kind: ConfirmKind, message: String },
-    Commit { just_opened: bool },
-    Diff { title: String, lines: Vec<DiffLine>, scroll_to: Option<usize> },
     NewBranch { input: String, just_opened: bool },
     LocalCommit { input: String, just_opened: bool },
     RenameFile { path: PathBuf, input: String, just_opened: bool },

@@ -70,11 +70,17 @@ impl App {
             "git_dirty" => self.git.rx.is_none() && !self.git.changes.is_empty(),
             "git_settled" => self.git.rx.is_none(),
             "git_clean" => self.git.rx.is_none() && self.git.changes.is_empty(),
-            "term_idle" => self.term.handle.is_none(),
+            "term_idle" => !self.term_busy(),
+            "script_done" => self.term.script.is_none() && self.term.handle.is_none(),
             "term_contains" => {
                 let t = cond["value"].as_str().unwrap_or("");
                 self.term.log.iter().any(|l| l.text.contains(t))
             }
+            "diff_new_contains" => {
+                let t = cond["value"].as_str().unwrap_or("");
+                self.docs.iter().filter_map(|d| d.diff.as_deref()).any(|d| d.new.contains(t))
+            }
+            "wsl_idle" => !self.wsl.busy(),
             "popup" => !matches!(self.popup, Popup::None),
             "no_popup" => matches!(self.popup, Popup::None),
             _ => true,
@@ -323,12 +329,11 @@ impl App {
                     Popup::FindInFiles { .. } => "find_in_files",
                     Popup::Settings { .. } => "settings",
                     Popup::Clone(_) => "clone",
+                    Popup::LocalView(_) => "local_view",
                     Popup::About => "about",
                     Popup::Info { .. } => "info",
                     Popup::Confirm { .. } => "confirm",
                     Popup::RenameFile { .. } => "rename_file",
-                    Popup::Commit { .. } => "commit",
-                    Popup::Diff { .. } => "diff",
                     Popup::NewBranch { .. } => "new_branch",
                     Popup::LocalCommit { .. } => "local_commit",
                 };
@@ -393,6 +398,17 @@ impl App {
                 };
                 if name != sval {
                     self.fail(format!("assert_bottom: expected {sval}, got {name}"));
+                }
+            }
+            "assert_left" => {
+                let name = match self.left_tool {
+                    Some(LeftTool::Project) => "project",
+                    Some(LeftTool::Structure) => "structure",
+                    Some(LeftTool::Commit) => "commit",
+                    None => "none",
+                };
+                if name != sval {
+                    self.fail(format!("assert_left: expected {sval}, got {name}"));
                 }
             }
             "assert_find_results" => {
@@ -479,10 +495,303 @@ impl App {
                     self.fail(format!("assert_term_contains: {sval:?} not found; tail: {tail:?}"));
                 }
             }
+            "assert_no_term_contains" => {
+                if self.term.log.iter().any(|l| l.text.contains(&sval)) {
+                    self.fail(format!("assert_no_term_contains: {sval:?} was printed"));
+                }
+            }
             "assert_toast" => {
                 if !self.toasts.iter().any(|t| t.text.contains(&sval)) {
                     let all: Vec<_> = self.toasts.iter().map(|t| t.text.clone()).collect();
                     self.fail(format!("assert_toast: {sval:?} not in {all:?}"));
+                }
+            }
+            "language" => {
+                let l = if sval.eq_ignore_ascii_case("ru") { ide_core::settings::Language::Russian } else { ide_core::settings::Language::English };
+                self.settings.language = l;
+                crate::i18n::set(l);
+            }
+            "open_local_commit" => self.open_local_view(step["value"].as_u64().unwrap_or(1)),
+            "local_view" => {
+                let p = std::mem::replace(&mut self.popup, Popup::None);
+                if let Popup::LocalView(mut st) = p {
+                    if let Some(id) = step["commit"].as_u64() {
+                        self.local_view_goto(&mut st, id);
+                    }
+                    if let Some(f) = step["file"].as_str() {
+                        match st.files.iter().position(|c| c.path == f) {
+                            Some(i) => st.sel = i,
+                            None => self.fail(format!("local_view: file {f} is not part of commit #{}", st.id)),
+                        }
+                    }
+                    match step["mode"].as_str() {
+                        Some("code") => st.mode = LocalViewMode::Code,
+                        Some("changes") => st.mode = LocalViewMode::Changes,
+                        _ => {}
+                    }
+                    self.popup = Popup::LocalView(st);
+                } else {
+                    self.popup = p;
+                    self.fail("local_view: the commit browser is not open".to_string());
+                }
+            }
+            "assert_local_view" => {
+                let p = std::mem::replace(&mut self.popup, Popup::None);
+                if let Popup::LocalView(mut st) = p {
+                    self.local_view_load(&mut st);
+                    if let Some(id) = step["commit"].as_u64()
+                        && st.id != id
+                    {
+                        self.fail(format!("assert_local_view: expected commit #{id}, got #{}", st.id));
+                    }
+                    if let Some(n) = step["files"].as_u64()
+                        && st.files.len() != n as usize
+                    {
+                        let names: Vec<_> = st.files.iter().map(|c| c.path.clone()).collect();
+                        self.fail(format!("assert_local_view: expected {n} files, got {names:?}"));
+                    }
+                    if !sval.is_empty() {
+                        let shown = match st.mode {
+                            LocalViewMode::Code => st.code.join("\n"),
+                            LocalViewMode::Changes => st.diff.iter().map(|l| format!("{}{}", match l.kind { ide_core::diff::LineKind::Added => "+", ide_core::diff::LineKind::Removed => "-", ide_core::diff::LineKind::Same => " " }, l.text)).collect::<Vec<_>>().join("\n"),
+                        };
+                        if !shown.contains(&sval.replace("\\n", "\n")) {
+                            self.fail(format!("assert_local_view: {sval:?} not shown in {:?} view: {shown:?}", st.mode));
+                        }
+                    }
+                    self.popup = Popup::LocalView(st);
+                } else {
+                    self.popup = p;
+                    self.fail("assert_local_view: the commit browser is not open".to_string());
+                }
+            }
+            "gutter_click" => {
+                let line = step["line"].as_u64().unwrap_or(1).saturating_sub(1) as usize;
+                match (self.gutter_rect, self.docs.get(self.active)) {
+                    (Some(g), Some(d)) => {
+                        let pos = crate::editor_view::gutter_mark_pos(g, d.view.scroll.y, self.settings.font_size, line);
+                        let s = self.script.as_mut().unwrap();
+                        s.pending.push(Event::PointerMoved(pos));
+                        s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+                        s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+                    }
+                    _ => self.fail("gutter_click: no editor on screen".to_string()),
+                }
+            }
+            "assert_hunk_popup" => {
+                if step["none"].as_bool().unwrap_or(false) {
+                    if self.hunk_popup.is_some() {
+                        self.fail("assert_hunk_popup: a popup is open but none was expected".to_string());
+                    }
+                } else {
+                    let hp = self.hunk_popup.clone();
+                    match &hp {
+                        None => self.fail("assert_hunk_popup: no popup is open".to_string()),
+                        Some(h) => {
+                            let old = h.hunk.old_lines.join("\n");
+                            if !sval.is_empty() && !old.contains(&sval) {
+                                self.fail(format!("assert_hunk_popup: {sval:?} not in the old code {old:?}"));
+                            }
+                            if let Some(n) = step["old_lines"].as_u64()
+                                && h.hunk.old_lines.len() != n as usize
+                            {
+                                self.fail(format!("assert_hunk_popup: expected {n} old lines, got {}", h.hunk.old_lines.len()));
+                            }
+                        }
+                    }
+                }
+            }
+            "hunk_revert" => self.hunk_revert(),
+            "diff_edit_beside" => self.diff_edit_beside(),
+            "settings_page" => {
+                if let Popup::Settings { page, .. } = &mut self.popup {
+                    *page = step["value"].as_u64().unwrap_or(0) as usize;
+                } else {
+                    self.fail("settings_page: the settings dialog is not open".to_string());
+                }
+            }
+            "wsl_action" => {
+                let arg = step["arg"].as_str().unwrap_or("").to_string();
+                match sval.as_str() {
+                    "probe" => self.wsl_probe(),
+                    "install_wsl" => self.wsl_install_wsl(),
+                    "install_distro" => self.wsl_install_distro(&arg),
+                    "install_file" => self.wsl_install_file(Path::new(&arg)),
+                    "install_sbcl" => self.wsl_install_sbcl(&arg),
+                    "use" => self.wsl_use(&arg),
+                    "use_windows" => self.use_windows(),
+                    other => self.fail(format!("wsl_action: unknown action {other}")),
+                }
+            }
+            "assert_wsl" => {
+                let w = &self.wsl;
+                let presence = match w.probe.as_ref().map(|p| &p.presence) {
+                    None => "unknown",
+                    Some(lisp_runtime::wsl::Presence::Unsupported) => "unsupported",
+                    Some(lisp_runtime::wsl::Presence::NotInstalled) => "not_installed",
+                    Some(lisp_runtime::wsl::Presence::Installed { .. }) => "installed",
+                };
+                let mut errors = vec![];
+                if let Some(p) = step["presence"].as_str()
+                    && p != presence
+                {
+                    errors.push(format!("presence {presence}, expected {p}"));
+                }
+                if let Some(n) = step["distros"].as_u64()
+                    && w.distros().len() != n as usize
+                {
+                    errors.push(format!("distros {:?}, expected {n}", w.distros()));
+                }
+                if let Some(s) = step["selected"].as_str()
+                    && w.selected != s
+                {
+                    errors.push(format!("selected {:?}, expected {s}", w.selected));
+                }
+                if let Some(s) = step["sbcl"].as_str() {
+                    let found = w.sbcl_path(&w.selected).is_some();
+                    if (s == "found") != found {
+                        errors.push(format!("sbcl in {:?}: {:?}, expected {s}", w.selected, w.sbcl.get(&w.selected)));
+                    }
+                }
+                if let Some(e) = step["run_env"].as_str() {
+                    let now = if self.settings.run_env == ide_core::settings::RunEnv::Wsl { "wsl" } else { "windows" };
+                    if now != e {
+                        errors.push(format!("run_env {now}, expected {e}"));
+                    }
+                }
+                if let Some(t) = step["outcome_contains"].as_str() {
+                    let o = format!("{:?}", w.outcome);
+                    if !o.contains(t) {
+                        errors.push(format!("outcome {o}, expected it to contain {t:?}"));
+                    }
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_wsl: {}", errors.join("; ")));
+                }
+            }
+            "assert_split" => {
+                let (layout, focus, other) = match self.split.as_ref() {
+                    None => ("none", "", None),
+                    Some(sp) => (if sp.vertical { "vertical" } else { "horizontal" }, if sp.second_focused { "second" } else { "first" }, self.split_other_index().map(|i| self.docs[i].name())),
+                };
+                if layout != sval {
+                    self.fail(format!("assert_split: expected layout {sval}, got {layout}"));
+                }
+                if let Some(f) = step["focus"].as_str() {
+                    if focus != f {
+                        self.fail(format!("assert_split: expected the {f} pane focused, got {focus}"));
+                    }
+                }
+                if let Some(o) = step["other"].as_str() {
+                    if other.as_deref() != Some(o) {
+                        self.fail(format!("assert_split: expected {o} in the other pane, got {other:?}"));
+                    }
+                }
+            }
+            "pane_click" => {
+                let k = step["pane"].as_u64().unwrap_or(1).saturating_sub(1) as usize;
+                match self.pane_rects.get(k).copied() {
+                    Some(r) => {
+                        let pos = egui::pos2(r.center().x, r.min.y + r.height() * 0.6);
+                        let s = self.script.as_mut().unwrap();
+                        s.pending.push(Event::PointerMoved(pos));
+                        s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+                        s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+                    }
+                    None => self.fail("pane_click: the editor area is not split".to_string()),
+                }
+            }
+            "diff_open" => self.open_diff_tab(&sval),
+            "commit_click" => {
+                let hit = self.commit_rects.iter().find(|(p, _, _)| *p == sval).map(|(_, r, cb)| if step["checkbox"].as_bool().unwrap_or(false) { cb.center() } else { egui::pos2(r.min.x + r.width() * 0.6, r.center().y) });
+                match hit {
+                    Some(pos) => {
+                        let s = self.script.as_mut().unwrap();
+                        s.pending.push(Event::PointerMoved(pos));
+                        s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
+                        s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
+                    }
+                    None => self.fail(format!("commit_click: {sval} is not a visible row of the Commit window")),
+                }
+            }
+            "assert_commit_rows" => {
+                let n = step["value"].as_u64().unwrap_or(0) as usize;
+                if self.commit_rects.len() != n {
+                    let names: Vec<_> = self.commit_rects.iter().map(|r| r.0.clone()).collect();
+                    self.fail(format!("assert_commit_rows: expected {n} visible files, got {names:?}"));
+                }
+            }
+            "assert_checked" => {
+                let n = step["value"].as_u64().unwrap_or(0) as usize;
+                if self.git.checked.len() != n {
+                    self.fail(format!("assert_checked: expected {n} checked files, got {:?}", self.git.checked));
+                }
+                if let Some(p) = step["path"].as_str()
+                    && self.git.checked.contains(p) != step["on"].as_bool().unwrap_or(true)
+                {
+                    self.fail(format!("assert_checked: {p} checked state is not {}", step["on"].as_bool().unwrap_or(true)));
+                }
+            }
+            "assert_diff" => {
+                let t = self.active_diff().map(|t| (t.rel.clone(), t.hunk_count(), t.cur, t.unified, t.old.clone(), t.new.clone(), t.sbs.added, t.sbs.removed));
+                match t {
+                    None => self.fail("assert_diff: the active tab is not a diff tab".to_string()),
+                    Some((rel, hunks, cur, unified, old, new, added, removed)) => {
+                        if let Some(f) = step["file"].as_str() {
+                            if rel != f {
+                                self.fail(format!("assert_diff: expected file {f}, got {rel}"));
+                            }
+                        }
+                        if let Some(n) = step["hunks"].as_u64() {
+                            if hunks != n as usize {
+                                self.fail(format!("assert_diff: expected {n} differences, got {hunks}"));
+                            }
+                        }
+                        if let Some(n) = step["current"].as_u64() {
+                            if cur != Some(n as usize) {
+                                self.fail(format!("assert_diff: expected current difference {n}, got {cur:?}"));
+                            }
+                        }
+                        if let Some(m) = step["mode"].as_str() {
+                            if unified != (m == "unified") {
+                                self.fail(format!("assert_diff: expected mode {m}, unified={unified}"));
+                            }
+                        }
+                        if let Some(n) = step["added"].as_u64() {
+                            if added != n as usize {
+                                self.fail(format!("assert_diff: expected {n} added lines, got {added}"));
+                            }
+                        }
+                        if let Some(n) = step["removed"].as_u64() {
+                            if removed != n as usize {
+                                self.fail(format!("assert_diff: expected {n} removed lines, got {removed}"));
+                            }
+                        }
+                        if let Some(s) = step["old_contains"].as_str() {
+                            if !old.contains(&s.replace("\n", "
+")) {
+                                self.fail(format!("assert_diff: old text does not contain {s:?}: {old:?}"));
+                            }
+                        }
+                        if let Some(s) = step["new_contains"].as_str() {
+                            if !new.contains(&s.replace("\n", "
+")) {
+                                self.fail(format!("assert_diff: new text does not contain {s:?}: {new:?}"));
+                            }
+                        }
+                    }
+                }
+            }
+            "diff_mode" => {
+                if let Some(t) = self.docs.get_mut(self.active).and_then(|d| d.diff.as_mut()) {
+                    t.unified = sval == "unified";
+                }
+            }
+            "local_restore" => {
+                let id = step["value"].as_u64().unwrap_or(1);
+                match step["file"].as_str() {
+                    Some(f) => self.local_restore_file(id, f),
+                    None => self.local_restore(id),
                 }
             }
             "quit" => {

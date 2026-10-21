@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
-use ide_core::diff::{self, LineKind};
+use ide_core::diff;
 use ide_core::git::{self, ChangeKind};
 use ide_core::localvcs::{Base, LocalVcs};
 
@@ -12,6 +12,7 @@ const MAX_CHANGES: usize = 5000;
 
 use crate::app::App;
 use crate::editor_view::Sev;
+use crate::i18n::{self, tr};
 use crate::state::*;
 
 impl App {
@@ -38,14 +39,14 @@ impl App {
         match self.git.local.as_ref().map(|l| l.base().clone()) {
             Some(Base::Local(id)) => {
                 let msg = self.git.local.as_ref().and_then(|l| l.commit(id)).map(|c| c.message.clone()).unwrap_or_default();
-                format!("local #{id}: {msg}")
+                i18n::fmt("local #{0}: {1}", &[&id, &msg])
             }
             _ => "HEAD".to_string(),
         }
     }
 
     /// Root used for relative paths: the git repository root, else the project root.
-    fn vcs_root(&self) -> Option<PathBuf> {
+    pub fn vcs_root(&self) -> Option<PathBuf> {
         self.git.repo.as_ref().map(|r| r.root.clone()).or_else(|| self.project_root().map(Path::to_path_buf))
     }
 
@@ -100,12 +101,13 @@ impl App {
             self.git.branches = snap.branches;
             self.git.log = snap.log;
             self.git.changes_truncated = snap.truncated;
-            // keep the user's check marks for files that are still changed; check new ones by default
+            // keep the user's check marks for files that are still changed; check new tracked ones by default
+            // (untracked files stay unchecked, as in PyCharm: adding a file to git is a decision)
             let old: HashSet<String> = self.git.changes.iter().map(|c| c.path.clone()).collect();
             let now: HashSet<String> = snap.changes.iter().map(|c| c.path.clone()).collect();
             self.git.checked.retain(|p| now.contains(p));
             for c in &snap.changes {
-                if !old.contains(&c.path) {
+                if !old.contains(&c.path) && c.kind != ChangeKind::Untracked {
                     self.git.checked.insert(c.path.clone());
                 }
             }
@@ -128,10 +130,10 @@ impl App {
             self.git.busy = None;
             match res {
                 Ok(msg) => {
-                    let text = if msg.is_empty() { format!("{what}: done") } else { format!("{what}: {}", msg.lines().last().unwrap_or("")) };
+                    let text = if msg.is_empty() { i18n::fmt("{}: done", &[&i18n::tr_dyn(&what)]) } else { format!("{}: {}", i18n::tr_dyn(&what), msg.lines().last().unwrap_or("")) };
                     self.toast(text, Sev::Weak);
                 }
-                Err(e) => self.toast(format!("{what} failed: {}", e.lines().next().unwrap_or("")), Sev::Error),
+                Err(e) => self.toast(i18n::fmt("{0} failed: {1}", &[&i18n::tr_dyn(&what), &e.lines().next().unwrap_or("")]), Sev::Error),
             }
             self.git_refresh();
             self.refresh_project();
@@ -204,13 +206,13 @@ impl App {
 
     pub fn git_run_sync(&mut self, what: &str, f: impl FnOnce(&git::Repo) -> Result<String, String>) -> bool {
         let Some(repo) = self.git.repo.clone() else {
-            self.toast("This project is not a Git repository", Sev::Weak);
+            self.toast(tr("This project is not a Git repository"), Sev::Weak);
             return false;
         };
         match f(&repo) {
             Ok(msg) => {
                 if !msg.is_empty() {
-                    self.toast(format!("{what}: {msg}"), Sev::Weak);
+                    self.toast(format!("{}: {msg}", i18n::tr_dyn(what)), Sev::Weak);
                 }
                 self.git.rx = None;
                 self.git_refresh();
@@ -218,7 +220,7 @@ impl App {
                 true
             }
             Err(e) => {
-                self.toast(format!("{what} failed: {}", e.lines().next().unwrap_or("")), Sev::Error);
+                self.toast(i18n::fmt("{0} failed: {1}", &[&i18n::tr_dyn(what), &e.lines().next().unwrap_or("")]), Sev::Error);
                 false
             }
         }
@@ -226,11 +228,11 @@ impl App {
 
     pub fn git_run_async(&mut self, what: &str, f: impl FnOnce(git::Repo) -> Result<String, String> + Send + 'static) {
         let Some(repo) = self.git.repo.clone() else {
-            self.toast("This project is not a Git repository", Sev::Weak);
+            self.toast(tr("This project is not a Git repository"), Sev::Weak);
             return;
         };
         if self.git.op_rx.is_some() {
-            self.toast("Another Git operation is still running", Sev::Weak);
+            self.toast(tr("Another Git operation is still running"), Sev::Weak);
             return;
         }
         let (tx, rx) = mpsc::channel();
@@ -252,14 +254,14 @@ impl App {
                 d.sync_with_disk();
                 d.git_base = None;
             }
-            self.toast(format!("Switched to {branch}"), Sev::Weak);
+            self.toast(i18n::fmt("Switched to {}", &[&branch]), Sev::Weak);
         }
     }
 
     pub fn git_commit_selected(&mut self) -> bool {
         self.save_all();
         let Some(repo) = self.git.repo.clone() else {
-            self.toast("This project is not a Git repository - use a local commit instead", Sev::Weak);
+            self.toast(tr("This project is not a Git repository - use a local commit instead"), Sev::Weak);
             return false;
         };
         let msg = self.git.commit_msg.clone();
@@ -276,19 +278,9 @@ impl App {
         ok
     }
 
+    /// Show the changes of `rel` (relative to the repository root) in the diff tab.
     pub fn git_show_diff(&mut self, rel: &str) {
-        if rel.ends_with('/') {
-            self.toast("This is an untracked folder - open the files inside to see their changes", Sev::Weak);
-            return;
-        }
-        let Some(root) = self.vcs_root() else { return };
-        let abs = root.join(rel);
-        let new = self.docs.iter().find(|d| d.path.as_deref() == Some(abs.as_path())).map(|d| d.ed.text().to_string()).or_else(|| std::fs::read_to_string(&abs).ok()).unwrap_or_default().replace("\r\n", "\n");
-        let old = self.base_text_of(&abs).flatten().unwrap_or_default();
-        let lines = diff::diff_lines(&old, &new);
-        let first = lines.iter().position(|l| l.kind != LineKind::Same);
-        let title = if self.base_is_local() { format!("{rel}   (vs {})", self.base_label()) } else { rel.to_string() };
-        self.popup = Popup::Diff { title, lines, scroll_to: first };
+        self.open_diff_tab(rel);
     }
 
     pub fn git_show_commit(&mut self, idx: usize) {
@@ -333,7 +325,7 @@ impl App {
 
     pub fn open_branch_palette(&mut self) {
         if self.git.repo.is_none() {
-            self.toast("This project is not a Git repository", Sev::Weak);
+            self.toast(tr("This project is not a Git repository"), Sev::Weak);
             return;
         }
         let items: Vec<Item> = self
@@ -342,7 +334,7 @@ impl App {
             .iter()
             .map(|b| Item {
                 label: b.name.clone(),
-                detail: if b.current { "current".into() } else if b.remote { "remote".into() } else { "local".into() },
+                detail: if b.current { tr("current").into() } else if b.remote { tr("remote").into() } else { tr("local").into() },
                 badge: "B".into(),
                 section: "",
                 target: PTarget::Branch(b.name.clone()),
@@ -397,7 +389,7 @@ impl App {
 // ---------------------------------------------------------------------- local commits
 
 impl App {
-    fn after_base_change(&mut self) {
+    pub fn after_base_change(&mut self) {
         for d in self.docs.iter_mut() {
             d.git_base = None;
             d.git_marks_rev = u64::MAX;
@@ -417,17 +409,17 @@ impl App {
         self.save_all();
         let repo = self.git.repo.clone();
         let Some(local) = self.git.local.as_mut() else {
-            self.toast("Open a project first", Sev::Weak);
+            self.toast(tr("Open a project first"), Sev::Weak);
             return false;
         };
         match local.create(message, repo.as_ref()) {
             Ok(id) => {
                 self.after_base_change();
-                self.toast(format!("Local commit #{id} created - the diff now starts from it"), Sev::Weak);
+                self.toast(i18n::fmt("Local commit #{} created - the diff now starts from it", &[&id]), Sev::Weak);
                 true
             }
             Err(e) => {
-                self.toast(format!("Local commit failed: {e}"), Sev::Error);
+                self.toast(i18n::fmt("Local commit failed: {}", &[&e]), Sev::Error);
                 false
             }
         }
@@ -439,9 +431,9 @@ impl App {
             Ok(()) => {
                 self.after_base_change();
                 let label = self.base_label();
-                self.toast(format!("Comparing with {label}"), Sev::Weak);
+                self.toast(i18n::fmt("Comparing with {}", &[&label]), Sev::Weak);
             }
-            Err(e) => self.toast(format!("Cannot change base: {e}"), Sev::Error),
+            Err(e) => self.toast(i18n::fmt("Cannot change base: {}", &[&e]), Sev::Error),
         }
     }
 
@@ -456,9 +448,9 @@ impl App {
                 }
                 self.after_base_change();
                 self.refresh_project();
-                self.toast(format!("Restored local commit #{id} ({n} file(s) changed)"), Sev::Weak);
+                self.toast(i18n::fmt("Restored local commit #{0} ({1} file(s) changed)", &[&id, &n]), Sev::Weak);
             }
-            Err(e) => self.toast(format!("Restore failed: {e}"), Sev::Error),
+            Err(e) => self.toast(i18n::fmt("Restore failed: {}", &[&e]), Sev::Error),
         }
     }
 
@@ -467,9 +459,9 @@ impl App {
         match local.delete(id) {
             Ok(()) => {
                 self.after_base_change();
-                self.toast(format!("Local commit #{id} deleted"), Sev::Weak);
+                self.toast(i18n::fmt("Local commit #{} deleted", &[&id]), Sev::Weak);
             }
-            Err(e) => self.toast(format!("Delete failed: {e}"), Sev::Error),
+            Err(e) => self.toast(i18n::fmt("Delete failed: {}", &[&e]), Sev::Error),
         }
     }
 
@@ -491,7 +483,7 @@ impl App {
                     self.git_refresh();
                     self.refresh_project();
                 }
-                Err(e) => self.toast(format!("Rollback failed: {e}"), Sev::Error),
+                Err(e) => self.toast(i18n::fmt("Rollback failed: {}", &[&e]), Sev::Error),
             }
             return;
         }

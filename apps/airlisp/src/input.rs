@@ -7,6 +7,7 @@ use ide_core::search::TextQuery;
 
 use crate::app::{App, RunConfig};
 use crate::editor_view::Sev;
+use crate::i18n::{self, tr};
 use crate::state::*;
 
 pub fn key_name(key: Key) -> Option<&'static str> {
@@ -60,7 +61,7 @@ fn is_symbol_char(c: char) -> bool {
 impl App {
     /// Is the code editor receiving typing right now?
     pub fn editor_active(&self, ctx: &egui::Context) -> bool {
-        self.editor_focus && !self.popup.is_open() && !ctx.text_edit_focused() && !self.docs.is_empty()
+        self.editor_focus && !self.popup.is_open() && !ctx.text_edit_focused() && self.doc().is_some_and(|d| d.diff.is_none())
     }
 
     /// Double-tap of the Shift key opens Search Everywhere.
@@ -264,7 +265,7 @@ impl App {
     }
 
     pub fn run_command(&mut self, ctx: &egui::Context, id: &str) {
-        let editor_on = !self.docs.is_empty();
+        let editor_on = self.doc().is_some_and(|d| d.diff.is_none());
         match id {
             // ---- file
             "file.new" => {
@@ -280,12 +281,12 @@ impl App {
             }
             "file.clone" => self.open_clone_dialog(),
             "file.open_project" => {
-                if let Some(dir) = rfd::FileDialog::new().set_title("Open Project").pick_folder() {
+                if let Some(dir) = rfd::FileDialog::new().set_title(tr("Open Project")).pick_folder() {
                     self.open_project(&dir);
                 }
             }
             "file.open_file" => {
-                let mut dlg = rfd::FileDialog::new().set_title("Open File");
+                let mut dlg = rfd::FileDialog::new().set_title(tr("Open File"));
                 if let Some(r) = self.project_root() {
                     dlg = dlg.set_directory(r);
                 }
@@ -299,6 +300,14 @@ impl App {
                 }
             }
             "file.save" | "file.save_all" => self.save_all(),
+            "view.split_right" => self.split_editor(true),
+            "view.split_down" => self.split_editor(false),
+            "view.unsplit" => self.unsplit(),
+            "view.switch_pane" => self.focus_other_pane(),
+            "diff.next" => self.diff_step_change(1),
+            "diff.prev" => self.diff_step_change(-1),
+            "diff.next_file" => self.diff_step_file(1),
+            "diff.prev_file" => self.diff_step_file(-1),
             "file.reload" => {
                 let mut err = None;
                 if let Some(d) = self.doc_mut()
@@ -307,13 +316,13 @@ impl App {
                     err = Some(e.to_string());
                 }
                 if let Some(e) = err {
-                    self.toast(format!("Reload failed: {e}"), Sev::Error);
+                    self.toast(i18n::fmt("Reload failed: {}", &[&e]), Sev::Error);
                 }
             }
             "file.close_tab" => self.request_close_doc(self.active),
             "file.close_all" => {
                 if self.has_unsaved() {
-                    self.popup = Popup::Confirm { kind: ConfirmKind::CloseAll, message: "Some files have unsaved changes. Close all without saving?".into() };
+                    self.popup = Popup::Confirm { kind: ConfirmKind::CloseAll, message: tr("Some files have unsaved changes. Close all without saving?").into() };
                 } else {
                     self.docs.clear();
                     self.active = 0;
@@ -354,15 +363,15 @@ impl App {
             "file.copy_path" => {
                 if let Some(p) = self.doc().and_then(|d| d.path.clone()) {
                     ctx.copy_text(p.to_string_lossy().into_owned());
-                    self.toast("Path copied", Sev::Weak);
+                    self.toast(tr("Path copied"), Sev::Weak);
                 }
             }
             "app.settings" => {
-                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default(), filter: String::new(), page: 0 };
+                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.describe()).unwrap_or_default(), filter: String::new(), page: 0 };
             }
             "app.exit" => {
                 if self.has_unsaved() {
-                    self.popup = Popup::Confirm { kind: ConfirmKind::Exit, message: "You have unsaved changes. Exit without saving?".into() };
+                    self.popup = Popup::Confirm { kind: ConfirmKind::Exit, message: tr("You have unsaved changes. Exit without saving?").into() };
                 } else {
                     self.exit_clean();
                 }
@@ -383,7 +392,7 @@ impl App {
             }
             "edit.paste" => {
                 // Paste arrives as Event::Paste (Ctrl+V); the menu cannot read the clipboard.
-                self.toast("Use Ctrl+V to paste", Sev::Weak);
+                self.toast(tr("Use Ctrl+V to paste"), Sev::Weak);
             }
             // ---- find
             "find.find" => self.open_find(false),
@@ -457,7 +466,7 @@ impl App {
                 };
                 match sys {
                     Some(s) => self.run_asdf_system(&s, true),
-                    None => self.toast("No .asd system found in this project", Sev::Weak),
+                    None => self.toast(tr("No .asd system found in this project"), Sev::Weak),
                 }
             }
             "run.run_config" => {}
@@ -466,7 +475,7 @@ impl App {
                 self.stop_run();
                 if !self.repl.busy.is_empty() {
                     self.repl_restart();
-                    self.toast("REPL interrupted (restarted)", Sev::Weak);
+                    self.toast(tr("REPL interrupted (restarted)"), Sev::Weak);
                 }
             }
             "repl.eval" | "repl.eval_last" => {
@@ -477,7 +486,7 @@ impl App {
                     self.repl_eval(&code, true);
                     // keep editor focus: it is the editor's command
                 } else if self.doc().is_some() {
-                    self.toast("Nothing to evaluate here", Sev::Weak);
+                    self.toast(tr("Nothing to evaluate here"), Sev::Weak);
                 }
             }
             "repl.load_file" => {
@@ -486,7 +495,7 @@ impl App {
                         self.save_doc(a);
                     }
                     if let Some(p) = self.docs[a].path.clone() {
-                        let code = format!("(load {})", lisp_runtime::runner::lisp_string(&lisp_runtime::runner::lisp_path(&p)));
+                        let code = format!("(load {})", lisp_runtime::runner::lisp_string(&self.lisp_path_of(&p)));
                         self.bottom_tool = Some(BottomTool::Repl);
                         self.repl_eval(&code, true);
                     }
@@ -534,22 +543,26 @@ impl App {
             "view.rainbow" => self.settings.rainbow_brackets = !self.settings.rainbow_brackets,
             "help.about" => self.popup = Popup::About,
             "help.keymap" => {
-                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.path.to_string_lossy().into_owned()).unwrap_or_default(), filter: String::new(), page: 0 };
+                self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.describe()).unwrap_or_default(), filter: String::new(), page: 0 };
             }
             // ---- git
-            "git.commit" => {
-                if self.git.repo.is_some() {
-                    self.git_refresh();
-                    self.popup = Popup::Commit { just_opened: true };
+            "git.commit" | "view.commit" => {
+                if id == "view.commit" && self.left_tool == Some(LeftTool::Commit) {
+                    self.left_tool = None;
                 } else {
-                    self.toast("This project is not a Git repository (Git > Create Git Repository)", Sev::Weak);
+                    self.left_tool = Some(LeftTool::Commit);
+                    self.git_refresh();
+                    if id == "git.commit" {
+                        self.git.focus_msg = true;
+                        self.editor_focus = false;
+                    }
                 }
             }
             "git.local_commit" => {
                 if self.project.is_some() {
                     self.popup = Popup::LocalCommit { input: String::new(), just_opened: true };
                 } else {
-                    self.toast("Open a project first", Sev::Weak);
+                    self.toast(tr("Open a project first"), Sev::Weak);
                 }
             }
             "git.reset_base" => self.local_set_base(ide_core::localvcs::Base::Head),
@@ -571,9 +584,9 @@ impl App {
             "git.rollback" => {
                 if let Some(rel) = self.current_rel_path() {
                     if self.git.changes.iter().any(|c| c.path == rel) {
-                        self.popup = Popup::Confirm { kind: ConfirmKind::Rollback(rel.clone()), message: format!("Discard all local changes to '{rel}'? This cannot be undone.") };
+                        self.popup = Popup::Confirm { kind: ConfirmKind::Rollback(rel.clone()), message: i18n::fmt("Discard all local changes to '{}'? This cannot be undone.", &[&rel]) };
                     } else {
-                        self.toast("No changes in this file", Sev::Weak);
+                        self.toast(tr("No changes in this file"), Sev::Weak);
                     }
                 }
             }
@@ -587,9 +600,9 @@ impl App {
                     match ide_core::git::init(&root) {
                         Ok(_) => {
                             self.git_attach();
-                            self.toast("Git repository created", Sev::Weak);
+                            self.toast(tr("Git repository created"), Sev::Weak);
                         }
-                        Err(e) => self.toast(format!("git init failed: {e}"), Sev::Error),
+                        Err(e) => self.toast(i18n::fmt("git init failed: {}", &[&e]), Sev::Error),
                     }
                 }
             }
@@ -610,6 +623,11 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Open the settings dialog on `page`.
+    pub fn open_settings_page(&mut self, page: usize) {
+        self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.describe()).unwrap_or_default(), filter: String::new(), page };
     }
 
     pub fn toggle_left(&mut self, t: LeftTool) {
@@ -636,7 +654,7 @@ impl App {
         };
         {
             let Some(root) = self.project_root().map(std::path::Path::to_path_buf) else {
-                self.toast("Open a project first", Sev::Weak);
+                self.toast(tr("Open a project first"), Sev::Weak);
                 return;
             };
             self.save_all();
@@ -661,7 +679,7 @@ impl App {
                     }
                 }
             }
-            self.toast(format!("Replaced {total} occurrence(s)"), Sev::Weak);
+            self.toast(i18n::fmt("Replaced {} occurrence(s)", &[&total]), Sev::Weak);
             self.run_find_in_files(rep, opts);
         }
     }

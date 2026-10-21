@@ -1,0 +1,545 @@
+//! Running Lisp inside WSL: what the Linux (WSL) settings page knows (WSL, distributions, SBCL in them) and the
+//! setup actions behind its buttons. Checks run on background threads and installs as child processes;
+//! [`App::poll_wsl`] collects their results every frame. Nothing here removes or changes an existing distribution.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::mpsc::{self, Receiver};
+
+use ide_core::settings::{RunEnv, Settings};
+use lisp_runtime::wsl::{self, ImageKind, OnlineDistro, Presence, Probe, SbclCheck, Target};
+use lisp_runtime::{Implementation, RunEvent, RunHandle, runner};
+
+use crate::app::App;
+use crate::editor_view::Sev;
+use crate::i18n::{self, tr};
+
+/// Lines of setup output kept for the page.
+const LOG_LINES: usize = 400;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SetupTask {
+    InstallWsl,
+    InstallDistro(String),
+    ImportFile(String),
+    InstallSbcl(String),
+}
+
+pub struct RunningTask {
+    pub task: SetupTask,
+    pub handle: RunHandle,
+    /// Download / install progress in percent, when the tool prints one.
+    pub progress: Option<f32>,
+}
+
+#[derive(Default)]
+pub struct WslState {
+    pub probe: Option<Probe>,
+    probe_rx: Option<Receiver<Probe>>,
+    pub online: Vec<OnlineDistro>,
+    pub online_error: Option<String>,
+    online_rx: Option<Receiver<Result<Vec<OnlineDistro>, String>>>,
+    /// SBCL found in each distribution (`Err`: the check itself failed).
+    pub sbcl: HashMap<String, Result<SbclCheck, String>>,
+    sbcl_rx: Option<Receiver<(String, Result<SbclCheck, String>)>>,
+    pub checking_sbcl: Option<String>,
+    pub task: Option<RunningTask>,
+    /// Output of the last setup task; a progress bar redrawing its line replaces the last entry.
+    pub log: Vec<String>,
+    log_open: bool,
+    /// How the last setup task ended: Ok(what was done) / Err(what went wrong).
+    pub outcome: Option<Result<String, String>>,
+    /// The distribution the page shows SBCL for and switches to.
+    pub selected: String,
+    /// The distribution offered for installation.
+    pub chosen: String,
+    /// Folder to install a distribution into; empty = where WSL keeps them by default.
+    pub location: String,
+    /// Free space on the drive a new distribution goes to: (drive letter, bytes).
+    pub free: Option<(char, u64)>,
+    free_rx: Option<Receiver<Option<(char, u64)>>>,
+    /// The page has started its first check.
+    pub requested: bool,
+}
+
+impl WslState {
+    pub fn probing(&self) -> bool {
+        self.probe_rx.is_some()
+    }
+
+    pub fn busy(&self) -> bool {
+        self.probe_rx.is_some() || self.online_rx.is_some() || self.sbcl_rx.is_some() || self.task.is_some()
+    }
+
+    pub fn wsl_installed(&self) -> bool {
+        matches!(self.probe.as_ref().map(|p| &p.presence), Some(Presence::Installed { .. }))
+    }
+
+    pub fn distros(&self) -> Vec<String> {
+        self.probe.as_ref().map(|p| p.distros.iter().map(|d| d.name.clone()).collect()).unwrap_or_default()
+    }
+
+    /// SBCL path in `distro`, when the last check found one.
+    pub fn sbcl_path(&self, distro: &str) -> Option<String> {
+        self.sbcl.get(distro).and_then(|r| r.as_ref().ok()).and_then(|c| c.path.clone())
+    }
+
+    /// Display name of a distribution from the online catalog (`Ubuntu 24.04 LTS`), else its name.
+    pub fn friendly(&self, name: &str) -> String {
+        self.online.iter().find(|o| o.name == name).map(|o| o.friendly.clone()).filter(|f| !f.is_empty()).unwrap_or_else(|| match name {
+            "Ubuntu-24.04" => "Ubuntu 24.04 LTS".to_string(),
+            "Ubuntu-22.04" => "Ubuntu 22.04 LTS".to_string(),
+            "Ubuntu-26.04" => "Ubuntu 26.04 LTS".to_string(),
+            "Debian" => "Debian GNU/Linux".to_string(),
+            other => other.to_string(),
+        })
+    }
+}
+
+/// Append child output to `log`. `open` says whether the last entry is an unfinished line; a carriage return
+/// (progress bars) redraws that line instead of adding new ones. Escape sequences are dropped.
+pub fn push_output(log: &mut Vec<String>, open: &mut bool, text: &str) {
+    let text = text.replace("\r\n", "\n");
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\n' => {
+                if !*open {
+                    log.push(String::new());
+                }
+                *open = false;
+            }
+            '\r' => {
+                if *open && let Some(l) = log.last_mut() {
+                    l.clear();
+                }
+            }
+            '\u{1b}' => {
+                // CSI sequence: ESC [ ... final letter
+                if chars.peek() == Some(&'[') {
+                    chars.next();
+                    for c in chars.by_ref() {
+                        if c.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+            }
+            '\0' => {}
+            c => {
+                if !*open {
+                    log.push(String::new());
+                    *open = true;
+                }
+                if let Some(l) = log.last_mut() {
+                    l.push(c);
+                }
+            }
+        }
+    }
+    if log.len() > LOG_LINES {
+        let cut = log.len() - LOG_LINES;
+        log.drain(..cut);
+    }
+}
+
+/// The last percentage printed on `line` (`[=====  45.5%   ]` -> 45.5).
+pub fn percent(line: &str) -> Option<f32> {
+    let at = line.rfind('%')?;
+    let head = &line[..at];
+    let start = head.rfind(|c: char| !(c.is_ascii_digit() || c == '.' || c == ',')).map_or(0, |i| i + 1);
+    head[start..].replace(',', ".").parse::<f32>().ok().filter(|p| (0.0..=100.0).contains(p))
+}
+
+/// The drive a path is on (`C:\x` -> 'C').
+fn drive_of(p: &Path) -> Option<char> {
+    let s = p.to_string_lossy();
+    let c = s.chars().next()?;
+    (c.is_ascii_alphabetic() && s[1..].starts_with(':')).then(|| c.to_ascii_uppercase())
+}
+
+/// Where WSL puts distributions when no folder is given.
+fn default_location() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\"))
+}
+
+/// A distribution name for an image file that does not clash with installed ones: `ubuntu-24.04.wsl` -> `ubuntu-24.04`.
+pub fn name_for_image(file: &Path, taken: &[String]) -> String {
+    let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut stem = name.as_str();
+    for ext in [".tar.gz", ".tar.xz", ".tar.zst", ".tgz", ".tar", ".wsl"] {
+        if let Some(s) = stem.strip_suffix(ext) {
+            stem = s;
+            break;
+        }
+    }
+    let clean: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_' { c } else { '-' }).collect();
+    let base = if clean.trim_matches('-').is_empty() { "Linux".to_string() } else { clean };
+    let mut n = base.clone();
+    let mut k = 2;
+    while taken.iter().any(|t| t.eq_ignore_ascii_case(&n)) {
+        n = format!("{base}-{k}");
+        k += 1;
+    }
+    n
+}
+
+/// The Lisp `settings` ask for: SBCL inside the chosen WSL distribution, or SBCL for Windows.
+pub fn resolve_lisp(settings: &Settings) -> Option<Implementation> {
+    match settings.run_env {
+        RunEnv::Wsl => wsl_target(settings).map(|t| Implementation::in_wsl(t, &settings.wsl_sbcl)),
+        RunEnv::Windows => lisp_runtime::discover::find_sbcl(&settings.lisp_path),
+    }
+}
+
+/// The distribution of the WSL mode, when it is on.
+pub fn wsl_target(settings: &Settings) -> Option<Target> {
+    let d = settings.wsl_distro.trim();
+    (settings.run_env == RunEnv::Wsl && !d.is_empty()).then(|| Target::new(d, &settings.wsl_mount_root))
+}
+
+impl App {
+    /// The Lisp the settings ask for: SBCL inside the chosen WSL distribution, or SBCL for Windows.
+    pub fn resolve_lisp(&self) -> Option<Implementation> {
+        resolve_lisp(&self.settings)
+    }
+
+    /// The distribution Lisp and the terminal run in, when the WSL mode is on.
+    pub fn wsl_target(&self) -> Option<Target> {
+        wsl_target(&self.settings)
+    }
+
+    /// `p` as the Lisp of the REPL (or the configured one) names files.
+    pub fn lisp_path_of(&self, p: &Path) -> String {
+        match self.repl.session.as_ref().map(|s| &s.implementation).or(self.lisp.as_ref()) {
+            Some(imp) => imp.lisp_path(p),
+            None => runner::lisp_path(p),
+        }
+    }
+
+    // ------------------------------------------------------------------ checks
+
+    /// Find out what WSL has (in the background).
+    pub fn wsl_probe(&mut self) {
+        if self.wsl.probe_rx.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.wsl.probe_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(wsl::probe());
+        });
+        self.wsl_refresh_free();
+    }
+
+    /// Load the list of installable distributions (needs the internet).
+    pub fn wsl_list_online(&mut self) {
+        if self.wsl.online_rx.is_some() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.wsl.online_rx = Some(rx);
+        self.wsl.online_error = None;
+        std::thread::spawn(move || {
+            let _ = tx.send(wsl::list_online());
+        });
+    }
+
+    /// Look for SBCL inside `distro` (in the background).
+    pub fn wsl_check_sbcl(&mut self, distro: &str) {
+        if self.wsl.sbcl_rx.is_some() || distro.is_empty() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.wsl.sbcl_rx = Some(rx);
+        self.wsl.checking_sbcl = Some(distro.to_string());
+        let (d, sbcl) = (distro.to_string(), self.settings.wsl_sbcl.clone());
+        std::thread::spawn(move || {
+            let r = wsl::check_sbcl(&d, &sbcl);
+            let _ = tx.send((d, r));
+        });
+    }
+
+    pub fn wsl_refresh_free(&mut self) {
+        if self.wsl.free_rx.is_some() {
+            return;
+        }
+        let loc = if self.wsl.location.trim().is_empty() { default_location() } else { PathBuf::from(self.wsl.location.trim()) };
+        let Some(drive) = drive_of(&loc) else { return };
+        let (tx, rx) = mpsc::channel();
+        self.wsl.free_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(wsl::free_space(&PathBuf::from(format!("{drive}:\\"))).map(|b| (drive, b)));
+        });
+    }
+
+    // ------------------------------------------------------------------ setup tasks
+
+    fn wsl_start(&mut self, task: SetupTask, cmd: Command, title: String) {
+        if self.wsl.task.is_some() {
+            self.toast(tr("Another setup step is still running"), Sev::Weak);
+            return;
+        }
+        self.wsl.log.clear();
+        self.wsl.log_open = false;
+        self.wsl.outcome = None;
+        push_output(&mut self.wsl.log, &mut self.wsl.log_open, &format!("{title}\n"));
+        match runner::spawn_streaming(cmd) {
+            Ok(handle) => self.wsl.task = Some(RunningTask { task, handle, progress: None }),
+            Err(e) => self.wsl.outcome = Some(Err(i18n::fmt("Cannot start: {}", &[&e]))),
+        }
+    }
+
+    /// Install WSL itself. Windows asks for administrator rights and may want a restart afterwards.
+    pub fn wsl_install_wsl(&mut self) {
+        self.wsl_start(SetupTask::InstallWsl, wsl::install_wsl_command(), tr("Installing the Windows Subsystem for Linux (confirm the administrator prompt)...").to_string());
+    }
+
+    /// Download and install a distribution from the WSL catalog.
+    pub fn wsl_install_distro(&mut self, name: &str) {
+        let location = self.wsl.location.trim().to_string();
+        let dir = (!location.is_empty()).then(|| PathBuf::from(&location).join(name));
+        if let Some(d) = &dir
+            && let Err(e) = std::fs::create_dir_all(d)
+        {
+            self.wsl.outcome = Some(Err(i18n::fmt("Cannot create {0}: {1}", &[&d.display(), &e])));
+            return;
+        }
+        let title = i18n::fmt("Downloading and installing {}...", &[&self.wsl.friendly(name)]);
+        self.wsl_start(SetupTask::InstallDistro(name.to_string()), wsl::install_distro_command(name, dir.as_deref()), title);
+    }
+
+    /// Install a distribution from an image file (`.wsl` or a root file system `.tar`).
+    pub fn wsl_install_file(&mut self, file: &Path) {
+        let name = name_for_image(file, &self.wsl.distros());
+        let base = if self.wsl.location.trim().is_empty() { default_location().join("AirLisp").join("WSL") } else { PathBuf::from(self.wsl.location.trim()) };
+        let dir = base.join(&name);
+        match wsl::install_file_command(file, &name, &dir) {
+            Ok(cmd) => {
+                if let Err(e) = std::fs::create_dir_all(&dir) {
+                    self.wsl.outcome = Some(Err(i18n::fmt("Cannot create {0}: {1}", &[&dir.display(), &e])));
+                    return;
+                }
+                let title = i18n::fmt("Installing {0} from {1}...", &[&name, &file.display()]);
+                self.wsl_start(SetupTask::ImportFile(name), cmd, title);
+            }
+            Err(ImageKind::Iso) => {
+                self.wsl.outcome = Some(Err(tr("This is an installation disk (ISO) for a PC or a virtual machine; WSL cannot use it. Install a distribution from the list instead, or pick a WSL image (.wsl or .tar).").to_string()));
+            }
+            Err(_) => {
+                self.wsl.outcome = Some(Err(tr("WSL installs distributions from .wsl files or root file system archives (.tar, .tar.gz, .tar.xz).").to_string()));
+            }
+        }
+    }
+
+    /// Install SBCL inside `distro` with its package manager.
+    pub fn wsl_install_sbcl(&mut self, distro: &str) {
+        let title = i18n::fmt("Installing SBCL in {}...", &[&distro]);
+        self.wsl_start(SetupTask::InstallSbcl(distro.to_string()), wsl::install_sbcl_command(distro), title);
+    }
+
+    pub fn wsl_cancel(&mut self) {
+        if let Some(t) = self.wsl.task.take() {
+            t.handle.kill();
+            self.wsl.outcome = Some(Err(tr("Cancelled").to_string()));
+        }
+    }
+
+    /// Open an interactive window of the distribution (to create the Linux user on its first start).
+    pub fn wsl_open_window(&mut self, distro: &str) {
+        if let Err(e) = wsl::open_window(distro) {
+            self.toast(i18n::fmt("Cannot start: {}", &[&e]), Sev::Error);
+        }
+    }
+
+    // ------------------------------------------------------------------ switching
+
+    /// Run Lisp, the REPL and the terminal inside `distro` from now on.
+    pub fn wsl_use(&mut self, distro: &str) {
+        let Some(path) = self.wsl.sbcl_path(distro) else {
+            self.toast(tr("Finish the setup first: the distribution needs SBCL"), Sev::Weak);
+            return;
+        };
+        let mount = self.wsl.sbcl.get(distro).and_then(|r| r.as_ref().ok()).and_then(|c| c.mount_root.clone()).unwrap_or_default();
+        self.settings.run_env = RunEnv::Wsl;
+        self.settings.wsl_distro = distro.to_string();
+        self.settings.wsl_sbcl = path;
+        self.settings.wsl_mount_root = mount;
+        self.lisp_environment_changed();
+        self.toast(i18n::fmt("Lisp now runs in {} (WSL)", &[&distro]), Sev::Weak);
+    }
+
+    pub fn use_windows(&mut self) {
+        if self.settings.run_env == RunEnv::Windows {
+            return;
+        }
+        self.settings.run_env = RunEnv::Windows;
+        self.lisp_environment_changed();
+        self.toast(tr("Lisp now runs on Windows"), Sev::Weak);
+    }
+
+    /// The Lisp changed: pick it up, and start the next REPL there.
+    fn lisp_environment_changed(&mut self) {
+        self.lisp = self.resolve_lisp();
+        if let Some(s) = self.repl.session.take() {
+            s.kill();
+            self.repl.ready = false;
+            self.repl.starting = false;
+            self.repl.busy.clear();
+            self.repl.pending.clear();
+        }
+        self.save_settings();
+    }
+
+    // ------------------------------------------------------------------ polling
+
+    pub fn poll_wsl(&mut self) {
+        if let Some(rx) = &self.wsl.probe_rx
+            && let Ok(p) = rx.try_recv()
+        {
+            self.wsl.probe_rx = None;
+            let names: Vec<String> = p.distros.iter().map(|d| d.name.clone()).collect();
+            if !names.contains(&self.wsl.selected) {
+                let pick = if names.contains(&self.settings.wsl_distro) { Some(self.settings.wsl_distro.clone()) } else { p.default_distro().map(|d| d.name.clone()) };
+                self.wsl.selected = pick.unwrap_or_default();
+            }
+            if self.wsl.chosen.is_empty() {
+                self.wsl.chosen = wsl::RECOMMENDED_DISTRO.to_string();
+            }
+            self.wsl.sbcl.retain(|d, _| names.contains(d));
+            self.wsl.probe = Some(p);
+            let sel = self.wsl.selected.clone();
+            if !sel.is_empty() && !self.wsl.sbcl.contains_key(&sel) {
+                self.wsl_check_sbcl(&sel);
+            }
+        }
+        if let Some(rx) = &self.wsl.online_rx
+            && let Ok(r) = rx.try_recv()
+        {
+            self.wsl.online_rx = None;
+            match r {
+                Ok(list) => self.wsl.online = list,
+                Err(e) => self.wsl.online_error = Some(e),
+            }
+        }
+        if let Some(rx) = &self.wsl.sbcl_rx
+            && let Ok((d, r)) = rx.try_recv()
+        {
+            self.wsl.sbcl_rx = None;
+            self.wsl.checking_sbcl = None;
+            // the mode is on and this is its distribution: follow a SBCL that moved or appeared
+            if self.settings.run_env == RunEnv::Wsl
+                && self.settings.wsl_distro == d
+                && let Ok(c) = &r
+                && let Some(p) = &c.path
+                && *p != self.settings.wsl_sbcl
+            {
+                self.settings.wsl_sbcl = p.clone();
+                self.lisp = self.resolve_lisp();
+            }
+            self.wsl.sbcl.insert(d, r);
+        }
+        if let Some(rx) = &self.wsl.free_rx
+            && let Ok(r) = rx.try_recv()
+        {
+            self.wsl.free_rx = None;
+            self.wsl.free = r;
+        }
+        let mut finished: Option<(SetupTask, Option<i32>)> = None;
+        if let Some(t) = self.wsl.task.as_mut() {
+            while let Some(ev) = t.handle.try_recv() {
+                match ev {
+                    RunEvent::Output { text, .. } => {
+                        push_output(&mut self.wsl.log, &mut self.wsl.log_open, &text);
+                        if let Some(p) = self.wsl.log.last().and_then(|l| percent(l)) {
+                            t.progress = Some(p);
+                        }
+                    }
+                    RunEvent::Exited(code) => {
+                        finished = Some((t.task.clone(), code));
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some((task, code)) = finished {
+            self.wsl.task = None;
+            self.wsl_task_done(task, code);
+        }
+    }
+
+    fn wsl_task_done(&mut self, task: SetupTask, code: Option<i32>) {
+        let ok = code == Some(0);
+        let last = self.wsl.log.iter().rev().find(|l| !l.trim().is_empty()).cloned().unwrap_or_default();
+        let fail = |what: String| Err(if last.is_empty() { what } else { format!("{what}: {last}") });
+        self.wsl.outcome = Some(match &task {
+            SetupTask::InstallWsl if ok => Ok(tr("WSL is installed. If Windows asked for a restart, restart it, then press Check again.").to_string()),
+            SetupTask::InstallWsl => fail(tr("WSL was not installed").to_string()),
+            SetupTask::InstallDistro(n) | SetupTask::ImportFile(n) if ok => {
+                self.wsl.selected = n.clone();
+                Ok(i18n::fmt("{} is installed. Next: SBCL.", &[&n]))
+            }
+            SetupTask::InstallDistro(n) | SetupTask::ImportFile(n) => fail(i18n::fmt("{} was not installed", &[&n])),
+            SetupTask::InstallSbcl(d) if ok => Ok(i18n::fmt("SBCL is installed in {}.", &[&d])),
+            SetupTask::InstallSbcl(d) => fail(i18n::fmt("SBCL was not installed in {}", &[&d])),
+        });
+        match task {
+            SetupTask::InstallSbcl(d) => {
+                self.wsl.sbcl.remove(&d);
+                self.wsl_check_sbcl(&d);
+            }
+            _ => {
+                // a new distribution (or WSL itself): look again; the SBCL check follows the probe
+                self.wsl_probe();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_lines_handle_newlines_progress_redraws_and_escapes() {
+        let (mut log, mut open) = (vec![], false);
+        push_output(&mut log, &mut open, "Downloading: Ubuntu\r\n[=   5.0%   ]");
+        push_output(&mut log, &mut open, "\r[====  42.5%  ]\r[=========  100.0% ]\nInstalling\n");
+        push_output(&mut log, &mut open, "\u{1b}[32mdone\u{1b}[0m");
+        assert_eq!(log, vec!["Downloading: Ubuntu", "[=========  100.0% ]", "Installing", "done"]);
+        assert!(open);
+        assert_eq!(percent("[====  42.5%  ]"), Some(42.5));
+        assert_eq!(percent("Загрузка 7,5%"), Some(7.5));
+        assert_eq!(percent("no number %"), None);
+        assert_eq!(percent("no percent"), None);
+    }
+
+    #[test]
+    fn log_is_capped() {
+        let (mut log, mut open) = (vec![], false);
+        let many: String = (0..LOG_LINES + 50).map(|i| format!("line {i}\n")).collect();
+        push_output(&mut log, &mut open, &many);
+        assert_eq!(log.len(), LOG_LINES);
+        assert_eq!(log.last().unwrap(), &format!("line {}", LOG_LINES + 49));
+    }
+
+    #[test]
+    fn image_names_are_cleaned_and_kept_unique() {
+        let taken = vec!["ubuntu-24.04".to_string()];
+        assert_eq!(name_for_image(Path::new(r"C:\d\ubuntu-24.04.wsl"), &taken), "ubuntu-24.04-2");
+        assert_eq!(name_for_image(Path::new("debian rootfs.tar.gz"), &[]), "debian-rootfs");
+        assert_eq!(name_for_image(Path::new(".tar"), &[]), "Linux");
+    }
+
+    #[test]
+    fn drives_and_friendly_names() {
+        assert_eq!(drive_of(Path::new(r"d:\WSL")), Some('D'));
+        assert_eq!(drive_of(Path::new("relative")), None);
+        let mut s = WslState::default();
+        assert_eq!(s.friendly("Ubuntu-24.04"), "Ubuntu 24.04 LTS");
+        s.online = vec![OnlineDistro { name: "Debian".into(), friendly: "Debian 13".into() }];
+        assert_eq!(s.friendly("Debian"), "Debian 13");
+        assert_eq!(s.friendly("Custom"), "Custom");
+    }
+}

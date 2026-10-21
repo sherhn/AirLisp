@@ -64,6 +64,16 @@ pub enum Icon {
     Globe,
     Cloud,
     Eye,
+    ChevronLeft,
+    Undo,
+    FileDiff,
+    Script,
+    /// The Linux (WSL) environment.
+    Linux,
+    /// Install / download into this machine.
+    Install,
+    Ok,
+    Spinner,
 }
 
 pub fn glyph(icon: Icon) -> Option<char> {
@@ -122,6 +132,14 @@ pub fn glyph(icon: Icon) -> Option<char> {
         Icon::Globe => l::GLOBE,
         Icon::Cloud => l::CLOUD_DOWNLOAD,
         Icon::Eye => l::SQUARE_TERMINAL,
+        Icon::ChevronLeft => l::CHEVRON_LEFT,
+        Icon::Undo => l::UNDO_2,
+        Icon::FileDiff => l::FILE_DIFF,
+        Icon::Script => l::SCROLL_TEXT,
+        Icon::Linux => l::CONTAINER,
+        Icon::Install => l::HARD_DRIVE_DOWNLOAD,
+        Icon::Ok => l::CIRCLE_CHECK_BIG,
+        Icon::Spinner => l::LOADER_CIRCLE,
     })
 }
 
@@ -162,7 +180,7 @@ mod tests {
     #[test]
     fn every_icon_has_a_glyph_or_is_custom() {
         use Icon::*;
-        for i in [Folder, FolderOpen, File, Play, Stop, Restart, Search, Warning, Error, Check, ChevronRight, ChevronDown, ChevronUp, Close, Plus, Gear, List, Terminal, Trash, Project, Branch, Clear, Info, ArrowUp, ArrowDown, Commit, Refresh, History, Diff, Menu, More, Repl, Download, Palette, Keyboard, Sliders, Code, FolderPlus, FilePlus, Pencil, Copy, Save, Sun, Moon, Fork, External, Zap, Layers, Package, Hammer, Globe, Cloud, Eye] {
+        for i in [Folder, FolderOpen, File, Play, Stop, Restart, Search, Warning, Error, Check, ChevronRight, ChevronDown, ChevronUp, Close, Plus, Gear, List, Terminal, Trash, Project, Branch, Clear, Info, ArrowUp, ArrowDown, Commit, Refresh, History, Diff, Menu, More, Repl, Download, Palette, Keyboard, Sliders, Code, FolderPlus, FilePlus, Pencil, Copy, Save, Sun, Moon, Fork, External, Zap, Layers, Package, Hammer, Globe, Cloud, Eye, ChevronLeft, Undo, FileDiff, Script, Linux, Install, Ok, Spinner] {
             assert!(glyph(i).is_some(), "{i:?}");
         }
         assert!(glyph(Lisp).is_none() && glyph(Dot).is_none());

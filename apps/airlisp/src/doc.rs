@@ -2,14 +2,27 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use ide_core::editor::Editor;
 use lisp_syntax::{Dialect, Severity};
 
+use crate::diff_tab::DiffTab;
 use crate::editor_view::{Marker, Sev, ViewState};
+use crate::i18n::tr;
+
+static NEXT_DOC_ID: AtomicU64 = AtomicU64::new(1);
+
+/// A stable identity of a document: tab indices shift when tabs are closed, ids do not.
+fn next_id() -> u64 {
+    NEXT_DOC_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 pub struct Doc {
+    pub id: u64,
+    /// Set for the diff tab: a virtual document that shows changes instead of text.
+    pub diff: Option<Box<DiffTab>>,
     pub path: Option<PathBuf>,
     pub ed: Editor,
     pub view: ViewState,
@@ -39,6 +52,8 @@ impl Doc {
         let text = String::from_utf8(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not valid UTF-8 text"))?;
         let dialect = Dialect::from_path(path).unwrap_or_default();
         Ok(Doc {
+            id: next_id(),
+            diff: None,
             path: Some(path.to_path_buf()),
             ed: Editor::new(&text, dialect),
             view: ViewState::default(),
@@ -57,6 +72,8 @@ impl Doc {
 
     pub fn untitled(n: usize) -> Doc {
         Doc {
+            id: next_id(),
+            diff: None,
             path: None,
             ed: Editor::new("", Dialect::CommonLisp),
             view: ViewState::default(),
@@ -73,6 +90,13 @@ impl Doc {
         }
     }
 
+    /// The diff tab: a document without text or file whose view shows a file's changes.
+    pub fn diff_tab() -> Doc {
+        let mut d = Doc::untitled(0);
+        d.diff = Some(Box::new(DiffTab::empty()));
+        d
+    }
+
     /// Top-level definitions, cached per revision (parsing a big file every frame would freeze the UI).
     pub fn defs(&mut self) -> &[lisp_syntax::outline::Definition] {
         let rev = self.ed.revision();
@@ -84,6 +108,9 @@ impl Doc {
     }
 
     pub fn name(&self) -> String {
+        if let Some(t) = &self.diff {
+            return format!("{} ({})", t.title(), tr("diff"));
+        }
         match &self.path {
             Some(p) => p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
             None => self.untitled_name.clone(),

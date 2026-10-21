@@ -27,7 +27,6 @@ pub struct Palette {
     pub base_bottom: Color32,
     pub glass: Color32,
     pub sheen: Color32,
-    pub shadow: Color32,
     // editor
     pub caret: Color32,
     pub line_number: Color32,
@@ -89,7 +88,6 @@ impl Palette {
             base_bottom: c(0x0E0F12),
             glass: Color32::from_rgba_unmultiplied(40, 42, 50, 250),
             sheen: Color32::from_white_alpha(22),
-            shadow: Color32::from_black_alpha(120),
             caret: c(0xE8EAEE),
             line_number: c(0x4F5360),
             line_number_active: c(0xA3A8B5),
@@ -144,7 +142,6 @@ impl Palette {
             base_bottom: c(0xDCDFE7),
             glass: Color32::from_rgba_unmultiplied(255, 255, 255, 250),
             sheen: Color32::from_white_alpha(200),
-            shadow: Color32::from_black_alpha(48),
             caret: c(0x1B1D22),
             line_number: c(0xB4B8C4),
             line_number_active: c(0x5F6470),
@@ -218,6 +215,9 @@ impl Palette {
         v.text_edit_bg_color = Some(self.input_bg);
         v.faint_bg_color = self.hover;
         v.window_stroke = egui::Stroke::NONE;
+        // flat design: popups, menus, tooltips and windows carry no shadow
+        v.window_shadow = egui::Shadow::NONE;
+        v.popup_shadow = egui::Shadow::NONE;
         v.weak_text_color = Some(self.text_dim);
         v.selection.bg_fill = self.selection;
         v.selection.stroke = egui::Stroke::new(1.0, self.accent);

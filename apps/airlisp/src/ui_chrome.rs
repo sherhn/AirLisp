@@ -1,11 +1,12 @@
 //! Window chrome: menu bar, toolbar, tool strip, editor tabs, breadcrumbs, status bar, toasts.
 
-use eframe::egui::{self, Align, Align2, Color32, CornerRadius, Layout, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Align, Align2, Color32, CornerRadius, Layout, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use ide_core::commands;
 
 use crate::app::{App, RunConfig};
 use crate::editor_view::Sev;
 use crate::fonts;
+use crate::i18n::{self, tr};
 use crate::icons::{self, Icon};
 use crate::state::*;
 use crate::widgets::{self, Pill, CRUMB_H, STATUS_H, TAB_H};
@@ -14,7 +15,7 @@ impl App {
     fn menu_item(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, id: &str) {
         let Some(c) = commands::by_id(id) else { return };
         let sc = c.shortcuts.first().map(|s| commands::display_shortcut(s)).unwrap_or_default();
-        let mut btn = egui::Button::new(c.title);
+        let mut btn = egui::Button::new(tr(c.title));
         if !sc.is_empty() {
             btn = btn.shortcut_text(RichText::new(sc).color(self.pal.text_dim));
         }
@@ -45,12 +46,12 @@ impl App {
             }
             ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
             ui.spacing_mut().item_spacing.x = 2.0;
-            ui.menu_button("File", |ui| {
+            ui.menu_button(tr("File"), |ui| {
                 self.menu_items(ui, ctx, &["file.new", "file.new_project", "file.open_project", "file.clone", "file.open_file", "file.reopen_last"]);
                 let recent = self.settings.recent_projects.clone();
-                ui.menu_button("Recent Projects", |ui| {
+                ui.menu_button(tr("Recent Projects"), |ui| {
                     if recent.is_empty() {
-                        ui.label(RichText::new("No recent projects").color(pal.text_dim));
+                        ui.label(RichText::new(tr("No recent projects")).color(pal.text_dim));
                     }
                     for p in recent {
                         if ui.button(&p).clicked() {
@@ -61,44 +62,44 @@ impl App {
                 });
                 self.menu_items(ui, ctx, &["-", "file.save", "file.reload", "file.close_tab", "file.close_all", "-", "file.copy_path", "file.reveal", "-", "app.settings", "app.exit"]);
             });
-            ui.menu_button("Edit", |ui| {
+            ui.menu_button(tr("Edit"), |ui| {
                 self.menu_items(
                     ui,
                     ctx,
                     &["edit.undo", "edit.redo", "-", "edit.cut", "edit.copy", "edit.paste", "edit.select_all", "-", "edit.extend_selection", "edit.shrink_selection", "edit.duplicate", "edit.delete_line", "code.comment_line", "edit.join_lines", "edit.toggle_case", "-", "edit.fold", "edit.unfold", "edit.fold_all", "edit.unfold_all", "-", "find.find", "find.replace", "find.next", "find.prev", "find.in_files", "find.replace_in_files", "find.usages"],
                 );
             });
-            ui.menu_button("View", |ui| {
+            ui.menu_button(tr("View"), |ui| {
                 self.menu_items(
                     ui,
                     ctx,
-                    &["view.project", "view.structure", "view.git", "view.repl", "view.run", "view.problems", "view.terminal", "-", "view.zoom_in", "view.zoom_out", "view.zoom_reset", "-", "view.toggle_theme", "view.line_numbers", "view.whitespace", "view.rainbow", "view.hide_all"],
+                    &["view.project", "view.commit", "view.structure", "view.git", "view.repl", "view.run", "view.problems", "view.terminal", "-", "view.split_right", "view.split_down", "view.unsplit", "view.switch_pane", "-", "view.zoom_in", "view.zoom_out", "view.zoom_reset", "-", "view.toggle_theme", "view.line_numbers", "view.whitespace", "view.rainbow", "view.hide_all"],
                 );
             });
-            ui.menu_button("Navigate", |ui| {
+            ui.menu_button(tr("Navigate"), |ui| {
                 self.menu_items(
                     ui,
                     ctx,
                     &["nav.search_everywhere", "nav.goto_file", "nav.goto_symbol", "nav.goto_line", "nav.recent_files", "nav.file_structure", "-", "nav.declaration", "nav.back", "nav.forward", "nav.matching_bracket", "nav.next_problem", "nav.prev_problem", "nav.last_edit"],
                 );
             });
-            ui.menu_button("Code", |ui| {
+            ui.menu_button(tr("Code"), |ui| {
                 self.menu_items(ui, ctx, &["code.complete", "code.quick_doc", "code.param_info", "code.expand_macro", "-", "code.reformat", "code.auto_indent"]);
                 ui.separator();
-                ui.menu_button("Structural Editing", |ui| {
+                ui.menu_button(tr("Structural Editing"), |ui| {
                     for c in commands::COMMANDS.iter().filter(|c| c.id.starts_with("lisp.")) {
                         self.menu_item(ui, ctx, c.id);
                     }
                 });
             });
-            ui.menu_button("Refactor", |ui| self.menu_items(ui, ctx, &["refactor.rename"]));
-            ui.menu_button("Git", |ui| {
+            ui.menu_button(tr("Refactor"), |ui| self.menu_items(ui, ctx, &["refactor.rename"]));
+            ui.menu_button(tr("Git"), |ui| {
                 self.menu_items(ui, ctx, &["git.commit", "git.local_commit", "git.reset_base", "git.push", "git.pull", "-", "git.branches", "git.new_branch", "-", "git.diff", "git.rollback", "git.stage_file", "-", "git.refresh", "git.init"]);
             });
-            ui.menu_button("Run", |ui| self.menu_items(ui, ctx, &["run.run_file", "run.compile_file", "run.stop", "-", "run.load_system", "run.test_system"]));
-            ui.menu_button("Tools", |ui| self.menu_items(ui, ctx, &["repl.eval", "repl.eval_last", "repl.load_file", "repl.restart", "repl.clear", "repl.focus", "-", "view.terminal"]));
-            ui.menu_button("Window", |ui| self.menu_items(ui, ctx, &["file.next_tab", "file.prev_tab", "file.close_others", "view.hide_all"]));
-            ui.menu_button("Help", |ui| self.menu_items(ui, ctx, &["nav.find_action", "help.keymap", "help.about"]));
+            ui.menu_button(tr("Run"), |ui| self.menu_items(ui, ctx, &["run.run_file", "run.compile_file", "run.stop", "-", "run.load_system", "run.test_system"]));
+            ui.menu_button(tr("Tools"), |ui| self.menu_items(ui, ctx, &["repl.eval", "repl.eval_last", "repl.load_file", "repl.restart", "repl.clear", "repl.focus", "-", "view.terminal"]));
+            ui.menu_button(tr("Window"), |ui| self.menu_items(ui, ctx, &["file.next_tab", "file.prev_tab", "file.close_others", "view.hide_all"]));
+            ui.menu_button(tr("Help"), |ui| self.menu_items(ui, ctx, &["nav.find_action", "help.keymap", "help.about"]));
         });
     }
 
@@ -111,7 +112,7 @@ impl App {
             ui.spacing_mut().item_spacing.x = 6.0;
 
             // ---- project widget
-            let name = self.project.as_ref().map_or("No project".to_string(), |p| p.name.clone());
+            let name = self.project.as_ref().map_or(tr("No project").to_string(), |p| p.name.clone());
             let initials: String = name.chars().filter(|c| c.is_alphanumeric()).take(2).collect::<String>().to_uppercase();
             let g = ui.painter().layout_no_wrap(name.clone(), fonts::semibold(13.5), pal.text);
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 76.0, 38.0), Sense::click());
@@ -127,7 +128,7 @@ impl App {
             let mut open_other: Option<String> = None;
             let mut cmd: Option<&str> = None;
             egui::Popup::menu(&resp).width(260.0).show(|ui| {
-                ui.label(RichText::new("Recent projects").color(pal.text_dim).size(11.5));
+                ui.label(RichText::new(tr("Recent projects")).color(pal.text_dim).size(11.5));
                 for p in recents.iter().take(8) {
                     let n = std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
                     if ui.button(n).on_hover_text(p).clicked() {
@@ -136,11 +137,11 @@ impl App {
                     }
                 }
                 ui.separator();
-                if ui.button("Open Project...").clicked() {
+                if ui.button(tr("Open Project...")).clicked() {
                     cmd = Some("file.open_project");
                     ui.close();
                 }
-                if ui.button("New Project...").clicked() {
+                if ui.button(tr("New Project...")).clicked() {
                     cmd = Some("file.new_project");
                     ui.close();
                 }
@@ -155,7 +156,7 @@ impl App {
             // ---- local commit works for every project, git or not
             if self.project.is_some() && self.git.branch.is_none() {
                 ui.add_space(4.0);
-                if widgets::icon_button(ui, &pal, Icon::History, 34.0, pal.text_dim, "Local Commit (Ctrl+Alt+K)").clicked() {
+                if widgets::icon_button(ui, &pal, Icon::History, 34.0, pal.text_dim, tr("Local Commit (Ctrl+Alt+K)")).clicked() {
                     self.run_command(ctx, "git.local_commit");
                 }
             }
@@ -166,14 +167,14 @@ impl App {
                 let mut checkout: Option<String> = None;
                 let mut new_branch = false;
                 egui::Popup::menu(&resp).width(280.0).show(|ui| {
-                    if ui.button("New Branch...").clicked() {
+                    if ui.button(tr("New Branch...")).clicked() {
                         new_branch = true;
                         ui.close();
                     }
                     ui.separator();
-                    ui.label(RichText::new("Local").color(pal.text_dim).size(11.5));
+                    ui.label(RichText::new(tr("Local")).color(pal.text_dim).size(11.5));
                     for b in branches.iter().filter(|b| !b.remote) {
-                        let label = if b.current { format!("{}   (current)", b.name) } else { b.name.clone() };
+                        let label = if b.current { i18n::fmt("{}   (current)", &[&b.name]) } else { b.name.clone() };
                         if ui.add_enabled(!b.current, egui::Button::new(label)).clicked() {
                             checkout = Some(b.name.clone());
                             ui.close();
@@ -181,7 +182,7 @@ impl App {
                     }
                     if branches.iter().any(|b| b.remote) {
                         ui.separator();
-                        ui.label(RichText::new("Remote").color(pal.text_dim).size(11.5));
+                        ui.label(RichText::new(tr("Remote")).color(pal.text_dim).size(11.5));
                         for b in branches.iter().filter(|b| b.remote) {
                             if ui.button(&b.name).clicked() {
                                 checkout = Some(b.name.clone());
@@ -198,25 +199,25 @@ impl App {
                 }
                 if self.git.repo.is_some() {
                     ui.add_space(4.0);
-                    if widgets::icon_button(ui, &pal, Icon::ArrowDown, 34.0, pal.text_dim, "Update Project (Ctrl+T)").clicked() {
+                    if widgets::icon_button(ui, &pal, Icon::ArrowDown, 34.0, pal.text_dim, tr("Update Project (Ctrl+T)")).clicked() {
                         self.run_command(ctx, "git.pull");
                     }
                     let n = self.git.changes.len();
-                    let r = widgets::icon_button(ui, &pal, Icon::Commit, 34.0, if n > 0 { pal.accent } else { pal.text_dim }, "Commit (Ctrl+K)");
+                    let r = widgets::icon_button(ui, &pal, Icon::Commit, 34.0, if n > 0 { pal.accent } else { pal.text_dim }, tr("Commit (Ctrl+K)"));
                     if n > 0 {
                         ui.painter().circle_filled(r.rect.right_top() + Vec2::new(-8.0, 8.0), 3.5, pal.accent);
                     }
                     if r.clicked() {
                         self.run_command(ctx, "git.commit");
                     }
-                    if widgets::icon_button(ui, &pal, Icon::History, 34.0, if self.base_is_local() { pal.accent } else { pal.text_dim }, "Local Commit (Ctrl+Alt+K)").clicked() {
+                    if widgets::icon_button(ui, &pal, Icon::History, 34.0, if self.base_is_local() { pal.accent } else { pal.text_dim }, tr("Local Commit (Ctrl+Alt+K)")).clicked() {
                         self.run_command(ctx, "git.local_commit");
                     }
-                    if widgets::icon_button(ui, &pal, Icon::ArrowUp, 34.0, pal.text_dim, "Push (Ctrl+Shift+K)").clicked() {
+                    if widgets::icon_button(ui, &pal, Icon::ArrowUp, 34.0, pal.text_dim, tr("Push (Ctrl+Shift+K)")).clicked() {
                         self.run_command(ctx, "git.push");
                     }
                     if let Some(b) = &self.git.busy {
-                        ui.label(RichText::new(format!("{b}...")).color(pal.warning).size(12.0));
+                        ui.label(RichText::new(format!("{}...", i18n::tr_dyn(b))).color(pal.warning).size(12.0));
                     }
                 }
             }
@@ -225,18 +226,18 @@ impl App {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(12.0);
                 ui.spacing_mut().item_spacing.x = 4.0;
-                if widgets::icon_button(ui, &pal, Icon::Gear, 36.0, pal.text_dim, "Settings (Ctrl+Alt+S)").clicked() {
+                if widgets::icon_button(ui, &pal, Icon::Gear, 36.0, pal.text_dim, tr("Settings (Ctrl+Alt+S)")).clicked() {
                     self.run_command(ctx, "app.settings");
                 }
-                if widgets::icon_button(ui, &pal, Icon::Search, 36.0, pal.text_dim, "Search Everywhere (Double Shift)").clicked() {
+                if widgets::icon_button(ui, &pal, Icon::Search, 36.0, pal.text_dim, tr("Search Everywhere (Double Shift)")).clicked() {
                     self.run_command(ctx, "nav.search_everywhere");
                 }
                 ui.add_space(10.0);
                 let running = self.run.running || self.compile.is_some();
-                if widgets::icon_button(ui, &pal, Icon::Stop, 36.0, if running { pal.error } else { pal.text_dim.gamma_multiply(0.5) }, "Stop (Ctrl+F2)").clicked() {
+                if widgets::icon_button(ui, &pal, Icon::Stop, 36.0, if running { pal.error } else { pal.text_dim.gamma_multiply(0.5) }, tr("Stop (Ctrl+F2)")).clicked() {
                     self.run_command(ctx, "run.stop");
                 }
-                if widgets::icon_button(ui, &pal, Icon::Check, 36.0, pal.text_dim, "Compile current file (Ctrl+F9)").clicked() {
+                if widgets::icon_button(ui, &pal, Icon::Check, 36.0, pal.text_dim, tr("Compile current file (Ctrl+F9)")).clicked() {
                     self.run_command(ctx, "run.compile_file");
                 }
                 let (r, resp) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::click());
@@ -244,7 +245,7 @@ impl App {
                     ui.painter().rect_filled(r, widgets::radius(), pal.hover);
                 }
                 icons::paint(ui.painter(), r.shrink(10.0), Icon::Play, pal.ok);
-                if resp.on_hover_text("Run (Shift+F10)").clicked() {
+                if resp.on_hover_text(tr("Run (Shift+F10)")).clicked() {
                     self.run_command(ctx, "run.run_file");
                 }
                 let label = self.run_config_label();
@@ -252,16 +253,16 @@ impl App {
                 let systems = self.asd_systems();
                 let mut chosen: Option<RunConfig> = None;
                 egui::Popup::menu(&resp).width(240.0).show(|ui| {
-                    if ui.button("Current File").clicked() {
+                    if ui.button(tr("Current File")).clicked() {
                         chosen = Some(RunConfig::CurrentFile);
                         ui.close();
                     }
                     for s in &systems {
-                        if ui.button(format!("Load system '{s}'")).clicked() {
+                        if ui.button(i18n::fmt("Load system '{}'", &[&s])).clicked() {
                             chosen = Some(RunConfig::Load(s.clone()));
                             ui.close();
                         }
-                        if ui.button(format!("Test system '{s}'")).clicked() {
+                        if ui.button(i18n::fmt("Test system '{}'", &[&s])).clicked() {
                             chosen = Some(RunConfig::Test(s.clone()));
                             ui.close();
                         }
@@ -295,8 +296,13 @@ impl App {
         ui.vertical_centered(|ui| {
             ui.add_space(8.0);
             ui.spacing_mut().item_spacing.y = 6.0;
-            for (icon, tool, tip) in [(Icon::Project, LeftTool::Project, "Project (Alt+1)"), (Icon::List, LeftTool::Structure, "Structure (Alt+7)")] {
-                if self.strip_button(ui, icon, self.left_tool == Some(tool), tip, None) {
+            let commit_badge = (!self.git.changes.is_empty()).then_some(self.pal.accent);
+            for (icon, tool, tip, badge) in [
+                (Icon::Project, LeftTool::Project, tr("Project (Alt+1)"), None),
+                (Icon::Commit, LeftTool::Commit, tr("Commit (Alt+0)"), commit_badge),
+                (Icon::List, LeftTool::Structure, tr("Structure (Alt+7)"), None),
+            ] {
+                if self.strip_button(ui, icon, self.left_tool == Some(tool), tip, badge) {
                     self.toggle_left(tool);
                 }
             }
@@ -306,14 +312,13 @@ impl App {
             ui.spacing_mut().item_spacing.y = 6.0;
             let errors = self.all_problems().iter().filter(|p| p.sev == Sev::Error).count();
             let pal = self.pal;
-            let git_badge = (!self.git.changes.is_empty()).then_some(pal.accent);
             let tools = [
-                (Icon::Search, BottomTool::Find, "Find (Ctrl+Shift+F)", None),
-                (Icon::Warning, BottomTool::Problems, "Problems (Alt+6)", (errors > 0).then_some(pal.error)),
-                (Icon::Terminal, BottomTool::Terminal, "Terminal (Alt+F12)", None),
-                (Icon::Play, BottomTool::Run, "Run (Alt+4)", None),
-                (Icon::Eye, BottomTool::Repl, "REPL (Alt+8)", self.repl.ready.then_some(pal.ok)),
-                (Icon::Commit, BottomTool::Git, "Git (Alt+9)", git_badge),
+                (Icon::Search, BottomTool::Find, tr("Find (Ctrl+Shift+F)"), None),
+                (Icon::Warning, BottomTool::Problems, tr("Problems (Alt+6)"), (errors > 0).then_some(pal.error)),
+                (Icon::Terminal, BottomTool::Terminal, tr("Terminal (Alt+F12)"), None),
+                (Icon::Play, BottomTool::Run, tr("Run (Alt+4)"), None),
+                (Icon::Eye, BottomTool::Repl, tr("REPL (Alt+8)"), self.repl.ready.then_some(pal.ok)),
+                (Icon::History, BottomTool::Git, tr("Git (Alt+9)"), None),
             ];
             for (icon, tool, tip, badge) in tools {
                 if self.strip_button(ui, icon, self.bottom_tool == Some(tool), tip, badge) {
@@ -333,6 +338,9 @@ impl App {
         let mut to_close: Option<usize> = None;
         let mut to_activate: Option<usize> = None;
         let names: Vec<(String, bool, bool)> = self.docs.iter().map(|d| (d.name(), d.ed.is_modified(), d.conflict)).collect();
+        let other_pane = self.split_other_index();
+        let is_split = self.split.is_some();
+        let mut split_request: Option<(usize, Option<bool>)> = None;
         let problems = self.all_problems();
         for (i, (name, modified, conflict)) in names.iter().enumerate() {
             let galley = ui.painter().layout_no_wrap(name.clone(), font.clone(), pal.text);
@@ -343,12 +351,23 @@ impl App {
             let hit = r.shrink2(Vec2::new(0.0, 8.0));
             if active {
                 ui.painter().rect_filled(hit, CornerRadius::same(12), pal.tab_active_bg);
+            } else if other_pane == Some(i) {
+                // the document of the other pane of a split
+                ui.painter().rect_filled(hit, CornerRadius::same(12), pal.tab_active_bg.gamma_multiply(0.5));
             } else if resp.hovered() {
                 ui.painter().rect_filled(hit, CornerRadius::same(12), pal.hover);
             }
             let ir = Rect::from_min_size(Pos2::new(r.min.x + 14.0, r.center().y - 8.0), Vec2::splat(16.0));
-            let is_lisp = self.docs[i].path.as_deref().is_none_or(lisp_syntax::dialect::is_lisp_file);
-            icons::paint(ui.painter(), ir, if is_lisp { Icon::Lisp } else { Icon::File }, if is_lisp { pal.keyword_form } else { pal.text_dim });
+            let is_diff = self.docs[i].diff.is_some();
+            let is_lisp = !is_diff && self.docs[i].path.as_deref().is_none_or(lisp_syntax::dialect::is_lisp_file);
+            let (tab_icon, tab_icon_color) = if is_diff {
+                (Icon::FileDiff, pal.accent)
+            } else if is_lisp {
+                (Icon::Lisp, pal.keyword_form)
+            } else {
+                (Icon::File, pal.text_dim)
+            };
+            icons::paint(ui.painter(), ir, tab_icon, tab_icon_color);
             let has_err = problems.iter().any(|p| p.path == self.docs[i].path && p.path.is_some() && p.sev == Sev::Error);
             let git_color = self.docs[i].path.as_ref().and_then(|p| self.git_change_of(p)).map(|k| self.git_color(k));
             let text_color = if has_err { pal.error } else if let Some(c) = git_color { c } else if active { pal.text } else { pal.text_dim };
@@ -374,22 +393,36 @@ impl App {
                 to_activate = Some(i);
             }
             resp.context_menu(|ui| {
-                if ui.button("Close").clicked() {
+                if ui.button(tr("Close")).clicked() {
                     to_close = Some(i);
                     ui.close();
                 }
-                if ui.button("Close Other Tabs").clicked() {
+                if ui.button(tr("Close Other Tabs")).clicked() {
                     to_activate = Some(i);
                     self.pending_close_others = true;
                     ui.close();
                 }
-                if ui.button("Copy Path").clicked() {
+                ui.separator();
+                if ui.button(tr("Split Right")).clicked() {
+                    split_request = Some((i, Some(true)));
+                    ui.close();
+                }
+                if ui.button(tr("Split Down")).clicked() {
+                    split_request = Some((i, Some(false)));
+                    ui.close();
+                }
+                if is_split && ui.button(tr("Unsplit")).clicked() {
+                    split_request = Some((i, None));
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button(tr("Copy Path")).clicked() {
                     if let Some(p) = &self.docs[i].path {
                         ctx.copy_text(p.to_string_lossy().into_owned());
                     }
                     ui.close();
                 }
-                if ui.button("Reveal in File Manager").clicked() {
+                if ui.button(tr("Reveal in File Manager")).clicked() {
                     if let Some(p) = self.docs[i].path.clone() {
                         crate::input::reveal_in_file_manager(&p);
                     }
@@ -402,8 +435,16 @@ impl App {
             }
         }
         if let Some(i) = to_activate {
-            self.active = i;
+            self.show_doc(i);
             self.editor_focus = true;
+        }
+        match split_request {
+            Some((i, Some(vertical))) => {
+                self.show_doc(i);
+                self.split_editor(vertical);
+            }
+            Some((_, None)) => self.unsplit(),
+            None => {}
         }
         if self.pending_close_others {
             self.pending_close_others = false;
@@ -428,13 +469,13 @@ impl App {
 
     // ------------------------------------------------------------------ breadcrumbs
 
-    pub fn draw_breadcrumbs(&mut self, ui: &mut egui::Ui) {
+    pub fn draw_breadcrumbs(&mut self, ui: &mut egui::Ui, idx: usize) {
         let pal = self.pal;
-        let def_label = self.docs.get_mut(self.active).and_then(|d| {
+        let def_label = self.docs.get_mut(idx).and_then(|d| {
             let caret = d.ed.caret();
             lisp_syntax::outline::definition_at(d.defs(), caret).map(|def| format!("{} {}", def.operator, def.name))
         });
-        let Some(d) = self.doc() else { return };
+        let Some(d) = self.docs.get(idx) else { return };
         let mut parts: Vec<String> = Vec::new();
         match (&d.path, self.project_root()) {
             (Some(p), Some(root)) if p.starts_with(root) => {
@@ -477,7 +518,7 @@ impl App {
                 ui.add_space(8.0);
             }
             if self.base_is_local() {
-                ui.label(RichText::new(format!("diff vs {}", self.base_label())).color(pal.accent).font(fonts::ui(12.0)));
+                ui.label(RichText::new(i18n::fmt("diff vs {}", &[&self.base_label()])).color(pal.accent).font(fonts::ui(12.0)));
                 ui.add_space(8.0);
             }
             if !self.status.is_empty() {
@@ -487,35 +528,45 @@ impl App {
                 ui.add_space(14.0);
                 ui.spacing_mut().item_spacing.x = 18.0;
                 let small = |t: String| RichText::new(t).color(pal.text_dim).font(fonts::ui(12.0));
-                let info = self.doc().map(|d| {
+                let info = self.doc().filter(|d| d.diff.is_none()).map(|d| {
                     let (line, col) = d.ed.line_col(d.ed.caret());
                     let sel = if d.ed.has_selection() { format!(" ({} chars)", d.ed.selected_text().chars().count()) } else { String::new() };
                     (format!("{}:{}{}", line + 1, col + 1, sel), d.ed.dialect().name().to_string(), d.ed.line_ending.label().to_string())
                 });
                 if let Some((pos, dialect, eol)) = info {
-                    if ui.add(egui::Label::new(small(pos)).sense(Sense::click())).on_hover_text("Go to Line (Ctrl+G)").clicked() {
+                    if ui.add(egui::Label::new(small(pos)).sense(Sense::click())).on_hover_text(tr("Go to Line (Ctrl+G)")).clicked() {
                         self.run_command(ctx, "nav.goto_line");
                     }
                     ui.label(small(dialect));
-                    ui.label(small("2 spaces".into()));
+                    ui.label(small(tr("2 spaces").into()));
                     ui.label(small("UTF-8".into()));
                     ui.label(small(eol));
                 }
                 let (txt, color) = if self.repl.starting {
-                    ("REPL starting...".to_string(), pal.warning)
+                    (tr("REPL starting...").to_string(), pal.warning)
                 } else if self.repl.ready {
-                    let busy = if self.repl.busy.is_empty() { "" } else { " (busy)" };
+                    let busy = if self.repl.busy.is_empty() { "" } else { tr(" (busy)") };
                     (format!("{}{}", self.repl.package.to_lowercase(), busy), pal.ok)
                 } else if self.lisp.is_none() {
-                    ("No Lisp found".to_string(), pal.error)
+                    (tr("No Lisp found").to_string(), pal.error)
                 } else {
-                    ("REPL off".to_string(), pal.text_dim)
+                    (tr("REPL off").to_string(), pal.text_dim)
                 };
-                let resp = ui.add(egui::Label::new(small(txt)).sense(Sense::click())).on_hover_text("Toggle REPL (Alt+8)");
+                let resp = ui.add(egui::Label::new(small(txt)).sense(Sense::click())).on_hover_text(tr("Toggle REPL (Alt+8)"));
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
                 ui.painter().circle_filled(r.center(), 4.0, color);
                 if resp.clicked() {
                     self.run_command(ctx, "view.repl");
+                }
+                // Lisp runs inside WSL: say where, one click away from its settings
+                if let Some(t) = self.wsl_target() {
+                    let text = RichText::new(i18n::fmt("Linux: {}", &[&t.distro])).color(pal.accent).font(fonts::ui(12.0));
+                    let resp = ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_text(tr("Lisp, the REPL and the terminal run in WSL - click for the settings"));
+                    let (r, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+                    icons::paint(ui.painter(), r, Icon::Linux, pal.accent);
+                    if resp.clicked() {
+                        self.open_settings_page(crate::ui_settings::WSL_PAGE);
+                    }
                 }
             });
         });
@@ -541,8 +592,7 @@ impl App {
             let rect = Rect::from_min_size(Pos2::new(screen.max.x - w - 20.0, y - h), Vec2::new(w, h));
             egui::Area::new(egui::Id::new(("toast", i))).fixed_pos(rect.min).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
                 let p = ui.painter();
-                p.rect_filled(rect.translate(Vec2::new(0.0, 3.0)).expand(1.0), CornerRadius::same(12), Color32::from_black_alpha(70));
-                p.rect_filled(rect, CornerRadius::same(10), pal.popup_bg);
+                p.rect_filled(rect, CornerRadius::same(12), pal.popup_bg);
                 p.rect_filled(Rect::from_min_size(rect.min + Vec2::new(0.0, 10.0), Vec2::new(3.0, h - 20.0)), CornerRadius::same(2), color);
                 icons::paint(p, Rect::from_min_size(rect.min + Vec2::new(18.0, 16.0), Vec2::splat(16.0)), icon, color);
                 p.text(Pos2::new(rect.min.x + 46.0, rect.center().y), Align2::LEFT_CENTER, text, font, pal.text);

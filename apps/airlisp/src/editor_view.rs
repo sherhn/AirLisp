@@ -63,6 +63,9 @@ pub struct ViewOut {
     pub text_rect: Option<Rect>,
     /// A fold chevron was clicked.
     pub fold_toggle: Option<FoldKey>,
+    /// A change marker in the gutter was clicked: (0-based line, screen position just below that line).
+    pub gutter_click: Option<(usize, Pos2)>,
+    pub gutter_rect: Option<Rect>,
 }
 
 const GUTTER_PAD: f32 = 12.0;
@@ -70,6 +73,12 @@ const FOLD_W: f32 = 18.0;
 const MARK_W: f32 = 10.0;
 const STRIPE_W: f32 = 12.0;
 const TEXT_PAD: f32 = 14.0;
+
+/// Screen position of the change marker of display row `row` in a gutter (used by the UI tests to click it).
+pub fn gutter_mark_pos(gutter: Rect, scroll_y: f32, font_size: f32, row: usize) -> Pos2 {
+    let lh = line_height_for(font_size);
+    Pos2::new(gutter.max.x - FOLD_W - 4.0, gutter.min.y + row as f32 * lh - scroll_y + lh * 0.5)
+}
 
 pub fn line_height_for(font_size: f32) -> f32 {
     (font_size * 1.62).round()
@@ -144,7 +153,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let gutter_rect = Rect::from_min_size(full.min, Vec2::new(gutter_w, full.height()));
     let text_rect = Rect::from_min_max(Pos2::new(full.min.x + gutter_w, full.min.y), full.max);
     state.last_text_rect = Some(text_rect);
-    let mut out = ViewOut { text_rect: Some(text_rect), ..Default::default() };
+    let mut out = ViewOut { text_rect: Some(text_rect), gutter_rect: Some(gutter_rect), ..Default::default() };
 
     let text = ed.text();
     let max_cols = match state.max_cols {
@@ -442,15 +451,31 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
             }
         }
     }
+    // the change markers sit left of the fold chevrons; hovering one shows a pointer, clicking it opens the old code
+    let mark_zone = |p: Pos2| p.x > gutter_rect.max.x - FOLD_W - MARK_W - 8.0 && p.x <= gutter_rect.max.x - FOLD_W - 2.0;
+    let row_at = |p: Pos2| (((p.y - gutter_rect.min.y + state.scroll.y) / lh).floor().max(0.0)) as usize;
+    let marked_line = |p: Pos2| rows.get(row_at(p)).filter(|line| cfg.git_marks.iter().any(|m| m.line == *line));
+    if let Some(p) = ui.input(|i| i.pointer.hover_pos())
+        && gutter_rect.contains(p)
+        && mark_zone(p)
+        && marked_line(p).is_some()
+    {
+        ui.set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
     if gresp.clicked()
         && let Some(p) = gresp.interact_pointer_pos()
-        && p.x > gutter_rect.max.x - FOLD_W - 2.0
     {
-        let row = (((p.y - gutter_rect.min.y + state.scroll.y) / lh).floor().max(0.0)) as usize;
-        if let Some(line) = rows.get(row)
-            && let Some(r) = region_start.get(&line)
+        if p.x > gutter_rect.max.x - FOLD_W - 2.0 {
+            if let Some(line) = rows.get(row_at(p))
+                && let Some(r) = region_start.get(&line)
+            {
+                out.fold_toggle = Some(r.key.clone());
+            }
+        } else if mark_zone(p)
+            && let Some(line) = marked_line(p)
         {
-            out.fold_toggle = Some(r.key.clone());
+            let y = gutter_rect.min.y + row_of_line(line) as f32 * lh - state.scroll.y;
+            out.gutter_click = Some((line, Pos2::new(gutter_rect.max.x + 6.0, y + lh + 2.0)));
         }
     }
 

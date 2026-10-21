@@ -52,12 +52,14 @@ impl eframe::App for App {
         egui::Panel::left("strip").exact_size(STRIP_W).resizable(false).show_separator_line(false).frame(none).show(ui, |ui| self.draw_tool_strip(ui, &ctx));
         if let Some(t) = self.left_tool {
             let margin = Margin { left: 0, right: gap, top: 0, bottom: gap };
-            egui::Panel::left("left_tool").resizable(true).default_size(290.0).size_range(180.0..=700.0).show_separator_line(false).frame(none.inner_margin(margin)).show(ui, |ui| {
+            let (panel_id, width) = if t == LeftTool::Commit { ("left_commit", 360.0) } else { ("left_tool", 290.0) };
+            egui::Panel::left(panel_id).resizable(true).default_size(width).size_range(220.0..=700.0).show_separator_line(false).frame(none.inner_margin(margin)).show(ui, |ui| {
                 widgets::card_frame(&pal, pal.panel_bg).show(ui, |ui| {
                     ui.set_min_size(ui.available_size());
                     match t {
                         LeftTool::Project => self.draw_project_panel(ui, &ctx),
                         LeftTool::Structure => self.draw_structure_panel(ui),
+                        LeftTool::Commit => self.draw_commit_panel(ui, &ctx),
                     }
                 });
             });
@@ -108,13 +110,37 @@ impl eframe::App for App {
 impl App {
     fn draw_central(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if self.docs.is_empty() {
+            self.split = None;
             self.draw_welcome(ui, ctx);
             return;
         }
+        self.fix_split();
         self.draw_tabs(ui, ctx);
+        let shown = self.active.min(self.docs.len() - 1);
+        self.active = shown;
+        if self.split.is_some() {
+            self.draw_split_panes(ui, ctx);
+        } else {
+            self.pane_rects.clear();
+            self.draw_doc_pane(ui, ctx, shown, true, false);
+        }
+    }
+
+    /// One editor pane: the diff of a diff tab, or the conflict banner, breadcrumbs, find bar and code of a file.
+    /// Only the focused pane takes the keyboard, the find bar and the popup anchors. `own_view` means the pane keeps
+    /// its scroll state apart from the document (both panes show the same document). Returns true on a click.
+    pub fn draw_doc_pane(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, idx: usize, focused: bool, own_view: bool) -> bool {
+        if self.docs[idx].diff.is_some() {
+            if focused {
+                self.editor_rect = None;
+                self.gutter_rect = None;
+                self.caret_screen = None;
+            }
+            self.draw_diff_view(ui, idx);
+            return false;
+        }
         // conflict banner
-        let conflict = self.doc().is_some_and(|d| d.conflict);
-        if conflict {
+        if self.docs[idx].conflict {
             let pal = self.pal;
             let mut reload = false;
             let mut keep = false;
@@ -129,23 +155,22 @@ impl App {
                     }
                 });
             });
-            if reload && let Some(d) = self.doc_mut() {
-                let _ = d.reload();
+            if reload {
+                let _ = self.docs[idx].reload();
             }
-            if keep && let Some(d) = self.doc_mut() {
-                d.conflict = false;
+            if keep {
+                self.docs[idx].conflict = false;
             }
         }
-        self.draw_breadcrumbs(ui);
-        self.draw_find_bar(ui, ctx);
-
-        let idx = self.active.min(self.docs.len() - 1);
-        self.active = idx;
-        self.refresh_find();
+        self.draw_breadcrumbs(ui, idx);
+        if focused {
+            self.draw_find_bar(ui, ctx);
+            self.refresh_find();
+        }
         let markers = self.docs[idx].markers();
-        let find: Vec<(usize, usize)> = if self.find.open { self.find.matches.clone() } else { vec![] };
+        let find: Vec<(usize, usize)> = if focused && self.find.open { self.find.matches.clone() } else { vec![] };
         let git_marks: Vec<ide_core::diff::Mark> = App::git_marks(&mut self.docs[idx]).to_vec();
-        let editor_on = self.editor_active(ctx);
+        let editor_on = focused && self.editor_active(ctx);
         let cfg = ViewCfg {
             pal: &self.pal,
             font_size: self.settings.font_size,
@@ -158,24 +183,39 @@ impl App {
             find_current: self.find.current,
             git_marks: &git_marks,
         };
+        let mut view = match (own_view, self.split.as_mut()) {
+            (true, Some(sp)) => std::mem::take(&mut sp.view),
+            _ => std::mem::take(&mut self.docs[idx].view),
+        };
         let doc = &mut self.docs[idx];
-        let out = editor_view::show(ui, &mut doc.ed, &mut doc.view, &mut doc.folds, &cfg);
+        let out = editor_view::show(ui, &mut doc.ed, &mut view, &mut doc.folds, &cfg);
         if let Some(key) = out.fold_toggle.clone()
             && !doc.folds.remove(&key)
         {
             doc.folds.insert(key);
         }
-        self.editor_rect = out.text_rect;
-        self.caret_screen = out.caret_screen;
+        match (own_view, self.split.as_mut()) {
+            (true, Some(sp)) => sp.view = view,
+            _ => self.docs[idx].view = view,
+        }
+        if focused {
+            self.editor_rect = out.text_rect;
+            self.gutter_rect = out.gutter_rect;
+            if let Some((line, pos)) = out.gutter_click {
+                self.open_hunk_popup(line, pos);
+            }
+            self.caret_screen = out.caret_screen;
+        }
         if out.clicked {
             self.editor_focus = true;
             self.completion.active = false;
         }
-        if let Some(off) = out.ctrl_click {
+        if focused && let Some(off) = out.ctrl_click {
             let doc = &mut self.docs[idx];
             doc.ed.set_caret(off, false);
             self.goto_declaration(None);
         }
+        out.clicked
     }
 
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {

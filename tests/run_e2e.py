@@ -30,6 +30,8 @@ FIXTURE_FILES = {
     "src/bad.lisp": "(defun broken (x\n  (+ x 1)\n",
     "src/skip.fasl": "compiled",
     "build/out.txt": "generated",
+    "scripts/demo.als": "# demo script\necho step-one\ncd src\necho in-src\n-git definitely-not-a-command\n@echo quiet-step\necho after-ignored\n",
+    "scripts/fail.als": "echo before-failure\ngit definitely-not-a-command\necho must-not-run\n",
 }
 
 
@@ -75,6 +77,13 @@ def run_one(script_path):
 
             shutil.rmtree(proj / ".git", onexc=_unlock)
         env = dict(os.environ, AIRLISP_CONFIG_DIR=str(tmp / "cfg"))
+        # the tests never touch the real WSL: a fake stands in for wsl.exe (scripts named *wsl* start without WSL)
+        env["AIRLISP_FAKE_WSL"] = str(ROOT / "tests" / "fake_wsl.py")
+        env["AIRLISP_FAKE_WSL_PYTHON"] = sys.executable
+        env["AIRLISP_FAKE_WSL_STATE"] = str(tmp / "fake-wsl.json")
+        env["AIRLISP_FAKE_WSL_START"] = "absent" if "wsl" in name else "installed"
+        if shutil.which("sbcl"):
+            env.setdefault("AIRLISP_FAKE_WSL_SBCL", shutil.which("sbcl"))
         if os.environ.get("AIRLISP_E2E_STRIP_SBCL"):
             # prove that the bundled SBCL is used: no system SBCL on PATH, no explicit override
             env.pop("AIRLISP_SBCL", None)

@@ -11,10 +11,11 @@ use ide_core::clone;
 use crate::app::App;
 use crate::editor_view::Sev;
 use crate::fonts;
+use crate::i18n::{self, tr};
 use crate::icons::Icon;
 use crate::input::dirs_home;
 use crate::state::*;
-use crate::widgets;
+use crate::widgets::{self, TextField};
 
 impl App {
     pub fn open_clone_dialog(&mut self) {
@@ -31,7 +32,7 @@ impl App {
             }
         };
         if st.parent.trim().is_empty() {
-            st.error = Some("Choose a directory to clone into".into());
+            st.error = Some(tr("Choose a directory to clone into").into());
             return;
         }
         let dest = PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&url));
@@ -47,7 +48,7 @@ impl App {
             });
             let _ = tx.send(CloneMsg::Done(r));
         });
-        st.run = Some(CloneRun { rx, cancel, progress: 0.0, status: "Connecting...".into(), dest });
+        st.run = Some(CloneRun { rx, cancel, progress: 0.0, status: tr("Connecting...").into(), dest });
     }
 
     pub fn draw_clone(&mut self, ctx: &egui::Context) {
@@ -93,65 +94,59 @@ impl App {
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), egui::Sense::hover());
                     crate::icons::paint(ui.painter(), r, Icon::Download, pal.accent);
-                    ui.label(RichText::new("Get from Version Control").font(fonts::semibold(17.0)));
+                    ui.label(RichText::new(tr("Get from Version Control")).font(fonts::semibold(17.0)));
                 });
                 ui.add_space(4.0);
-                ui.label(RichText::new("Clone a repository from GitHub or any Git URL and open it as a project.").color(pal.text_dim).size(12.5));
-                ui.add_space(16.0);
+                ui.label(RichText::new(tr("Clone a repository from GitHub or any Git URL and open it as a project.")).color(pal.text_dim).size(12.5));
+                ui.add_space(18.0);
 
-                widgets::caption(ui, &pal, "REPOSITORY URL");
-                ui.add_space(5.0);
+                widgets::caption(ui, &pal, &tr("Repository URL").to_uppercase());
+                ui.add_space(6.0);
                 let id = egui::Id::new("clone_url");
-                let r = widgets::input_frame(ui, &pal, Some(Icon::Globe), |ui| {
-                    ui.add_enabled(!running, egui::TextEdit::singleline(&mut st.url).id(id).hint_text("https://github.com/owner/repo  or  owner/repo").desired_width(f32::INFINITY).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 6)))
-                });
+                let r = TextField::new(&mut st.url).id(id).hint(tr("https://github.com/owner/repo  or  owner/repo")).icon(Icon::Globe).enabled(!running).show(ui, &pal);
                 if r.changed() {
                     st.error = None;
                 }
-                if st.just_opened {
-                    r.request_focus();
-                    st.just_opened = false;
-                }
-                ui.add_space(14.0);
+                widgets::focus_once(ui, &r, &mut st.just_opened);
+                ui.add_space(16.0);
 
-                widgets::caption(ui, &pal, "PARENT DIRECTORY");
-                ui.add_space(5.0);
-                ui.horizontal(|ui| {
-                    let w = ui.available_width() - 110.0;
-                    widgets::input_frame(ui, &pal, Some(Icon::Folder), |ui| {
-                        ui.add_enabled(!running, egui::TextEdit::singleline(&mut st.parent).desired_width(w - 50.0).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 6)));
-                    });
-                    if !running && widgets::secondary_button(ui, &pal, "Browse...").clicked()
-                        && let Some(d) = rfd::FileDialog::new().set_title("Clone into").pick_folder()
+                widgets::caption(ui, &pal, &tr("Parent directory").to_uppercase());
+                ui.add_space(6.0);
+                widgets::right_row(ui, widgets::FIELD_H, |ui| {
+                    if !running && widgets::secondary_button(ui, &pal, tr("Browse...")).clicked()
+                        && let Some(d) = rfd::FileDialog::new().set_title(tr("Clone into")).pick_folder()
                     {
                         st.parent = d.to_string_lossy().into_owned();
                         st.dir_touched = true;
                     }
+                    TextField::new(&mut st.parent).icon(Icon::Folder).enabled(!running).show(ui, &pal);
                 });
                 if let Ok(u) = clone::normalize_url(&st.url) {
                     let dest = PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&u));
-                    ui.add_space(6.0);
-                    ui.label(RichText::new(format!("Will be cloned into  {}", dest.display())).color(pal.text_dim).size(12.0));
+                    ui.add_space(8.0);
+                    ui.label(RichText::new(i18n::fmt("Will be cloned into  {}", &[&dest.display()])).color(pal.text_dim).size(12.0));
                 }
-                ui.add_space(14.0);
+                ui.add_space(16.0);
 
-                ui.horizontal(|ui| {
+                let col_w = (ui.available_width() - 24.0) / 2.0;
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = 24.0;
                     ui.vertical(|ui| {
-                        widgets::caption(ui, &pal, "BRANCH (OPTIONAL)");
-                        ui.add_space(5.0);
-                        widgets::input_frame(ui, &pal, Some(Icon::Branch), |ui| {
-                            ui.add_enabled(!running, egui::TextEdit::singleline(&mut st.branch).hint_text("default branch").desired_width(200.0).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 6)));
-                        });
+                        ui.set_width(col_w);
+                        widgets::caption(ui, &pal, &tr("Branch (optional)").to_uppercase());
+                        ui.add_space(6.0);
+                        TextField::new(&mut st.branch).hint(tr("default branch")).icon(Icon::Branch).enabled(!running).show(ui, &pal);
                     });
-                    ui.add_space(24.0);
                     ui.vertical(|ui| {
-                        widgets::caption(ui, &pal, "SHALLOW CLONE");
-                        ui.add_space(12.0);
+                        ui.set_width(col_w);
+                        widgets::caption(ui, &pal, &tr("Shallow clone").to_uppercase());
+                        ui.add_space(6.0);
                         ui.horizontal(|ui| {
+                            ui.set_min_height(widgets::FIELD_H);
                             if !running {
                                 widgets::toggle(ui, &pal, &mut st.shallow);
                             }
-                            ui.label(RichText::new("latest commit only").color(pal.text_dim).size(12.5));
+                            ui.label(RichText::new(tr("latest commit only")).color(pal.text_dim).size(12.5));
                         });
                     });
                 });
@@ -173,10 +168,10 @@ impl App {
                 ui.add_space(18.0);
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if !running && widgets::primary_button(ui, &pal, "Clone").clicked() {
+                        if !running && widgets::primary_button(ui, &pal, tr("Clone")).clicked() {
                             start = true;
                         }
-                        if widgets::secondary_button(ui, &pal, "Cancel").clicked() {
+                        if widgets::secondary_button(ui, &pal, tr("Cancel")).clicked() {
                             close = true;
                         }
                     });
@@ -201,7 +196,7 @@ impl App {
         if let Some(dest) = open_dest {
             self.settings.clone_dir = st.parent.trim().to_string();
             self.save_settings();
-            self.toast(format!("Cloned into {}", dest.display()), Sev::Weak);
+            self.toast(i18n::fmt("Cloned into {}", &[&dest.display()]), Sev::Weak);
             self.open_project(&dest);
             self.editor_focus = true;
             return;

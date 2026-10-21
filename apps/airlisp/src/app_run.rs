@@ -2,10 +2,11 @@
 
 use std::path::PathBuf;
 
-use lisp_runtime::{discover, runner};
+use lisp_runtime::runner;
 
 use crate::app::App;
 use crate::editor_view::Sev;
+use crate::i18n::{self, tr};
 use crate::state::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -19,9 +20,9 @@ pub enum RunConfig {
 impl App {
     pub fn run_config_label(&self) -> String {
         match &self.run_config {
-            RunConfig::CurrentFile => self.doc().map_or("Current File".to_string(), |d| d.name()),
-            RunConfig::Load(s) => format!("Load {s}"),
-            RunConfig::Test(s) => format!("Test {s}"),
+            RunConfig::CurrentFile => self.doc().map_or(tr("Current File").to_string(), |d| d.name()),
+            RunConfig::Load(s) => i18n::fmt("Load {}", &[&s]),
+            RunConfig::Test(s) => i18n::fmt("Test {}", &[&s]),
         }
     }
 
@@ -45,12 +46,12 @@ impl App {
 
     pub fn run_asdf_system(&mut self, system: &str, test: bool) {
         let Some(root) = self.project_root().map(|p| p.to_path_buf()) else {
-            self.toast("Open a project first", Sev::Weak);
+            self.toast(tr("Open a project first"), Sev::Weak);
             return;
         };
         self.save_all();
-        let Some(imp) = self.lisp.clone().or_else(|| discover::find_sbcl(&self.settings.lisp_path)) else {
-            self.toast("SBCL not found - set the path in Settings", Sev::Error);
+        let Some(imp) = self.lisp.clone().or_else(|| self.resolve_lisp()) else {
+            self.toast(tr("SBCL not found - set the path in Settings"), Sev::Error);
             return;
         };
         if let Some(h) = self.run.handle.take() {
@@ -58,12 +59,12 @@ impl App {
         }
         match runner::run_asdf(&imp, &root, system, test) {
             Ok(h) => {
-                let verb = if test { "Test" } else { "Load" };
+                let verb = if test { tr("Test") } else { tr("Load") };
                 self.run = RunState { handle: Some(h), title: format!("{verb} '{system}'"), log: vec![], running: true, exit_code: None, file: None::<PathBuf> };
-                self.run.log.push(LogLine { kind: LogKind::Info, text: format!("{verb} ASDF system '{system}' from {}", root.display()) });
+                self.run.log.push(LogLine { kind: LogKind::Info, text: i18n::fmt("{0} ASDF system '{1}' from {2}", &[&verb, &system, &root.display()]) });
                 self.bottom_tool = Some(BottomTool::Run);
             }
-            Err(e) => self.toast(format!("Cannot run: {e}"), Sev::Error),
+            Err(e) => self.toast(i18n::fmt("Cannot run: {}", &[&e]), Sev::Error),
         }
     }
 
@@ -75,14 +76,14 @@ impl App {
             RunConfig::CurrentFile => self.asd_systems().into_iter().next(),
         };
         let Some(sys) = sys else {
-            self.toast("No .asd system found in this project", Sev::Weak);
+            self.toast(tr("No .asd system found in this project"), Sev::Weak);
             return;
         };
         self.save_all();
         // separate top-level forms: `require` must run before the reader meets `asdf:` symbols
         let code = format!(
             "(require :asdf) (asdf:initialize-source-registry (list :source-registry (list :tree {}) :inherit-configuration)) (asdf:load-system {})",
-            runner::lisp_string(&runner::lisp_path(&root)),
+            runner::lisp_string(&self.lisp_path_of(&root)),
             runner::lisp_string(&sys)
         );
         self.bottom_tool = Some(BottomTool::Repl);

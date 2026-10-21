@@ -11,11 +11,12 @@ use ide_core::search::{self, TextQuery};
 use ide_core::settings::Settings;
 use ide_core::workspace::{self, IgnoreMatcher};
 use lisp_runtime::compiler;
-use lisp_runtime::{Implementation, ReplEvent, ReplSession, RunEvent, discover, runner};
+use lisp_runtime::{Implementation, ReplEvent, ReplSession, RunEvent, runner};
 use lisp_syntax::outline::outline;
 use lisp_syntax::{TokenKind, symbols};
 
 use crate::doc::Doc;
+use crate::i18n::{self, tr};
 use crate::editor_view::{Marker, Sev};
 use crate::state::*;
 use crate::theme::Palette;
@@ -29,6 +30,9 @@ pub struct App {
     pub project: Option<Project>,
     pub docs: Vec<Doc>,
     pub active: usize,
+    pub split: Option<Split>,
+    /// Screen rectangles of the two panes of a split, first pane first (for the UI tests).
+    pub pane_rects: Vec<egui::Rect>,
     pub recent_files: Vec<PathBuf>,
     pub left_tool: Option<LeftTool>,
     pub bottom_tool: Option<BottomTool>,
@@ -57,10 +61,17 @@ pub struct App {
     pub font_names: (Option<String>, Option<String>),
     pub editor_rect: Option<egui::Rect>,
     pub caret_screen: Option<egui::Pos2>,
+    /// The gutter of the active editor (screen coordinates) and the open old-code popup, if any.
+    pub gutter_rect: Option<egui::Rect>,
+    pub hunk_popup: Option<HunkPopup>,
+    /// Screen rectangles of the file rows of the Commit window (path, row, checkbox), for the UI tests.
+    pub commit_rects: Vec<(String, egui::Rect, egui::Rect)>,
     pub pending_close_others: bool,
     pub git: GitState,
     pub logo: Option<eframe::egui::TextureHandle>,
     pub term: crate::app_terminal::TerminalState,
+    /// The Linux (WSL) settings page: what is installed and what is being set up.
+    pub wsl: crate::app_wsl::WslState,
     pub run_config: crate::app_run::RunConfig,
     pub script: Option<crate::script::Script>,
     /// Longest frame seen so far (ms) and the worst offender's frame number, for freeze diagnostics.
@@ -78,13 +89,16 @@ pub fn lisp_dialect_of(p: &Path) -> lisp_syntax::Dialect {
 impl App {
     pub fn new(settings: Settings) -> App {
         let pal = Palette::for_theme(settings.theme);
-        let lisp = discover::find_sbcl(&settings.lisp_path);
+        crate::i18n::set(settings.language);
+        let lisp = crate::app_wsl::resolve_lisp(&settings);
         App {
             pal,
             keymap: Keymap::default_keymap(),
             project: None,
             docs: vec![],
             active: 0,
+            split: None,
+            pane_rects: vec![],
             recent_files: vec![],
             left_tool: if settings.show_project_panel { Some(LeftTool::Project) } else { None },
             bottom_tool: None,
@@ -113,10 +127,14 @@ impl App {
             font_names: (None, None),
             editor_rect: None,
             caret_screen: None,
+            gutter_rect: None,
+            hunk_popup: None,
+            commit_rects: vec![],
             pending_close_others: false,
             git: GitState::default(),
             logo: None,
             term: Default::default(),
+            wsl: Default::default(),
             run_config: Default::default(),
             script: None,
             max_frame_ms: 0.0,
@@ -166,7 +184,7 @@ impl App {
 
     pub fn open_project(&mut self, path: &Path) {
         if !path.is_dir() {
-            self.toast(format!("{} is not a folder", path.display()), Sev::Error);
+            self.toast(i18n::fmt("{} is not a folder", &[&path.display()]), Sev::Error);
             return;
         }
         let root = path.to_path_buf();
@@ -258,13 +276,13 @@ impl App {
 
     pub fn open_file(&mut self, path: &Path) -> bool {
         if let Some(i) = self.docs.iter().position(|d| d.path.as_deref() == Some(path)) {
-            self.active = i;
+            self.show_doc(i);
             self.editor_focus = true;
             return true;
         }
         match std::fs::metadata(path) {
             Ok(m) if m.len() > 8 * 1024 * 1024 => {
-                self.toast(format!("{} is too large to open ({} MB)", path.display(), m.len() / 1_048_576), Sev::Error);
+                self.toast(i18n::fmt("{0} is too large to open ({1} MB)", &[&path.display(), &(m.len() / 1_048_576)]), Sev::Error);
                 return false;
             }
             _ => {}
@@ -283,7 +301,7 @@ impl App {
                 true
             }
             Err(e) => {
-                self.toast(format!("Cannot open {}: {e}", path.display()), Sev::Error);
+                self.toast(i18n::fmt("Cannot open {0}: {1}", &[&path.display(), &e]), Sev::Error);
                 false
             }
         }
@@ -369,7 +387,7 @@ impl App {
             match dlg.save_file() {
                 Some(path) => {
                     if let Err(e) = d.save_as(&path) {
-                        let msg = format!("Cannot save: {e}");
+                        let msg = i18n::fmt("Cannot save: {}", &[&e]);
                         self.toast(msg, Sev::Error);
                         return false;
                     }
@@ -377,7 +395,7 @@ impl App {
                 None => return false,
             }
         } else if let Err(e) = d.save() {
-            let msg = format!("Cannot save {}: {e}", d.name());
+            let msg = i18n::fmt("Cannot save {0}: {1}", &[&d.name(), &e]);
             self.toast(msg, Sev::Error);
             return false;
         }
@@ -403,15 +421,29 @@ impl App {
             }
         }
         if saved > 0 {
-            self.status = format!("Saved {saved} file(s)");
+            self.status = i18n::fmt("Saved {} file(s)", &[&saved]);
         }
         // untitled documents are saved only by an explicit Save
         if let Some(d) = self.doc()
             && d.path.is_none()
+            && d.diff.is_none()
         {
             let a = self.active;
             self.save_doc(a);
         }
+    }
+
+    /// Bring document `idx` to the front.
+    pub fn show_doc(&mut self, idx: usize) {
+        if idx >= self.docs.len() {
+            return;
+        }
+        // the tab of the other pane's document moves the focus there instead of showing it twice
+        if idx != self.active && self.split.as_ref().is_some_and(|s| s.other == self.docs[idx].id) {
+            self.focus_other_pane();
+            return;
+        }
+        self.active = idx;
     }
 
     pub fn has_unsaved(&self) -> bool {
@@ -435,7 +467,7 @@ impl App {
     pub fn request_close_doc(&mut self, idx: usize) {
         match self.docs.get(idx) {
             Some(d) if d.ed.is_modified() => {
-                self.popup = Popup::Confirm { kind: ConfirmKind::CloseDoc(idx), message: format!("Save changes to {} before closing?", d.name()) };
+                self.popup = Popup::Confirm { kind: ConfirmKind::CloseDoc(idx), message: i18n::fmt("Save changes to {} before closing?", &[&d.name()]) };
             }
             Some(_) => self.close_doc(idx),
             None => {}
@@ -467,6 +499,7 @@ impl App {
         }
         self.git_poll();
         self.poll_terminal();
+        self.poll_wsl();
         self.git_update_bases();
 
         // external file changes (once a second)
@@ -479,7 +512,7 @@ impl App {
                 }
             }
             for n in reloaded {
-                self.toast(format!("{n} reloaded from disk"), Sev::Weak);
+                self.toast(i18n::fmt("{} reloaded from disk", &[&n]), Sev::Weak);
             }
         }
         // save on focus loss
@@ -510,11 +543,11 @@ impl App {
         }
         self.repl.session = None;
         if self.lisp.is_none() {
-            self.lisp = discover::find_sbcl(&self.settings.lisp_path);
+            self.lisp = self.resolve_lisp();
         }
         let Some(imp) = self.lisp.clone() else {
-            self.repl.log.push(LogLine { kind: LogKind::Error, text: "No Lisp implementation found. Install SBCL (https://www.sbcl.org) or set its path in Settings > Lisp.".into() });
-            self.toast("SBCL not found - set the path in Settings", Sev::Error);
+            self.repl.log.push(LogLine { kind: LogKind::Error, text: tr("No Lisp implementation found. Install SBCL (https://www.sbcl.org) or set its path in Settings > Lisp.").into() });
+            self.toast(tr("SBCL not found - set the path in Settings"), Sev::Error);
             return false;
         };
         let cwd = self.project.as_ref().map(|p| p.root.clone());
@@ -525,12 +558,12 @@ impl App {
                 self.repl.ready = false;
                 self.repl.busy.clear();
                 self.repl.pending.clear();
-                self.repl.log.push(LogLine { kind: LogKind::Info, text: format!("Starting {} ...", imp.name) });
+                self.repl.log.push(LogLine { kind: LogKind::Info, text: i18n::fmt("Starting {} ...", &[&imp.name]) });
                 true
             }
             Err(e) => {
-                self.repl.log.push(LogLine { kind: LogKind::Error, text: format!("Cannot start {}: {e}", imp.path.display()) });
-                self.toast(format!("Cannot start Lisp: {e}"), Sev::Error);
+                self.repl.log.push(LogLine { kind: LogKind::Error, text: i18n::fmt("Cannot start {0}: {1}", &[&imp.path.display(), &e]) });
+                self.toast(i18n::fmt("Cannot start Lisp: {}", &[&e]), Sev::Error);
                 false
             }
         }
@@ -544,7 +577,7 @@ impl App {
         self.repl.starting = false;
         self.repl.busy.clear();
         self.repl.pending.clear();
-        self.repl.log.push(LogLine { kind: LogKind::Info, text: "REPL restarted".into() });
+        self.repl.log.push(LogLine { kind: LogKind::Info, text: tr("REPL restarted").into() });
         self.ensure_repl();
     }
 
@@ -561,7 +594,7 @@ impl App {
                 self.repl.busy.insert(id);
                 self.repl.stick_to_bottom = true;
             }
-            Some(Err(e)) => self.repl.log.push(LogLine { kind: LogKind::Error, text: format!("Cannot send to REPL: {e}") }),
+            Some(Err(e)) => self.repl.log.push(LogLine { kind: LogKind::Error, text: i18n::fmt("Cannot send to REPL: {}", &[&e]) }),
             None => {}
         }
     }
@@ -604,7 +637,7 @@ impl App {
                     self.repl.ready = true;
                     self.repl.starting = false;
                     self.repl.version = v.clone();
-                    self.repl.log.push(LogLine { kind: LogKind::Info, text: format!("{v} ready.") });
+                    self.repl.log.push(LogLine { kind: LogKind::Info, text: i18n::fmt("{} ready.", &[&v]) });
                 }
                 ReplEvent::Output(t) => self.log_repl_output(&t),
                 ReplEvent::Value { text, .. } => {
@@ -632,7 +665,7 @@ impl App {
                     }
                 }
                 ReplEvent::Exited(code) => {
-                    self.repl.log.push(LogLine { kind: LogKind::Info, text: format!("REPL process exited (code {})", code.map_or("?".to_string(), |c| c.to_string())) });
+                    self.repl.log.push(LogLine { kind: LogKind::Info, text: i18n::fmt("REPL process exited (code {})", &[&code.map_or("?".to_string(), |c| c.to_string())]) });
                     self.repl.session = None;
                     self.repl.ready = false;
                     self.repl.starting = false;
@@ -677,28 +710,29 @@ impl App {
                 }
             }
             Pending::Doc { title } => {
-                let text = if payload.trim().is_empty() { "No documentation available.".to_string() } else { payload.to_string() };
+                let text = if payload.trim().is_empty() { tr("No documentation available.").to_string() } else { payload.to_string() };
                 self.popup = Popup::Info { title, text };
             }
             Pending::ParamInfo { name } => {
                 if !payload.trim().is_empty() {
                     self.hint = Some((payload.to_string(), self.now + 6.0));
                 } else {
-                    self.hint = Some((format!("No parameter info for {name}"), self.now + 3.0));
+                    self.hint = Some((i18n::fmt("No parameter info for {}", &[&name]), self.now + 3.0));
                 }
             }
             Pending::Macroexpand => {
-                self.popup = Popup::Info { title: "Macroexpand".into(), text: payload.to_string() };
+                self.popup = Popup::Info { title: tr("Macroexpand").into(), text: payload.to_string() };
             }
             Pending::Definition { name } => {
                 let first = payload.lines().next().unwrap_or("");
                 if let Some((path, off)) = first.split_once('\t') {
-                    let p = PathBuf::from(path);
+                    // in WSL the Lisp reports Linux paths
+                    let p = self.repl.session.as_ref().map_or_else(|| PathBuf::from(path), |s| s.implementation.host_path(path));
                     let char_off: usize = off.trim().parse().unwrap_or(0);
                     let byte = std::fs::read_to_string(&p).ok().map(|t| t.char_indices().nth(char_off).map_or(t.len(), |(b, _)| b)).unwrap_or(0);
                     self.goto(&p, byte, true);
                 } else {
-                    self.toast(format!("Cannot find declaration of {name}"), Sev::Weak);
+                    self.toast(i18n::fmt("Cannot find declaration of {}", &[&name]), Sev::Weak);
                 }
             }
         }
@@ -716,8 +750,8 @@ impl App {
         }
         self.save_all();
         let Some(path) = self.doc().and_then(|d| d.path.clone()) else { return };
-        let Some(imp) = self.lisp.clone().or_else(|| discover::find_sbcl(&self.settings.lisp_path)) else {
-            self.toast("SBCL not found - set the path in Settings", Sev::Error);
+        let Some(imp) = self.lisp.clone().or_else(|| self.resolve_lisp()) else {
+            self.toast(tr("SBCL not found - set the path in Settings"), Sev::Error);
             return;
         };
         if let Some(h) = self.run.handle.take() {
@@ -729,7 +763,7 @@ impl App {
                 self.run.log.push(LogLine { kind: LogKind::Info, text: format!("{} --non-interactive --load {}", imp.path.display(), path.display()) });
                 self.bottom_tool = Some(BottomTool::Run);
             }
-            Err(e) => self.toast(format!("Cannot run: {e}"), Sev::Error),
+            Err(e) => self.toast(i18n::fmt("Cannot run: {}", &[&e]), Sev::Error),
         }
     }
 
@@ -738,7 +772,7 @@ impl App {
             h.kill();
         }
         if self.run.running {
-            self.run.log.push(LogLine { kind: LogKind::Info, text: "Process terminated by user".into() });
+            self.run.log.push(LogLine { kind: LogKind::Info, text: tr("Process terminated by user").into() });
             self.run.running = false;
         }
         if let Some(c) = self.compile.take() {
@@ -771,7 +805,7 @@ impl App {
         if let Some(code) = exited {
             self.run.running = false;
             self.run.exit_code = code;
-            let msg = format!("Process finished with exit code {}", code.map_or("?".into(), |c| c.to_string()));
+            let msg = i18n::fmt("Process finished with exit code {}", &[&code.map_or("?".to_string(), |c| c.to_string())]);
             self.run.log.push(LogLine { kind: if code == Some(0) { LogKind::Info } else { LogKind::Error }, text: msg });
             self.run.handle = None;
         }
@@ -789,16 +823,16 @@ impl App {
         }
         self.save_all();
         let Some(path) = self.doc().and_then(|d| d.path.clone()) else { return };
-        let Some(imp) = self.lisp.clone().or_else(|| discover::find_sbcl(&self.settings.lisp_path)) else {
-            self.toast("SBCL not found - set the path in Settings", Sev::Error);
+        let Some(imp) = self.lisp.clone().or_else(|| self.resolve_lisp()) else {
+            self.toast(tr("SBCL not found - set the path in Settings"), Sev::Error);
             return;
         };
         match compiler::compile_file(&imp, &path) {
             Ok((handle, fasl)) => {
                 self.compile = Some(CompileJob { handle, fasl, file: path, output: String::new() });
-                self.status = "Compiling...".into();
+                self.status = tr("Compiling...").into();
             }
-            Err(e) => self.toast(format!("Cannot compile: {e}"), Sev::Error),
+            Err(e) => self.toast(i18n::fmt("Cannot compile: {}", &[&e]), Sev::Error),
         }
     }
 
@@ -847,11 +881,11 @@ impl App {
         }
         let name = job.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         if code == Some(0) && errors == 0 {
-            self.status = format!("Compiled {name}: {warnings} warning(s)");
-            self.toast(format!("Compiled {name} successfully ({warnings} warnings)"), Sev::Weak);
+            self.status = i18n::fmt("Compiled {0}: {1} warning(s)", &[&name, &warnings]);
+            self.toast(i18n::fmt("Compiled {0} successfully ({1} warnings)", &[&name, &warnings]), Sev::Weak);
         } else {
-            self.status = format!("Compilation of {name} failed");
-            self.toast(format!("Compilation of {name}: {errors} error(s), {warnings} warning(s)"), Sev::Error);
+            self.status = i18n::fmt("Compilation of {} failed", &[&name]);
+            self.toast(i18n::fmt("Compilation of {0}: {1} error(s), {2} warning(s)", &[&name, &errors, &warnings]), Sev::Error);
             self.bottom_tool = Some(BottomTool::Problems);
         }
     }
@@ -891,7 +925,7 @@ impl App {
         match defs.len() {
             0 => {
                 if !self.repl_request("definition", &name, Pending::Definition { name: name.clone() }) {
-                    self.toast(format!("Cannot find declaration of '{name}'"), Sev::Weak);
+                    self.toast(i18n::fmt("Cannot find declaration of '{}'", &[&name]), Sev::Weak);
                 }
             }
             1 => {
@@ -953,11 +987,11 @@ impl App {
         }
         let bare = symbols::strip_package(&name);
         let text = if symbols::is_keyword(bare) {
-            format!("{bare}\n\nCommon Lisp special form / macro.\nStart the REPL (Alt+8) to see the full documentation from the running image.")
+            i18n::fmt("{}\n\nCommon Lisp special form / macro.\nStart the REPL (Alt+8) to see the full documentation from the running image.", &[&bare])
         } else if symbols::is_builtin_function(bare) {
-            format!("{bare}\n\nCommon Lisp standard function.\nStart the REPL (Alt+8) to see the full documentation from the running image.")
+            i18n::fmt("{}\n\nCommon Lisp standard function.\nStart the REPL (Alt+8) to see the full documentation from the running image.", &[&bare])
         } else {
-            format!("No documentation found for '{name}'.")
+            i18n::fmt("No documentation found for '{}'.", &[&name])
         };
         self.popup = Popup::Info { title: name, text };
     }
@@ -976,7 +1010,7 @@ impl App {
             return;
         }
         if !self.repl_request("arglist", &name, Pending::ParamInfo { name: name.clone() }) {
-            self.hint = Some((format!("{name}: start the REPL (Alt+8) for parameter info"), self.now + 3.0));
+            self.hint = Some((i18n::fmt("{}: start the REPL (Alt+8) for parameter info", &[&name]), self.now + 3.0));
         }
     }
 
@@ -987,7 +1021,7 @@ impl App {
         let form = d.ed.text()[s..e].to_string();
         if !self.repl_request("macroexpand", &form, Pending::Macroexpand) {
             self.ensure_repl();
-            self.toast("Starting REPL - run Macroexpand again when it is ready", Sev::Weak);
+            self.toast(tr("Starting REPL - run Macroexpand again when it is ready"), Sev::Weak);
         }
     }
 
@@ -996,21 +1030,21 @@ impl App {
         let Some(root) = self.project_root().map(Path::to_path_buf) else { return };
         self.reindex_open_docs();
         let hits = index::find_usages(&root, &name, 2000);
-        self.find_results = FindResults { title: format!("Usages of '{name}'"), hits };
+        self.find_results = FindResults { title: i18n::fmt("Usages of '{}'", &[&name]), hits };
         self.bottom_tool = Some(BottomTool::Find);
     }
 
     pub fn run_find_in_files(&mut self, query: &str, opts: TextQuery) {
         let Some(root) = self.project_root().map(Path::to_path_buf) else {
-            self.toast("Open a project first", Sev::Weak);
+            self.toast(tr("Open a project first"), Sev::Weak);
             return;
         };
         self.save_all();
         // searching a big project can take seconds: do it off the UI thread
         let (tx, rx) = mpsc::channel();
         let q = query.to_string();
-        let title = format!("Find '{query}'");
-        self.find_results = FindResults { title: format!("{title} - searching..."), hits: vec![] };
+        let title = i18n::fmt("Find '{}'", &[&query]);
+        self.find_results = FindResults { title: i18n::fmt("{} - searching...", &[&title]), hits: vec![] };
         self.find_rx = Some(rx);
         std::thread::spawn(move || {
             let hits = search::find_in_files(&root, &q, opts, 3000);
@@ -1022,7 +1056,7 @@ impl App {
     /// Rename every code occurrence of `old` (project files and open buffers).
     pub fn rename_symbol(&mut self, old: &str, new: &str) {
         if new.is_empty() || new.chars().any(|c| c.is_whitespace() || "()\"';".contains(c)) {
-            self.toast("Invalid symbol name", Sev::Error);
+            self.toast(tr("Invalid symbol name"), Sev::Error);
             return;
         }
         let mut count = 0;
@@ -1063,7 +1097,7 @@ impl App {
             }
         }
         self.refresh_project();
-        self.toast(format!("Renamed {count} occurrence(s) in {files} file(s)"), Sev::Weak);
+        self.toast(i18n::fmt("Renamed {0} occurrence(s) in {1} file(s)", &[&count, &files]), Sev::Weak);
     }
 
     // ------------------------------------------------------------------ completion
@@ -1228,7 +1262,7 @@ impl App {
         if let Some(d) = self.doc_mut() {
             d.ed.replace_ranges(&ms, &r);
         }
-        self.toast(format!("Replaced {} occurrence(s)", ms.len()), Sev::Weak);
+        self.toast(i18n::fmt("Replaced {} occurrence(s)", &[&ms.len()]), Sev::Weak);
         self.find.built_for = None;
     }
 
@@ -1245,7 +1279,7 @@ impl App {
         let defs = outline(d.ed.text(), d.ed.dialect());
         let items: Vec<Item> = defs
             .iter()
-            .map(|x| Item { label: x.name.clone(), detail: format!("{}  line {}", x.kind.label(), x.line + 1), badge: x.kind.badge().into(), section: "", target: PTarget::Offset(x.name_start), hits: vec![], shortcut: String::new() })
+            .map(|x| Item { label: x.name.clone(), detail: i18n::fmt("{0}  line {1}", &[&x.kind.label(), &(x.line + 1)]), badge: x.kind.badge().into(), section: "", target: PTarget::Offset(x.name_start), hits: vec![], shortcut: String::new() })
             .collect();
         self.popup = Popup::Palette(PaletteState { mode: PaletteMode::Structure, query: String::new(), items: vec![], selected: 0, built_for: None, fixed: Some(items), just_opened: true });
     }
@@ -1314,11 +1348,11 @@ impl App {
         };
         let action_items = |limit: usize, section: &'static str| -> Vec<Item> {
             let list: Vec<&commands::Command> = commands::COMMANDS.iter().filter(|c| !c.title.is_empty() && !matches!(c.id, "edit.newline" | "edit.backspace" | "edit.delete" | "app.escape") && !c.id.starts_with("caret.") && !c.id.starts_with("select.") && !c.id.starts_with("scroll.")).collect();
-            let mk = |c: &commands::Command, hits: Vec<usize>| Item { label: c.title.to_string(), detail: c.category.title().to_string(), badge: "A".into(), section, target: PTarget::Command(c.id.to_string()), hits, shortcut: c.shortcuts.first().map(|s| commands::display_shortcut(s)).unwrap_or_default() };
+            let mk = |c: &commands::Command, hits: Vec<usize>| Item { label: tr(c.title).to_string(), detail: tr(c.category.title()).to_string(), badge: "A".into(), section, target: PTarget::Command(c.id.to_string()), hits, shortcut: c.shortcuts.first().map(|s| commands::display_shortcut(s)).unwrap_or_default() };
             if query.trim().is_empty() {
                 return list.iter().take(limit).map(|c| mk(c, vec![])).collect();
             }
-            search::rank(query, &list, |c| c.title.to_string(), limit).into_iter().map(|(i, m)| mk(list[i], m.positions)).collect()
+            search::rank(query, &list, |c| tr(c.title).to_string(), limit).into_iter().map(|(i, m)| mk(list[i], m.positions)).collect()
         };
         match mode {
             PaletteMode::Everywhere => {

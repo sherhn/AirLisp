@@ -5,12 +5,18 @@
 mod app;
 mod brand;
 mod app_git;
+mod app_local;
 mod app_run;
+mod app_split;
 mod app_terminal;
+mod app_wsl;
+mod diff_tab;
 mod doc;
 mod editor_view;
 mod folding;
 mod fonts;
+mod i18n;
+mod i18n_ru;
 mod icons;
 mod lucide;
 mod input;
@@ -20,11 +26,16 @@ mod theme;
 mod ui;
 mod ui_chrome;
 mod ui_titlebar;
+mod ui_wsl;
 mod ui_panels;
 mod widgets;
 mod ui_popups;
+mod ui_split;
 mod ui_settings;
 mod ui_clone;
+mod ui_commit;
+mod ui_diff;
+mod ui_local;
 
 use std::path::PathBuf;
 

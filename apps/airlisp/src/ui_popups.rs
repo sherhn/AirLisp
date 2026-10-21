@@ -3,18 +3,16 @@
 
 use std::path::PathBuf;
 
-use eframe::egui::{self, Align2, Color32, CornerRadius, FontId, Key, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
-use ide_core::commands;
-use ide_core::diff::LineKind;
-use ide_core::settings::Theme;
+use eframe::egui::{self, Align2, Color32, CornerRadius, FontId, Key, Margin, Pos2, Rect, RichText, Sense, Vec2};
 
 use crate::app::App;
 use crate::editor_view::Sev;
 use crate::fonts;
+use crate::i18n::{self, tr};
 use crate::icons::{self, Icon};
 use crate::state::*;
 use crate::ui_panels::badge_color;
-use crate::widgets;
+use crate::widgets::{self, TextField};
 
 fn popup_frame(pal: &crate::theme::Palette) -> egui::Frame {
     widgets::glass_frame(pal)
@@ -53,12 +51,12 @@ impl App {
         self.draw_palette(ctx);
         self.draw_clone(ctx);
         self.draw_input_dialogs(ctx);
-        self.draw_commit_dialog(ctx);
-        self.draw_diff(ctx);
+        self.draw_local_view(ctx);
         self.draw_settings(ctx);
         self.draw_info_dialogs(ctx);
         self.draw_completion(ctx);
         self.draw_hint(ctx);
+        self.draw_hunk_popup(ctx);
     }
 
     // ------------------------------------------------------------------ palette
@@ -109,7 +107,7 @@ impl App {
                 ui.set_width(width);
                 ui.horizontal(|ui| {
                     if matches!(st.mode, PaletteMode::Everywhere | PaletteMode::Files | PaletteMode::Symbols | PaletteMode::Actions) {
-                        for (m, label) in [(PaletteMode::Everywhere, "All"), (PaletteMode::Files, "Files"), (PaletteMode::Symbols, "Symbols"), (PaletteMode::Actions, "Actions")] {
+                        for (m, label) in [(PaletteMode::Everywhere, tr("All")), (PaletteMode::Files, tr("Files")), (PaletteMode::Symbols, tr("Symbols")), (PaletteMode::Actions, tr("Actions"))] {
                             let active = st.mode == m;
                             let g = ui.painter().layout_no_wrap(label.to_string(), fonts::ui(13.5), pal.text);
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 24.0, 28.0), Sense::click());
@@ -124,32 +122,27 @@ impl App {
                             }
                         }
                     } else {
-                        ui.label(RichText::new(st.mode.title()).font(fonts::semibold(15.0)));
+                        ui.label(RichText::new(tr(st.mode.title())).font(fonts::semibold(15.0)));
                     }
                 });
                 ui.add_space(10.0);
                 let hint = match st.mode {
-                    PaletteMode::Everywhere => "Search everywhere: files, symbols, actions",
-                    PaletteMode::Actions => "Type an action name",
-                    PaletteMode::Files => "Type a file name",
-                    PaletteMode::Symbols => "Type a symbol name",
-                    PaletteMode::Recent => "Filter recent files",
-                    PaletteMode::Structure => "Filter definitions",
-                    PaletteMode::Choose => "Filter",
+                    PaletteMode::Everywhere => tr("Search everywhere: files, symbols, actions"),
+                    PaletteMode::Actions => tr("Type an action name"),
+                    PaletteMode::Files => tr("Type a file name"),
+                    PaletteMode::Symbols => tr("Type a symbol name"),
+                    PaletteMode::Recent => tr("Filter recent files"),
+                    PaletteMode::Structure => tr("Filter definitions"),
+                    PaletteMode::Choose => tr("Filter"),
                 };
-                let resp = widgets::input_frame(ui, &pal, Some(Icon::Search), |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut st.query).id(egui::Id::new("palette_query")).hint_text(hint).font(fonts::ui(15.0)).desired_width(f32::INFINITY).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 6)))
-                });
-                if st.just_opened {
-                    resp.request_focus();
-                    st.just_opened = false;
-                }
+                let resp = TextField::new(&mut st.query).id(egui::Id::new("palette_query")).hint(hint).icon(Icon::Search).font(fonts::ui(15.0)).height(42.0).show(ui, &pal);
+                widgets::focus_once(ui, &resp, &mut st.just_opened);
                 ui.add_space(8.0);
                 let row_h = 38.0;
                 let list_h = (n as f32 * row_h + 50.0).clamp(70.0, 420.0);
                 if n == 0 {
                     ui.add_space(10.0);
-                    ui.label(RichText::new(if st.query.is_empty() { "Start typing..." } else { "Nothing found" }).color(pal.text_dim));
+                    ui.label(RichText::new(if st.query.is_empty() { tr("Start typing...") } else { tr("Nothing found") }).color(pal.text_dim));
                     ui.add_space(10.0);
                 }
                 egui::ScrollArea::vertical().max_height(list_h).auto_shrink([false, true]).show(ui, |ui| {
@@ -158,7 +151,7 @@ impl App {
                         if !it.section.is_empty() && it.section != last_section {
                             last_section = it.section;
                             ui.add_space(6.0);
-                            widgets::caption(ui, &pal, it.section);
+                            widgets::caption(ui, &pal, &tr(it.section).to_uppercase());
                             ui.add_space(2.0);
                         }
                         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
@@ -192,7 +185,7 @@ impl App {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    for (k, t) in [("Up Down", "navigate"), ("Enter", "select"), ("Tab", "switch"), ("Esc", "close")] {
+                    for (k, t) in [("Up Down", tr("navigate")), ("Enter", tr("select")), ("Tab", tr("switch")), ("Esc", tr("close"))] {
                         widgets::chip(ui, &pal, k);
                         ui.label(RichText::new(t).color(pal.text_dim).size(11.5));
                         ui.add_space(8.0);
@@ -262,7 +255,7 @@ impl App {
                 if widgets::primary_button(ui, &pal, ok_label).clicked() {
                     res.0 = true;
                 }
-                if widgets::secondary_button(ui, &pal, "Cancel").clicked() {
+                if widgets::secondary_button(ui, &pal, tr("Cancel")).clicked() {
                     res.1 = true;
                 }
             });
@@ -271,8 +264,7 @@ impl App {
     }
 
     fn text_field(&self, ui: &mut egui::Ui, text: &mut String, hint: &str) -> egui::Response {
-        let pal = self.pal;
-        widgets::input_frame(ui, &pal, None, |ui| ui.add(egui::TextEdit::singleline(text).hint_text(hint).desired_width(f32::INFINITY).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 6))))
+        TextField::new(text).hint(hint).show(ui, &self.pal)
     }
 
     fn draw_input_dialogs(&mut self, ctx: &egui::Context) {
@@ -281,13 +273,10 @@ impl App {
         match popup {
             Popup::GotoLine { mut input, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "goto_line", "Go to Line:Column", 420.0, |ui| {
-                    let r = self.text_field(ui, &mut input, "line[:column]");
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
-                    let (o, c) = self.ok_cancel(ui, "Go");
+                self.dialog_card(ctx, "goto_line", tr("Go to Line:Column"), 420.0, |ui| {
+                    let r = self.text_field(ui, &mut input, tr("line[:column]"));
+                    widgets::focus_once(ui, &r, &mut just_opened);
+                    let (o, c) = self.ok_cancel(ui, tr("Go"));
                     ok |= o;
                     cancel |= c;
                 });
@@ -311,15 +300,12 @@ impl App {
             }
             Popup::Rename { old, mut input, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "rename", &format!("Rename '{old}'"), 440.0, |ui| {
-                    let r = self.text_field(ui, &mut input, "new name");
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
+                self.dialog_card(ctx, "rename", &i18n::fmt("Rename '{}'", &[&old]), 440.0, |ui| {
+                    let r = self.text_field(ui, &mut input, tr("new name"));
+                    widgets::focus_once(ui, &r, &mut just_opened);
                     ui.add_space(8.0);
-                    ui.label(RichText::new("All code occurrences in the project and open files are renamed.").color(self.pal.text_dim).size(12.0));
-                    let (o, c) = self.ok_cancel(ui, "Rename");
+                    ui.label(RichText::new(tr("All code occurrences in the project and open files are renamed.")).color(self.pal.text_dim).size(12.0));
+                    let (o, c) = self.ok_cancel(ui, tr("Rename"));
                     ok |= o;
                     cancel |= c;
                 });
@@ -335,15 +321,12 @@ impl App {
             Popup::NewFile { dir, mut input, is_dir, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
                 let rel = self.project_root().map(|r| ide_core::workspace::relative(r, &dir)).unwrap_or_default();
-                self.dialog_card(ctx, "new_file", if is_dir { "New Directory" } else { "New File" }, 440.0, |ui| {
-                    let r = self.text_field(ui, &mut input, if is_dir { "directory name" } else { "file name, e.g. utils.lisp" });
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
+                self.dialog_card(ctx, "new_file", if is_dir { tr("New Directory") } else { tr("New File") }, 440.0, |ui| {
+                    let r = self.text_field(ui, &mut input, if is_dir { tr("directory name") } else { tr("file name, e.g. utils.lisp") });
+                    widgets::focus_once(ui, &r, &mut just_opened);
                     ui.add_space(8.0);
-                    ui.label(RichText::new(format!("in {}", if rel.is_empty() { "." } else { &rel })).color(self.pal.text_dim).size(12.0));
-                    let (o, c) = self.ok_cancel(ui, "Create");
+                    ui.label(RichText::new(i18n::fmt("in {}", &[&(if rel.is_empty() { "." } else { &rel })])).color(self.pal.text_dim).size(12.0));
+                    let (o, c) = self.ok_cancel(ui, tr("Create"));
                     ok |= o;
                     cancel |= c;
                 });
@@ -375,13 +358,10 @@ impl App {
             }
             Popup::RenameFile { path, mut input, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "rename_file", "Rename", 440.0, |ui| {
-                    let r = self.text_field(ui, &mut input, "new name");
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
-                    let (o, c) = self.ok_cancel(ui, "Rename");
+                self.dialog_card(ctx, "rename_file", tr("Rename"), 440.0, |ui| {
+                    let r = self.text_field(ui, &mut input, tr("new name"));
+                    widgets::focus_once(ui, &r, &mut just_opened);
+                    let (o, c) = self.ok_cancel(ui, tr("Rename"));
                     ok |= o;
                     cancel |= c;
                 });
@@ -405,15 +385,12 @@ impl App {
             }
             Popup::LocalCommit { mut input, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "local_commit", "Local Commit", 480.0, |ui| {
-                    let r = self.text_field(ui, &mut input, "Message (optional)");
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
+                self.dialog_card(ctx, "local_commit", tr("Local Commit"), 480.0, |ui| {
+                    let r = self.text_field(ui, &mut input, tr("Message (optional)"));
+                    widgets::focus_once(ui, &r, &mut just_opened);
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Saves a snapshot of your changes outside of git (in .airlisp/, invisible to git).\nDiffs and change markers start from it afterwards.").color(self.pal.text_dim).size(12.0));
-                    let (o, c) = self.ok_cancel(ui, "Create");
+                    ui.label(RichText::new(tr("Saves a snapshot of your changes outside of git (in .airlisp/, invisible to git).\nDiffs and change markers start from it afterwards.")).color(self.pal.text_dim).size(12.0));
+                    let (o, c) = self.ok_cancel(ui, tr("Create"));
                     ok |= o;
                     cancel |= c;
                 });
@@ -428,15 +405,12 @@ impl App {
             }
             Popup::NewBranch { mut input, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "new_branch", "New Branch", 420.0, |ui| {
-                    let r = self.text_field(ui, &mut input, "branch name");
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
+                self.dialog_card(ctx, "new_branch", tr("New Branch"), 420.0, |ui| {
+                    let r = self.text_field(ui, &mut input, tr("branch name"));
+                    widgets::focus_once(ui, &r, &mut just_opened);
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Creates the branch from the current HEAD and switches to it.").color(self.pal.text_dim).size(12.0));
-                    let (o, c) = self.ok_cancel(ui, "Create");
+                    ui.label(RichText::new(tr("Creates the branch from the current HEAD and switches to it.")).color(self.pal.text_dim).size(12.0));
+                    let (o, c) = self.ok_cancel(ui, tr("Create"));
                     ok |= o;
                     cancel |= c;
                 });
@@ -454,30 +428,26 @@ impl App {
             }
             Popup::NewProject { mut parent, mut name, mut just_opened } => {
                 let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "new_project", "New Common Lisp Project", 520.0, |ui| {
-                    widgets::caption(ui, &self.pal, "Name");
-                    ui.add_space(4.0);
-                    let r = self.text_field(ui, &mut name, "project name");
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
-                    ui.add_space(10.0);
-                    widgets::caption(ui, &self.pal, "Location");
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        let w = ui.available_width() - 110.0;
+                self.dialog_card(ctx, "new_project", tr("New Common Lisp Project"), 520.0, |ui| {
+                    widgets::caption(ui, &self.pal, &tr("Name").to_uppercase());
+                    ui.add_space(6.0);
+                    let r = self.text_field(ui, &mut name, tr("project name"));
+                    widgets::focus_once(ui, &r, &mut just_opened);
+                    ui.add_space(14.0);
+                    widgets::caption(ui, &self.pal, &tr("Location").to_uppercase());
+                    ui.add_space(6.0);
+                    widgets::right_row(ui, widgets::FIELD_H, |ui| {
                         let pal = self.pal;
-                        widgets::input_frame(ui, &pal, None, |ui| ui.add(egui::TextEdit::singleline(&mut parent).desired_width(w - 30.0).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 6))));
-                        if widgets::secondary_button(ui, &pal, "Browse...").clicked()
+                        if widgets::secondary_button(ui, &pal, tr("Browse...")).clicked()
                             && let Some(d) = rfd::FileDialog::new().pick_folder()
                         {
                             parent = d.to_string_lossy().into_owned();
                         }
+                        TextField::new(&mut parent).show(ui, &pal);
                     });
-                    ui.add_space(8.0);
-                    ui.label(RichText::new("Creates an ASDF system with src/, test/ and a README.").color(self.pal.text_dim).size(12.0));
-                    let (o, c) = self.ok_cancel(ui, "Create");
+                    ui.add_space(10.0);
+                    ui.label(RichText::new(tr("Creates an ASDF system with src/, test/ and a README.")).color(self.pal.text_dim).size(12.0));
+                    let (o, c) = self.ok_cancel(ui, tr("Create"));
                     ok |= o;
                     cancel |= c;
                 });
@@ -500,24 +470,21 @@ impl App {
             }
             Popup::FindInFiles { mut query, mut replace, mut case_sensitive, mut whole_word, mut just_opened, replace_mode } => {
                 let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "find_in_files", if replace_mode { "Replace in Files" } else { "Find in Files" }, 520.0, |ui| {
+                self.dialog_card(ctx, "find_in_files", if replace_mode { tr("Replace in Files") } else { tr("Find in Files") }, 520.0, |ui| {
                     let pal = self.pal;
-                    let r = widgets::input_frame(ui, &pal, Some(Icon::Search), |ui| ui.add(egui::TextEdit::singleline(&mut query).hint_text("Text to find").desired_width(f32::INFINITY).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 6))));
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
+                    let r = TextField::new(&mut query).hint(tr("Text to find")).icon(Icon::Search).show(ui, &pal);
+                    widgets::focus_once(ui, &r, &mut just_opened);
                     if replace_mode {
                         ui.add_space(8.0);
-                        self.text_field(ui, &mut replace, "Replace with");
+                        self.text_field(ui, &mut replace, tr("Replace with"));
                     }
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut case_sensitive, "Match case");
+                        widgets::checkbox(ui, &pal, &mut case_sensitive, tr("Match case"));
                         ui.add_space(12.0);
-                        ui.checkbox(&mut whole_word, "Whole word");
+                        widgets::checkbox(ui, &pal, &mut whole_word, tr("Whole word"));
                     });
-                    let (o, c) = self.ok_cancel(ui, if replace_mode { "Replace All" } else { "Find" });
+                    let (o, c) = self.ok_cancel(ui, if replace_mode { tr("Replace All") } else { tr("Find") });
                     ok |= o;
                     cancel |= c;
                 });
@@ -532,209 +499,6 @@ impl App {
                 }
             }
             other => self.popup = other,
-        }
-    }
-
-    // ------------------------------------------------------------------ commit dialog
-
-    fn draw_commit_dialog(&mut self, ctx: &egui::Context) {
-        let Popup::Commit { just_opened } = self.popup else { return };
-        let pal = self.pal;
-        let esc = ctx.input(|i| i.key_pressed(Key::Escape));
-        let mut just_opened = just_opened;
-        let ctrl_enter = ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: Key::Enter, pressed: true, modifiers, .. } if modifiers.command)));
-        if ctrl_enter {
-            ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::Enter));
-        }
-        let mut local = false;
-        let base_label = self.base_label();
-        let (mut commit, mut commit_push, mut cancel) = (ctrl_enter && !self.git.checked.is_empty() && !self.git.commit_msg.trim().is_empty(), false, esc);
-        let changes = self.git.changes.clone();
-        let branch = self.git.branch.clone().unwrap_or_default();
-        let mut toggles: Vec<String> = vec![];
-        let mut diff: Option<String> = None;
-        egui::Area::new(egui::Id::new("commit")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
-            popup_frame(&pal).show(ui, |ui| {
-                ui.set_width(640.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Commit").font(fonts::semibold(16.0)));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let (r, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
-                        ui.label(RichText::new(&branch).color(pal.text_dim));
-                        icons::paint(ui.painter(), r, Icon::Branch, pal.text_dim);
-                    });
-                });
-                ui.add_space(12.0);
-                widgets::caption(ui, &pal, &format!("CHANGES  {}      COMPARED WITH  {}", changes.len(), base_label.to_uppercase()));
-                ui.add_space(4.0);
-                egui::Frame::new().fill(pal.input_bg).corner_radius(widgets::radius()).inner_margin(Margin::symmetric(4, 4)).show(ui, |ui| {
-                    egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
-                        if changes.is_empty() {
-                            ui.add_space(14.0);
-                            ui.vertical_centered(|ui| ui.label(RichText::new("No changes to commit").color(pal.text_dim)));
-                            ui.add_space(14.0);
-                        }
-                        for c in &changes {
-                            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
-                            widgets::row_background(ui, &pal, r, false, resp.hovered());
-                            let cb = Rect::from_min_size(Pos2::new(r.min.x + 12.0, r.center().y - 8.0), Vec2::splat(16.0));
-                            self.checkbox_for(ui, cb, self.git.checked.contains(&c.path));
-                            let col = self.git_color(c.kind);
-                            let br = Rect::from_min_size(Pos2::new(r.min.x + 38.0, r.center().y - 9.0), Vec2::splat(18.0));
-                            ui.painter().rect_filled(br, CornerRadius::same(5), col.gamma_multiply(0.2));
-                            ui.painter().text(br.center(), Align2::CENTER_CENTER, c.kind.letter(), fonts::semibold(11.0), col);
-                            ui.painter().text(Pos2::new(r.min.x + 66.0, r.center().y), Align2::LEFT_CENTER, &c.path, fonts::ui(13.5), col);
-                            if resp.clicked() {
-                                toggles.push(c.path.clone());
-                            }
-                            resp.context_menu(|ui| {
-                                if ui.button("Show Diff").clicked() {
-                                    diff = Some(c.path.clone());
-                                    ui.close();
-                                }
-                            });
-                        }
-                    });
-                });
-                ui.add_space(12.0);
-                widgets::caption(ui, &pal, "MESSAGE");
-                ui.add_space(4.0);
-                let mut msg = std::mem::take(&mut self.git.commit_msg);
-                egui::Frame::new().fill(pal.input_bg).corner_radius(widgets::radius()).inner_margin(Margin::same(10)).show(ui, |ui| {
-                    let r = ui.add(egui::TextEdit::multiline(&mut msg).hint_text("Describe your changes").desired_rows(4).desired_width(f32::INFINITY).frame(egui::Frame::NONE).font(fonts::ui(13.5)));
-                    if just_opened {
-                        r.request_focus();
-                        just_opened = false;
-                    }
-                });
-                self.git.commit_msg = msg;
-                ui.add_space(14.0);
-                ui.horizontal(|ui| {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let can = !self.git.checked.is_empty() && !self.git.commit_msg.trim().is_empty() && self.git.repo.is_some();
-                        ui.add_enabled_ui(can, |ui| {
-                            if widgets::primary_button(ui, &pal, "Commit").clicked() {
-                                commit = true;
-                            }
-                            if widgets::secondary_button(ui, &pal, "Commit and Push").clicked() {
-                                commit_push = true;
-                            }
-                        });
-                        if widgets::secondary_button(ui, &pal, "Cancel").clicked() {
-                            cancel = true;
-                        }
-                        if widgets::secondary_button(ui, &pal, "Local Commit").on_hover_text("Snapshot outside of git; the diff starts from it").clicked() {
-                            local = true;
-                        }
-                    });
-                });
-            });
-        });
-        for t in toggles {
-            if !self.git.checked.remove(&t) {
-                self.git.checked.insert(t);
-            }
-        }
-        if let Some(p) = diff {
-            self.git_show_diff(&p);
-            return;
-        }
-        if local {
-            let m = self.git.commit_msg.clone();
-            if self.local_commit(&m) {
-                self.git.commit_msg.clear();
-                self.popup = Popup::None;
-                self.editor_focus = true;
-            } else {
-                self.popup = Popup::Commit { just_opened };
-            }
-            return;
-        }
-        if commit || commit_push {
-            if self.git_commit_selected() {
-                self.popup = Popup::None;
-                self.editor_focus = true;
-                if commit_push {
-                    self.git_run_async("Push", |r| r.push());
-                }
-            }
-        } else if cancel {
-            self.popup = Popup::None;
-            self.editor_focus = true;
-        } else {
-            self.popup = Popup::Commit { just_opened };
-        }
-    }
-
-    fn checkbox_for(&self, ui: &mut egui::Ui, rect: Rect, on: bool) {
-        let pal = self.pal;
-        if on {
-            ui.painter().rect_filled(rect, CornerRadius::same(4), pal.accent);
-            icons::paint(ui.painter(), rect.shrink(2.5), Icon::Check, Color32::WHITE);
-        } else {
-            ui.painter().rect_stroke(rect, CornerRadius::same(4), Stroke::new(1.3, pal.text_dim), StrokeKind::Inside);
-        }
-    }
-
-    // ------------------------------------------------------------------ diff viewer
-
-    fn draw_diff(&mut self, ctx: &egui::Context) {
-        let Popup::Diff { .. } = self.popup else { return };
-        let pal = self.pal;
-        let Popup::Diff { title, lines, mut scroll_to } = std::mem::replace(&mut self.popup, Popup::None) else { return };
-        let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
-        let screen = ctx.content_rect();
-        let w = (screen.width() * 0.8).clamp(640.0, 1200.0);
-        let h = (screen.height() * 0.78).clamp(320.0, 900.0);
-        let (adds, dels) = (lines.iter().filter(|l| l.kind == LineKind::Added).count(), lines.iter().filter(|l| l.kind == LineKind::Removed).count());
-        egui::Area::new(egui::Id::new("diff")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
-            popup_frame(&pal).show(ui, |ui| {
-                ui.set_width(w);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(&title).font(fonts::semibold(15.0)));
-                    ui.add_space(10.0);
-                    ui.label(RichText::new(format!("+{adds}")).color(pal.git_added).font(fonts::semibold(13.0)));
-                    ui.label(RichText::new(format!("-{dels}")).color(pal.error).font(fonts::semibold(13.0)));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if widgets::icon_button(ui, &pal, Icon::Close, 30.0, pal.text_dim, "Close (Esc)").clicked() {
-                            close = true;
-                        }
-                    });
-                });
-                ui.add_space(10.0);
-                let mono = FontId::monospace(13.0);
-                let row_h = 21.0;
-                egui::Frame::new().fill(pal.editor_bg).corner_radius(widgets::radius()).show(ui, |ui| {
-                    let mut area = egui::ScrollArea::both().max_height(h).auto_shrink([false, false]);
-                    if let Some(first) = scroll_to.take() {
-                        area = area.vertical_scroll_offset((first.saturating_sub(3)) as f32 * row_h);
-                    }
-                    area.show_rows(ui, row_h, lines.len(), |ui, range| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        for l in &lines[range] {
-                            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width().max(w - 40.0), row_h), Sense::hover());
-                            let (bg, mark, fg) = match l.kind {
-                                LineKind::Added => (pal.git_added.gamma_multiply(0.16), "+", pal.git_added),
-                                LineKind::Removed => (pal.error.gamma_multiply(0.16), "-", pal.error),
-                                LineKind::Same => (Color32::TRANSPARENT, " ", pal.plain),
-                            };
-                            if l.kind != LineKind::Same {
-                                ui.painter().rect_filled(r, CornerRadius::ZERO, bg);
-                            }
-                            let num = |n: Option<usize>| n.map_or("    ".to_string(), |n| format!("{n:>4}"));
-                            ui.painter().text(Pos2::new(r.min.x + 10.0, r.center().y), Align2::LEFT_CENTER, num(l.old_no), mono.clone(), pal.line_number);
-                            ui.painter().text(Pos2::new(r.min.x + 58.0, r.center().y), Align2::LEFT_CENTER, num(l.new_no), mono.clone(), pal.line_number);
-                            ui.painter().text(Pos2::new(r.min.x + 108.0, r.center().y), Align2::LEFT_CENTER, mark, mono.clone(), fg);
-                            ui.painter().text(Pos2::new(r.min.x + 128.0, r.center().y), Align2::LEFT_CENTER, &l.text, mono.clone(), if l.kind == LineKind::Same { pal.plain } else { fg });
-                        }
-                    });
-                });
-            });
-        });
-        if close {
-            self.editor_focus = true;
-        } else {
-            self.popup = Popup::Diff { title, lines, scroll_to };
         }
     }
 
@@ -753,7 +517,7 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(&title).font(fonts::semibold(15.0)));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if widgets::icon_button(ui, &pal, Icon::Close, 30.0, pal.text_dim, "Close (Esc)").clicked() {
+                                if widgets::icon_button(ui, &pal, Icon::Close, 30.0, pal.text_dim, tr("Close (Esc)")).clicked() {
                                     close = true;
                                 }
                             });
@@ -783,15 +547,15 @@ impl App {
                             crate::brand::paint_logo(ui.painter(), r, self.logo.as_ref(), pal.accent);
                             ui.add_space(14.0);
                             ui.label(RichText::new("AirLisp").font(fonts::semibold(24.0)));
-                            ui.label(RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(pal.text_dim));
+                            ui.label(RichText::new(i18n::fmt("Version {}", &[&env!("CARGO_PKG_VERSION")])).color(pal.text_dim));
                             ui.add_space(12.0);
-                            ui.label("An IDE for Lisp, written in Rust.");
+                            ui.label(tr("An IDE for Lisp, written in Rust."));
                             ui.add_space(4.0);
-                            ui.label(RichText::new("Structural editing, a live SBCL REPL, Git, refactoring\nand navigation, in the spirit of JetBrains IDEs.").color(pal.text_dim).size(12.5));
+                            ui.label(RichText::new(tr("Structural editing, a live SBCL REPL, Git, refactoring\nand navigation, in the spirit of JetBrains IDEs.")).color(pal.text_dim).size(12.5));
                             ui.add_space(6.0);
-                            ui.label(RichText::new("Fonts: JetBrains Mono and Inter (SIL OFL 1.1)").color(pal.text_dim).size(11.5));
+                            ui.label(RichText::new(tr("Fonts: JetBrains Mono and Inter (SIL OFL 1.1)")).color(pal.text_dim).size(11.5));
                             ui.add_space(16.0);
-                            if widgets::primary_button(ui, &pal, "Close").clicked() {
+                            if widgets::primary_button(ui, &pal, tr("Close")).clicked() {
                                 close = true;
                             }
                         });
@@ -813,14 +577,14 @@ impl App {
                         ui.add_space(18.0);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let main_label = match &kind {
-                                ConfirmKind::CloseDoc(_) => "Save",
-                                ConfirmKind::Delete(_) => "Delete",
-                                ConfirmKind::Rollback(_) => "Rollback",
-                                ConfirmKind::RestoreLocal(_) => "Restore",
-                                ConfirmKind::DeleteLocal(_) => "Delete",
-                                _ => "Yes",
+                                ConfirmKind::CloseDoc(_) => tr("Save"),
+                                ConfirmKind::Delete(_) => tr("Delete"),
+                                ConfirmKind::Rollback(_) => tr("Rollback"),
+                                ConfirmKind::RestoreLocal(_) | ConfirmKind::RestoreLocalFile(..) => tr("Restore"),
+                                ConfirmKind::DeleteLocal(_) => tr("Delete"),
+                                _ => tr("Yes"),
                             };
-                            let danger = matches!(kind, ConfirmKind::Delete(_) | ConfirmKind::Rollback(_) | ConfirmKind::RestoreLocal(_) | ConfirmKind::DeleteLocal(_));
+                            let danger = matches!(kind, ConfirmKind::Delete(_) | ConfirmKind::Rollback(_) | ConfirmKind::RestoreLocal(_) | ConfirmKind::RestoreLocalFile(..) | ConfirmKind::DeleteLocal(_));
                             let galley = ui.painter().layout_no_wrap(main_label.to_string(), fonts::semibold(13.5), Color32::WHITE);
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(galley.size().x + 32.0, 34.0), Sense::click());
                             let fill = if danger { pal.error } else { pal.accent };
@@ -830,10 +594,10 @@ impl App {
                                 result = Some(true);
                                 save_first = matches!(kind, ConfirmKind::CloseDoc(_));
                             }
-                            if widgets::secondary_button(ui, &pal, "Cancel").clicked() {
+                            if widgets::secondary_button(ui, &pal, tr("Cancel")).clicked() {
                                 result = Some(false);
                             }
-                            if matches!(kind, ConfirmKind::CloseDoc(_)) && widgets::secondary_button(ui, &pal, "Don't Save").clicked() {
+                            if matches!(kind, ConfirmKind::CloseDoc(_)) && widgets::secondary_button(ui, &pal, tr("Don't Save")).clicked() {
                                 result = Some(true);
                             }
                         });
@@ -874,6 +638,7 @@ impl App {
                             }
                             ConfirmKind::Rollback(rel) => self.rollback_file(&rel),
                             ConfirmKind::RestoreLocal(id) => self.local_restore(id),
+                            ConfirmKind::RestoreLocalFile(id, rel) => self.local_restore_file(id, &rel),
                             ConfirmKind::DeleteLocal(id) => self.local_delete(id),
                         }
                     }
@@ -904,10 +669,8 @@ impl App {
         egui::Area::new(egui::Id::new("completion")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
             egui::Frame::new()
                 .fill(pal.popup_bg)
-                
                 .corner_radius(CornerRadius::same(12))
                 .inner_margin(Margin::same(6))
-                .shadow(egui::Shadow { offset: [0, 6], blur: 24, spread: 0, color: Color32::from_black_alpha(110) })
                 .show(ui, |ui| {
                     ui.set_width(380.0);
                     egui::ScrollArea::vertical().max_height(280.0).auto_shrink([false, true]).show(ui, |ui| {
@@ -976,12 +739,11 @@ impl App {
         let mut close = false;
         let mut do_replace = false;
         let mut do_replace_all = false;
-        egui::Frame::new().fill(pal.panel_bg).inner_margin(Margin::symmetric(16, 8)).show(ui, |ui| {
+        egui::Frame::new().fill(pal.panel_bg).inner_margin(Margin::symmetric(16, 10)).show(ui, |ui| {
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
                 let id = egui::Id::new("find_query");
-                let r = widgets::input_frame(ui, &pal, Some(Icon::Search), |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.find.query).id(id).hint_text("Find").desired_width(260.0).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 4)))
-                });
+                let r = TextField::new(&mut self.find.query).id(id).hint(tr("Find")).icon(Icon::Search).width(300.0).height(34.0).show(ui, &pal);
                 if self.find.focus {
                     r.request_focus();
                     self.find.focus = false;
@@ -999,46 +761,43 @@ impl App {
                 let count = if self.find.query.is_empty() {
                     String::new()
                 } else if self.find.matches.is_empty() {
-                    "No results".to_string()
+                    tr("No results").to_string()
                 } else {
-                    format!("{} of {}", self.find.current.map_or(0, |c| c + 1), self.find.matches.len())
+                    i18n::fmt("{0} of {1}", &[&self.find.current.map_or(0, |c| c + 1), &self.find.matches.len()])
                 };
+                ui.add_space(4.0);
                 ui.label(RichText::new(count).color(if !self.find.query.is_empty() && self.find.matches.is_empty() { pal.error } else { pal.text_dim }).size(12.5));
-                if widgets::icon_button(ui, &pal, Icon::ChevronUp, 30.0, pal.text_dim, "Previous (Shift+F3)").clicked() {
+                if widgets::icon_button(ui, &pal, Icon::ChevronUp, 30.0, pal.text_dim, tr("Previous (Shift+F3)")).clicked() {
                     step = Some(false);
                 }
-                if widgets::icon_button(ui, &pal, Icon::ChevronDown, 30.0, pal.text_dim, "Next (F3)").clicked() {
+                if widgets::icon_button(ui, &pal, Icon::ChevronDown, 30.0, pal.text_dim, tr("Next (F3)")).clicked() {
                     step = Some(true);
                 }
-                if ui.selectable_label(self.find.case_sensitive, "Cc").on_hover_text("Match case").clicked() {
-                    self.find.case_sensitive = !self.find.case_sensitive;
-                }
-                if ui.selectable_label(self.find.whole_word, "W").on_hover_text("Whole word").clicked() {
-                    self.find.whole_word = !self.find.whole_word;
-                }
-                if ui.selectable_label(self.find.replace_mode, "Replace").clicked() {
-                    self.find.replace_mode = !self.find.replace_mode;
-                }
+                widgets::toggle_chip(ui, &pal, "Cc", &mut self.find.case_sensitive, tr("Match case"));
+                widgets::toggle_chip(ui, &pal, "W", &mut self.find.whole_word, tr("Whole word"));
+                widgets::toggle_chip(ui, &pal, tr("Replace"), &mut self.find.replace_mode, "");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if widgets::icon_button(ui, &pal, Icon::Close, 28.0, pal.text_dim, "Close (Esc)").clicked() {
+                    if widgets::icon_button(ui, &pal, Icon::Close, 30.0, pal.text_dim, tr("Close (Esc)")).clicked() {
                         close = true;
                     }
                 });
             });
             if self.find.replace_mode {
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    let r = widgets::input_frame(ui, &pal, None, |ui| ui.add(egui::TextEdit::singleline(&mut self.find.replace).hint_text("Replace").desired_width(282.0).frame(egui::Frame::NONE).margin(Margin::symmetric(2, 4))));
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let r = TextField::new(&mut self.find.replace).hint(tr("Replace")).icon(Icon::Pencil).width(300.0).height(34.0).show(ui, &pal);
                     if r.clicked() || r.gained_focus() {
                         self.editor_focus = false;
                     }
                     if r.has_focus() && ctx.input(|i| i.key_pressed(Key::Escape)) {
                         close = true;
                     }
-                    if widgets::secondary_button(ui, &pal, "Replace").clicked() {
+                    ui.add_space(4.0);
+                    if widgets::secondary_button(ui, &pal, tr("Replace")).clicked() {
                         do_replace = true;
                     }
-                    if widgets::secondary_button(ui, &pal, "Replace All").clicked() {
+                    if widgets::secondary_button(ui, &pal, tr("Replace All")).clicked() {
                         do_replace_all = true;
                     }
                 });
@@ -1070,10 +829,11 @@ impl App {
         let mut open: Option<PathBuf> = None;
         let center_x = rect.center().x;
         let col_w = 460.0f32.min(rect.width() - 48.0);
-        let top = rect.min.y + (rect.height() * 0.14).max(28.0);
-        let mut ui2 = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(Pos2::new(center_x - col_w / 2.0, top), Vec2::new(col_w, rect.height()))));
+        let top = (rect.height() * 0.14).max(28.0);
+        let mut ui2 = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(Pos2::new(center_x - col_w / 2.0, rect.min.y), Pos2::new(center_x + col_w / 2.0, rect.max.y))));
         let ui = &mut ui2;
-        ui.vertical(|ui| {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.add_space(top);
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(72.0), Sense::hover());
                 crate::brand::paint_logo(ui.painter(), r, self.logo.as_ref(), pal.accent);
@@ -1081,24 +841,24 @@ impl App {
                 ui.vertical(|ui| {
                     ui.add_space(6.0);
                     ui.label(RichText::new("AirLisp").font(fonts::semibold(26.0)));
-                    ui.label(RichText::new("The IDE for Lisp").color(pal.text_dim));
+                    ui.label(RichText::new(tr("The IDE for Lisp")).color(pal.text_dim));
                 });
             });
             ui.add_space(28.0);
             ui.horizontal(|ui| {
-                if widgets::primary_button(ui, &pal, "New Project").clicked() {
+                if widgets::primary_button(ui, &pal, tr("New Project")).clicked() {
                     self.run_command(ctx, "file.new_project");
                 }
-                if widgets::secondary_button(ui, &pal, "Open...").clicked() {
+                if widgets::secondary_button(ui, &pal, tr("Open...")).clicked() {
                     self.run_command(ctx, "file.open_project");
                 }
-                if widgets::secondary_button(ui, &pal, "Get from VCS").clicked() {
+                if widgets::secondary_button(ui, &pal, tr("Get from VCS")).clicked() {
                     self.run_command(ctx, "file.clone");
                 }
             });
             ui.add_space(28.0);
             if !self.settings.recent_projects.is_empty() {
-                widgets::caption(ui, &pal, "RECENT PROJECTS");
+                widgets::caption(ui, &pal, &tr("Recent projects").to_uppercase());
                 ui.add_space(8.0);
                 for p in self.settings.recent_projects.iter().take(6) {
                     let name = std::path::Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
@@ -1116,11 +876,11 @@ impl App {
                 }
                 ui.add_space(20.0);
             }
-            widgets::caption(ui, &pal, "QUICK START");
+            widgets::caption(ui, &pal, &tr("Quick start").to_uppercase());
             ui.add_space(8.0);
             for (t, k) in [("Search Everywhere", "Double Shift"), ("Go to File", "Ctrl+Shift+N"), ("Find Action", "Ctrl+Shift+A"), ("Recent Files", "Ctrl+E"), ("Run file", "Shift+F10"), ("Commit", "Ctrl+K")] {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(t).color(pal.text_dim));
+                    ui.label(RichText::new(tr(t)).color(pal.text_dim));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| widgets::chip(ui, &pal, k));
                 });
                 ui.add_space(2.0);
