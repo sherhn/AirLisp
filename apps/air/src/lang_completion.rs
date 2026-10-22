@@ -125,8 +125,12 @@ impl App {
             push(name, kind_of_outline(&kind), 1, &mut items);
         }
         self.ensure_lang_index();
-        for (name, kind) in self.hover.index.with_prefix(&lang_id, &prefix, 80) {
-            push(name, kind_of_outline(&kind), 1, &mut items);
+        // the project's names: in this language first, then (assembly labels for C...) the other languages'
+        let all = self.hover.index.with_prefix(&prefix, 200);
+        for (name, kind, lang) in &all {
+            if *lang == lang_id {
+                push(name.clone(), kind_of_outline(kind), 1, &mut items);
+            }
         }
         // the identifiers of this file
         for w in identifiers(&text, &low, caret) {
@@ -135,6 +139,11 @@ impl App {
         // the language's own words
         for (w, class) in lang.words() {
             push(w.clone(), kind_of_class(*class), 3, &mut items);
+        }
+        for (name, kind, lang) in all {
+            if lang != lang_id {
+                push(name, kind_of_outline(&kind), 4, &mut items);
+            }
         }
         items.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.text.len().cmp(&b.text.len())).then_with(|| a.text.cmp(&b.text)));
         items.truncate(MAX_ITEMS);

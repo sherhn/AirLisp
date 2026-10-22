@@ -1090,6 +1090,13 @@ impl App {
         let defs = self.project.as_ref().map(|p| p.index.find_definitions(&name)).unwrap_or_default();
         match defs.len() {
             0 => {
+                // a function the project defines in C or assembly
+                let near = self.doc().and_then(|d| d.path.clone());
+                let hits = self.project_definitions(&name, None, near, None, false);
+                if !hits.is_empty() {
+                    self.goto_hits(&name, hits);
+                    return;
+                }
                 if !self.repl_request("definition", &name, Pending::Definition { name: name.clone() }) {
                     self.toast(i18n::fmt("Cannot find declaration of '{}'", &[&name]), Sev::Weak);
                 }
@@ -1151,7 +1158,7 @@ impl App {
             if inner.is_empty() { format!("({})", d.def.name) } else { format!("({} {})", d.def.name, inner) }
         };
         let line = text[..d.def.start.min(text.len())].matches('\n').count();
-        Some(DefinitionParts { header, signature, doc, kind: d.def.kind.label().to_string(), path: d.path.clone(), line })
+        Some(DefinitionParts { header, signature, doc, kind: d.def.kind.label().to_string(), path: d.path.clone(), line, name_start: d.def.name_start })
     }
 
     fn local_definition_text(&self, name: &str) -> Option<String> {
@@ -1234,11 +1241,7 @@ impl App {
             return;
         }
         let Some(name) = self.symbol_at_caret() else { return };
-        let Some(root) = self.project_root().map(Path::to_path_buf) else { return };
-        self.reindex_open_docs();
-        let hits = index::find_usages(&root, &name, 2000);
-        self.find_results = FindResults { title: i18n::fmt("Usages of '{}'", &[&name]), hits };
-        self.bottom_tool = Some(BottomTool::Find);
+        self.find_usages_everywhere(&name);
     }
 
     pub fn run_find_in_files(&mut self, query: &str, opts: TextQuery) {
@@ -1643,4 +1646,6 @@ pub struct DefinitionParts {
     pub path: PathBuf,
     /// 0-based line of the definition.
     pub line: usize,
+    /// Byte offset of the name in the file.
+    pub name_start: usize,
 }
