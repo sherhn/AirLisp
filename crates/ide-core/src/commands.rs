@@ -225,6 +225,7 @@ cmds! {
     "diff.next_file", "Next Changed File", Git, [];
     "diff.prev_file", "Previous Changed File", Git, [];
     "run.run_config", "Choose Run Configuration...", Run, [];
+    "run.scenarios", "Edit Run Scenarios...", Run, [];
     "run.load_system", "Load ASDF System into REPL", Run, [];
     "run.test_system", "Test ASDF System", Run, [];
     "edit.fold", "Fold Form", Edit, ["Ctrl+Minus"];

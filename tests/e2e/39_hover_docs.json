@@ -2,6 +2,7 @@
   {"op": "log", "value": "@hover @modules python,c-cpp,assembler: the pointer on a name shows its arguments and documentation"},
   {"op": "open_project", "path": "${PROJ}"},
   {"op": "wait", "what": "index"},
+  {"op": "project_env", "value": "windows"},
   {"op": "open", "path": "${PROJ}/src/docs.lisp"},
   {"op": "frames", "value": 4},
 

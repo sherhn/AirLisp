@@ -442,6 +442,16 @@ pub enum Popup {
     NewBranch { input: String, just_opened: bool },
     LocalCommit { input: String, just_opened: bool },
     RenameFile { path: PathBuf, input: String, just_opened: bool },
+    /// The editor of the project's run scenarios.
+    Scenarios(Box<ScenariosState>),
+}
+
+/// The scenarios being edited: a working copy, and the commands of each as one text.
+pub struct ScenariosState {
+    pub list: Vec<crate::app_env::Scenario>,
+    pub texts: Vec<String>,
+    pub selected: usize,
+    pub just_opened: bool,
 }
 
 impl Popup {

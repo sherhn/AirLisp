@@ -84,12 +84,18 @@ pub struct App {
     /// The GitHub session of the "Get from Version Control" dialog.
     pub github: crate::app_github::GithubState,
     pub run_config: crate::app_run::RunConfig,
+    /// The scenario that is running (its other commands are still to start).
+    pub scenario: Option<crate::app_scenario::ScenarioRun>,
     /// Where the open project is built and run (`.air/project.json`).
     pub project_cfg: crate::app_env::ProjectConfig,
     /// Ask whether the open (Unix-style) project should be built in Linux.
     pub env_banner: bool,
     /// The open project has a makefile, a configure script or shell scripts at its top.
     pub unix_project: bool,
+    /// Modules that are on and whose languages the open project has files of (they bring tools for Linux).
+    pub project_modules: Vec<String>,
+    /// The question about Linux was closed with "Not now" (until the project is opened again).
+    pub env_banner_dismissed: bool,
     /// The "build tools are missing" banner was closed (until the project is opened again or a command is not found).
     pub tools_banner_dismissed: bool,
     /// The modules (languages and their tools): what is installed, what the registry offers.
@@ -169,9 +175,12 @@ impl App {
             wsl: Default::default(),
             github: Default::default(),
             run_config: Default::default(),
+            scenario: None,
             project_cfg: Default::default(),
             env_banner: false,
             unix_project: false,
+            project_modules: vec![],
+            env_banner_dismissed: false,
             tools_banner_dismissed: false,
             mods: Default::default(),
             needed_modules: vec![],
@@ -251,6 +260,10 @@ impl App {
             return;
         }
         let root = path.to_path_buf();
+        // another project in this window: nothing of the old one stays (tabs, search results, history, problems...)
+        if self.project.as_ref().is_some_and(|p| p.root != root) {
+            self.leave_project();
+        }
         // a project of an older version keeps its own files in `.airlisp`
         let moved = ide_core::workspace::migrate_project_dir(&root);
         if moved && let Some(repo) = ide_core::git::find_repo(&root) {
@@ -278,6 +291,49 @@ impl App {
             self.repl_restart();
         }
         self.save_settings();
+    }
+
+    /// Leave the open project for another: its files are saved and everything that belongs to it goes - the tabs, the
+    /// search results, the back/forward history, problems, what ran and the terminal.
+    fn leave_project(&mut self) {
+        self.flush_saves();
+        self.cancel_scenario();
+        if let Some(h) = self.run.handle.take() {
+            h.kill();
+        }
+        self.run = RunState::default();
+        if let Some(c) = self.compile.take() {
+            c.handle.kill();
+            let _ = std::fs::remove_file(&c.fasl);
+        }
+        self.docs.clear();
+        self.active = 0;
+        self.split = None;
+        self.pane_rects.clear();
+        self.recent_files.clear();
+        self.nav_back.clear();
+        self.nav_fwd.clear();
+        self.last_edit = None;
+        self.find_results = FindResults::default();
+        self.find.matches.clear();
+        self.find.current = None;
+        self.find.built_for = None;
+        self.compiler_problems.clear();
+        self.make_run = None;
+        self.make_targets.clear();
+        self.run_config = RunConfig::CurrentFile;
+        self.completion.active = false;
+        self.hunk_popup = None;
+        self.hint = None;
+        self.hide_hover();
+        self.needed_modules.clear();
+        self.modules_banner_dismissed = false;
+        self.tools_banner_dismissed = false;
+        // the terminal starts again in the new project's folder
+        self.terminal_stop();
+        self.term.log.clear();
+        self.term.cwd = PathBuf::from(".");
+        self.editor_focus = false;
     }
 
     pub fn close_project(&mut self) {
@@ -936,6 +992,7 @@ impl App {
     }
 
     pub fn stop_run(&mut self) {
+        self.cancel_scenario();
         if let Some(h) = &self.run.handle {
             h.kill();
         }
@@ -977,6 +1034,8 @@ impl App {
             self.run.log.push(LogLine { kind: if code == Some(0) { LogKind::Info } else { LogKind::Error }, text: msg });
             self.run.handle = None;
             self.make_finished(code);
+            // a scenario goes on with its next command
+            self.scenario_after_exit(code);
         }
     }
 

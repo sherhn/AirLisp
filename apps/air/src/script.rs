@@ -185,6 +185,27 @@ impl App {
                 }
             }
             "close_project" => self.close_project(),
+            // define a scenario: `value` is its name, `commands` its lines, `stop` (default true) stops at a failure
+            "scenario" => {
+                let commands: Vec<String> = step["commands"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default();
+                let sc = crate::app_env::Scenario { name: sval.clone(), commands, stop_on_error: step["stop"].as_bool().unwrap_or(true) };
+                let mut list: Vec<_> = self.scenarios().iter().filter(|s| s.name != sval).cloned().collect();
+                list.push(sc);
+                self.save_scenarios(list);
+            }
+            // choose the run configuration: `scenario:NAME`, `file`, or `make:TARGET`
+            "select_run" => {
+                self.run_config = match sval.split_once(':') {
+                    Some(("scenario", n)) => crate::app_run::RunConfig::Scenario(n.to_string()),
+                    Some(("make", t)) => crate::app_run::RunConfig::Make(t.to_string()),
+                    _ => crate::app_run::RunConfig::CurrentFile,
+                };
+            }
+            "assert_run_lacks" => {
+                if self.run.log.iter().any(|l| l.text.contains(&sval)) {
+                    self.fail(format!("assert_run_lacks: {sval:?} is in the run log"));
+                }
+            }
             "project_env" => self.set_project_env(if sval == "windows" { None } else { Some(sval.clone()) }),
             "ask_open_project" => {
                 if let Some(p) = path {
@@ -576,6 +597,7 @@ impl App {
                     Popup::Info { .. } => "info",
                     Popup::Confirm { .. } => "confirm",
                     Popup::RenameFile { .. } => "rename_file",
+                    Popup::Scenarios(_) => "scenarios",
                     Popup::NewBranch { .. } => "new_branch",
                     Popup::LocalCommit { .. } => "local_commit",
                 };

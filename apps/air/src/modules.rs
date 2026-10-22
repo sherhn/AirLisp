@@ -451,7 +451,11 @@ impl App {
                 wanted.push(id);
             }
         }
+        // the modules that are on and have files here: the tools they bring are what the project needs in Linux
+        let in_use = ide_core::modules::detect::needed_in(&exts, &names, &self.mods.detectors());
+        self.project_modules = in_use.into_iter().filter(|id| self.mods.installed.iter().any(|m| &m.manifest.id == id && m.enabled && !m.manifest.tools.is_empty())).collect();
         self.needed_modules = wanted.into_iter().filter(|id| !self.mods.is_enabled(id)).collect();
+        self.update_env_banner();
     }
 }
 

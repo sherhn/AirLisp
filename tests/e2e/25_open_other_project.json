@@ -10,6 +10,9 @@
   {"op": "frames", "value": 2},
   {"op": "assert_popup", "value": "none"},
   {"op": "assert_project_file", "value": "src/nav.lisp"},
+  {"op": "open", "path": "${PROJ}/src/nav.lisp"},
+  {"op": "open", "path": "${PROJ}/src/main.lisp"},
+  {"op": "assert_tabs", "value": 2},
   {"op": "ask_open_project", "path": "${PROJ}/scripts"},
   {"op": "frames", "value": 3},
   {"op": "key", "value": "Enter"},
@@ -18,5 +21,7 @@
   {"op": "assert_popup", "value": "none"},
   {"op": "assert_project_file", "value": "demo.als"},
   {"op": "assert_project_file", "value": "src/nav.lisp", "present": false},
+  {"op": "log", "value": "the old project's tabs are gone with it"},
+  {"op": "assert_tabs", "value": 0},
   {"op": "quit"}
 ]

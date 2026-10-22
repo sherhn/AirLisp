@@ -20,6 +20,8 @@ pub enum RunConfig {
     Load(String),
     Test(String),
     Make(String),
+    /// A scenario of the project: console commands one after another.
+    Scenario(String),
 }
 
 /// Where a make run happened, to find the files its compiler messages name.
@@ -75,6 +77,7 @@ impl App {
             RunConfig::Load(s) => i18n::fmt("Load {}", &[&s]),
             RunConfig::Test(s) => i18n::fmt("Test {}", &[&s]),
             RunConfig::Make(t) => format!("make {t}"),
+            RunConfig::Scenario(n) => n.clone(),
         }
     }
 
@@ -98,6 +101,7 @@ impl App {
             RunConfig::Load(s) => self.run_asdf_system(&s, false),
             RunConfig::Test(s) => self.run_asdf_system(&s, true),
             RunConfig::Make(t) => self.run_make(&t),
+            RunConfig::Scenario(n) => self.run_scenario(&n),
         }
     }
 
@@ -293,7 +297,7 @@ impl App {
         let Some(root) = self.project_root().map(|p| p.to_path_buf()) else { return };
         let sys = match &self.run_config {
             RunConfig::Load(s) | RunConfig::Test(s) => Some(s.clone()),
-            RunConfig::CurrentFile | RunConfig::Make(_) => self.asd_systems().into_iter().next(),
+            RunConfig::CurrentFile | RunConfig::Make(_) | RunConfig::Scenario(_) => self.asd_systems().into_iter().next(),
         };
         let Some(sys) = sys else {
             self.toast(tr("No .asd system found in this project"), Sev::Weak);

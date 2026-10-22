@@ -14,7 +14,7 @@ use crate::state::*;
 use crate::ui_panels::badge_color;
 use crate::widgets::{self, TextField};
 
-fn popup_frame(pal: &crate::theme::Palette) -> egui::Frame {
+pub(crate) fn popup_frame(pal: &crate::theme::Palette) -> egui::Frame {
     widgets::glass_frame(pal)
 }
 
@@ -51,6 +51,7 @@ impl App {
         self.draw_palette(ctx);
         self.draw_clone(ctx);
         self.draw_input_dialogs(ctx);
+        self.draw_scenarios(ctx);
         self.draw_local_view(ctx);
         self.draw_settings(ctx);
         self.draw_info_dialogs(ctx);
@@ -231,7 +232,7 @@ impl App {
     // ------------------------------------------------------------------ dialogs
 
     /// A modal dialog card. `build` returns true when the user confirmed.
-    fn dialog_card(&self, ctx: &egui::Context, id: &str, title: &str, width: f32, build: impl FnOnce(&mut egui::Ui)) -> Rect {
+    pub(crate) fn dialog_card(&self, ctx: &egui::Context, id: &str, title: &str, width: f32, build: impl FnOnce(&mut egui::Ui)) -> Rect {
         let pal = self.pal;
         let mut rect = Rect::NOTHING;
         egui::Area::new(egui::Id::new(id)).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, Vec2::new(0.0, 130.0)).show(ctx, |ui| {
@@ -247,7 +248,7 @@ impl App {
     }
 
     /// OK / Cancel row; returns (ok, cancel).
-    fn ok_cancel(&self, ui: &mut egui::Ui, ok_label: &str) -> (bool, bool) {
+    pub(crate) fn ok_cancel(&self, ui: &mut egui::Ui, ok_label: &str) -> (bool, bool) {
         let pal = self.pal;
         let mut res = (false, false);
         ui.add_space(14.0);

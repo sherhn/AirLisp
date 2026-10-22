@@ -16,6 +16,22 @@ use crate::i18n::{self, tr};
 use crate::icons::{self, Icon};
 use crate::widgets;
 
+/// A run scenario: console commands that run one after another (see `app_scenario`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Scenario {
+    pub name: String,
+    pub commands: Vec<String>,
+    /// Stop at the first command that fails (exits with another code than 0).
+    pub stop_on_error: bool,
+}
+
+impl Default for Scenario {
+    fn default() -> Self {
+        Scenario { name: String::new(), commands: vec![], stop_on_error: true }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProjectConfig {
@@ -25,6 +41,8 @@ pub struct ProjectConfig {
     pub decided: bool,
     /// Modules the project asks for (chosen when it was created or imported): they are offered when missing.
     pub modules: Vec<String>,
+    /// Lists of console commands the project runs with one click.
+    pub scenarios: Vec<Scenario>,
 }
 
 fn config_path(root: &Path) -> std::path::PathBuf {
@@ -72,14 +90,31 @@ impl App {
         };
         self.project_cfg = load_config(&root);
         self.unix_project = looks_like_linux_project(&root);
+        self.project_modules.clear();
+        self.env_banner_dismissed = false;
         self.forget_build_tools();
+        self.update_env_banner();
+        self.lisp = self.resolve_lisp();
+        self.refresh_make_targets();
+    }
+
+    /// Does this project belong in Linux as far as anyone can tell: built the Unix way, or in languages whose modules
+    /// bring tools for Linux (C, Python, assembly...)?
+    pub fn linux_relevant(&self) -> bool {
+        self.unix_project || !self.project_modules.is_empty()
+    }
+
+    /// Ask whether the project should run in Linux, when it is not decided and there is a reason to.
+    pub fn update_env_banner(&mut self) {
+        let Some(root) = self.project_root().map(Path::to_path_buf) else {
+            self.env_banner = false;
+            return;
+        };
         let on_linux_fs = ide_core::wsl::wsl_path(&root).is_some();
-        self.env_banner = cfg!(windows) && !on_linux_fs && !self.project_cfg.decided && self.wsl_target().is_none() && self.unix_project;
+        self.env_banner = cfg!(windows) && !on_linux_fs && !self.project_cfg.decided && !self.env_banner_dismissed && self.wsl_target().is_none() && self.linux_relevant();
         if self.env_banner && self.wsl.probe.is_none() && !self.wsl.probing() {
             self.wsl_probe();
         }
-        self.lisp = self.resolve_lisp();
-        self.refresh_make_targets();
     }
 
     /// The project lives on a WSL file system (and can only be a Linux project).
@@ -108,7 +143,7 @@ impl App {
         if self.project_on_linux_fs() {
             return;
         }
-        self.project_cfg = ProjectConfig { linux: distro.clone(), decided: true, modules: self.project_cfg.modules.clone() };
+        self.project_cfg = ProjectConfig { linux: distro.clone(), decided: true, ..self.project_cfg.clone() };
         if let Err(e) = save_config(&root, &self.project_cfg) {
             self.toast(i18n::fmt("Cannot save the project settings: {}", &[&e]), Sev::Error);
         }
@@ -144,13 +179,21 @@ impl App {
 
     /// The project builds in Linux and the distribution lacks tools it needs: (distribution, missing programs).
     pub fn missing_build_tools(&self) -> Option<(String, Vec<String>)> {
-        if !self.unix_project {
+        if !self.linux_relevant() {
             return None;
         }
         let t = self.wsl_target()?;
         let Some(Ok(found)) = self.wsl.tools.get(&t.distro) else { return None };
-        // what the project needs to be built; the other developer tools are offered on the Linux page
-        let missing = lisp_runtime::wsl::missing_core(found);
+        // what a project built the Unix way needs; the other developer tools are offered on the Linux page
+        let mut missing = if self.unix_project { lisp_runtime::wsl::missing_core(found) } else { vec![] };
+        // and what the languages of its files cannot do without (python3 for Python...)
+        for m in self.mods.installed.iter().filter(|m| m.enabled && self.project_modules.contains(&m.manifest.id)) {
+            for p in m.manifest.tools.iter().flat_map(|t| t.required_programs()) {
+                if found.iter().any(|(n, ok)| *n == p && !*ok) && !missing.contains(&p) {
+                    missing.push(p);
+                }
+            }
+        }
         (!missing.is_empty()).then_some((t.distro, missing))
     }
 
@@ -164,7 +207,8 @@ impl App {
     pub fn linux_command_not_found(&mut self, program: Option<&str>) -> Option<String> {
         let t = self.wsl_target()?;
         self.forget_build_tools();
-        let is_tool = |p: &str| lisp_runtime::wsl::BUILD_TOOLS.contains(&p) || p.starts_with("qemu") || matches!(p, "cc" | "g++" | "c++" | "as" | "ar" | "nm" | "objdump");
+        let known = lisp_runtime::wsl::all_programs(&self.tool_groups());
+        let is_tool = |p: &str| lisp_runtime::wsl::BUILD_TOOLS.contains(&p) || p.starts_with("qemu") || matches!(p, "cc" | "g++" | "c++" | "as" | "ar" | "nm" | "objdump") || known.iter().any(|k| k == p);
         Some(match program.filter(|p| is_tool(p)) {
             Some(p) => i18n::fmt("{0} is not installed in Linux ({1}). Install the developer tools: Settings > Linux (WSL) > Install developer tools.", &[&p, &t.distro]),
             None => i18n::fmt("Command not found in Linux ({}). Developer tools (make, gcc, nasm, gdb, QEMU and more) can be installed in Settings > Linux (WSL).", &[&t.distro]),
@@ -176,7 +220,7 @@ impl App {
     /// Offer to install what a project built with make needs, when its Linux lacks it.
     pub fn draw_tools_banner(&mut self, ui: &mut egui::Ui) {
         // the check runs once per project (and again when a command was not found)
-        if self.unix_project
+        if self.linux_relevant()
             && let Some(t) = self.wsl_target()
             && !self.wsl.tools.contains_key(&t.distro)
             && !self.wsl_checking_tools()
@@ -237,7 +281,9 @@ impl App {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
                 icons::paint(ui.painter(), r, Icon::Linux, pal.accent);
                 ui.vertical(|ui| {
-                    ui.label(RichText::new(tr("This project is built the Linux way (make, shell scripts)")).font(fonts::semibold(13.0)));
+                    // a makefile or shell scripts say so; otherwise it is the languages of the files that can run there too
+                    let title = if self.unix_project { tr("This project is built the Linux way (make, shell scripts)") } else { tr("This project can run in Linux") };
+                    ui.label(RichText::new(title).font(fonts::semibold(13.0)));
                     ui.label(RichText::new(tr("Build it, run it and use the terminal in Linux through WSL? Files stay where they are.")).color(pal.text_dim).size(12.0));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -269,7 +315,10 @@ impl App {
             self.open_settings_page(crate::ui_settings::WSL_PAGE);
         }
         match act {
-            Some(None) => self.env_banner = false,
+            Some(None) => {
+                self.env_banner = false;
+                self.env_banner_dismissed = true;
+            }
             Some(Some(choice)) => self.set_project_env(choice),
             None => {}
         }
@@ -347,7 +396,7 @@ mod tests {
         assert!(!looks_like_linux_project(&d));
         std::fs::write(d.join("makefile"), "all:\n").unwrap();
         assert!(looks_like_linux_project(&d));
-        let cfg = ProjectConfig { linux: Some("Ubuntu-24.04".into()), decided: true, modules: vec!["python".into()] };
+        let cfg = ProjectConfig { linux: Some("Ubuntu-24.04".into()), decided: true, modules: vec!["python".into()], scenarios: vec![Scenario { name: "build".into(), commands: vec!["make".into(), "make test".into()], stop_on_error: false }] };
         save_config(&d, &cfg).unwrap();
         assert_eq!(load_config(&d), cfg);
         assert!(usable_distro("Ubuntu") && !usable_distro("docker-desktop") && !usable_distro("docker-desktop-data"));

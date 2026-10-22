@@ -102,7 +102,7 @@ impl App {
             ui.menu_button(tr("Git"), |ui| {
                 self.menu_items(ui, ctx, &["git.commit", "git.local_commit", "git.reset_base", "git.push", "git.pull", "-", "git.branches", "git.new_branch", "-", "git.diff", "git.rollback", "git.stage_file", "-", "git.refresh", "git.init"]);
             });
-            ui.menu_button(tr("Run"), |ui| self.menu_items(ui, ctx, &["run.run_file", "run.compile_file", "run.stop", "-", "run.load_system", "run.test_system"]));
+            ui.menu_button(tr("Run"), |ui| self.menu_items(ui, ctx, &["run.run_file", "run.compile_file", "run.stop", "-", "run.load_system", "run.test_system", "-", "run.scenarios"]));
             ui.menu_button(tr("Tools"), |ui| self.menu_items(ui, ctx, &["repl.eval", "repl.eval_last", "repl.load_file", "repl.restart", "repl.clear", "repl.focus", "-", "view.terminal"]));
             ui.menu_button(tr("Window"), |ui| self.menu_items(ui, ctx, &["file.next_tab", "file.prev_tab", "file.close_others", "view.hide_all"]));
             ui.menu_button(tr("Help"), |ui| self.menu_items(ui, ctx, &["nav.find_action", "help.keymap", "help.about"]));
@@ -257,6 +257,8 @@ impl App {
                 let label = self.run_config_label();
                 let icon = if matches!(self.run_config, RunConfig::Make(_)) {
                     (Icon::Hammer, pal.accent)
+                } else if matches!(self.run_config, RunConfig::Scenario(_)) {
+                    (Icon::Script, pal.blue)
                 } else if self.lisp_enabled() {
                     (Icon::Lisp, pal.keyword_form)
                 } else {
@@ -265,6 +267,16 @@ impl App {
                 let resp = Pill::new(&label).icon(icon.0, icon.1).chevron().bordered().height(34.0).show(ui, &pal);
                 let systems = self.asd_systems();
                 let targets = self.make_targets.clone();
+                let scenarios: Vec<String> = self.scenarios().iter().map(|s| s.name.clone()).collect();
+                let mut edit_scenarios = false;
+                // where the project runs: the same for every language
+                if resp.clicked() && self.wsl.probe.is_none() && !self.wsl.probing() && self.project.is_some() {
+                    self.wsl_probe();
+                }
+                let linux_fs = self.project_on_linux_fs();
+                let distros: Vec<String> = self.wsl.distros().into_iter().filter(|d| crate::app_env::usable_distro(d)).collect();
+                let current_env = self.project_distro();
+                let mut env_choice: Option<Option<String>> = None;
                 let mut chosen: Option<RunConfig> = None;
                 egui::Popup::menu(&resp).width(240.0).show(|ui| {
                     if ui.button(tr("Current File")).clicked() {
@@ -294,9 +306,42 @@ impl App {
                             ui.close();
                         }
                     }
+                    // console commands one after another
+                    ui.separator();
+                    ui.label(RichText::new(tr("Scenarios")).color(pal.text_dim).size(11.5));
+                    for n in &scenarios {
+                        if ui.button(n).clicked() {
+                            chosen = Some(RunConfig::Scenario(n.clone()));
+                            ui.close();
+                        }
+                    }
+                    if ui.button(if scenarios.is_empty() { tr("Add a scenario...") } else { tr("Edit scenarios...") }).clicked() {
+                        edit_scenarios = true;
+                        ui.close();
+                    }
+                    if self.project.is_some() && !linux_fs {
+                        ui.separator();
+                        ui.label(RichText::new(tr("Run in")).color(pal.text_dim).size(11.5));
+                        if ui.selectable_label(current_env.is_none(), tr("On Windows")).clicked() {
+                            env_choice = Some(None);
+                            ui.close();
+                        }
+                        for d in &distros {
+                            if ui.selectable_label(current_env.as_deref() == Some(d.as_str()), i18n::fmt("In Linux: {}", &[d])).clicked() {
+                                env_choice = Some(Some(d.clone()));
+                                ui.close();
+                            }
+                        }
+                    }
                 });
+                if let Some(c) = env_choice {
+                    self.set_project_env(c);
+                }
                 if let Some(c) = chosen {
                     self.run_config = c;
+                }
+                if edit_scenarios {
+                    self.open_scenarios_dialog();
                 }
             });
         });
