@@ -12,6 +12,7 @@ StopIteration NotImplementedError ZeroDivisionError AssertionError KeyboardInter
 PREFIX = r"(?:[rRbBuUfF]{1,2})?"
 
 MODULE = module(
+    version="1.0.1",
     id="python",
     name="Python",
     category="Languages",
@@ -41,7 +42,9 @@ MODULE = module(
             outline(r"^[ \t]*class[ \t]+(\w+)", "class"),
         ],
     )],
-    run=[dict(language="python", name="Run file", command='python3 "{file}"', windows='python "{file}"')],
+    # on Windows `python` is often only the Microsoft Store stub: the `py` launcher is preferred when there is one
+    run=[dict(language="python", name="Run file", command='python3 "{file}"',
+              windows='where py >nul 2>nul & if errorlevel 1 (python "{file}") else (py "{file}")')],
     tools=[dict(name="Python", programs=["python3", "pip3"], apt="python3 python3-pip python3-venv")],
     detect=dict(extensions=["py", "pyw"], files=["pyproject.toml", "requirements.txt", "setup.py", "Pipfile"]),
     templates=[

@@ -80,7 +80,7 @@
     {
       "id": "python",
       "name": "Python",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "category": "Languages",
       "summary": "Highlighting, indentation, folding by blocks and an outline for Python; run a file; python3 and pip in Linux.",
       "cover": "cover.png",
@@ -88,8 +88,8 @@
       "files": [
         {
           "name": "module.json",
-          "size": 7192,
-          "sha256": "4bb4e20a58e45d2a3c6cc7ae3edc6569a79c7113f69d8b3b4a4825fc188387de"
+          "size": 7253,
+          "sha256": "c6021117b577ad48720fef09fc50db7ccbb7ae470c300abaa0c1880d8f01fdc7"
         },
         {
           "name": "cover.png",

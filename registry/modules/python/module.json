@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "cover": "cover.png",
   "id": "python",
   "name": "Python",
@@ -254,7 +254,7 @@
       "language": "python",
       "name": "Run file",
       "command": "python3 \"{file}\"",
-      "windows": "python \"{file}\""
+      "windows": "where py >nul 2>nul & if errorlevel 1 (python \"{file}\") else (py \"{file}\")"
     }
   ],
   "tools": [
