@@ -269,6 +269,70 @@ impl App {
                 s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE });
                 s.pending.push(Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE });
             }
+            // the mouse on a row of the console log last drawn: `line` is the text of the row as shown, `col` a character
+            // column or "end"; `action`: down, move, up, or click (with `count`)
+            "log_mouse" => {
+                let Some(g) = ctx.data(|d| d.get_temp::<crate::ui_panels::LogGeometry>(egui::Id::new(crate::ui_panels::LOG_GEOMETRY_ID))) else {
+                    self.fail("log_mouse: no console log has been drawn".to_string());
+                    return;
+                };
+                let want = step["line"].as_str().unwrap_or("");
+                let Some(row) = g.rows.iter().position(|r| r == want) else {
+                    self.fail(format!("log_mouse: no row {want:?} on screen; rows: {:?}", g.rows));
+                    return;
+                };
+                let len = g.rows[row].chars().count();
+                let col = match &step["col"] {
+                    serde_json::Value::String(s) if s == "end" => len,
+                    v => v.as_u64().unwrap_or(0) as usize,
+                };
+                // the row's text starts 14 points in; a column boundary is where the pointer goes
+                let pos = Pos2::new(g.left + 14.0 + col as f32 * g.char_w, g.top + (row as f32 + 0.5) * g.row_h);
+                let button = |pressed| Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+                let s = self.script.as_mut().unwrap();
+                s.pending.push(Event::PointerMoved(pos));
+                match step["action"].as_str().unwrap_or("click") {
+                    "down" => s.pending.push(button(true)),
+                    "up" => s.pending.push(button(false)),
+                    "move" => {}
+                    _ => {
+                        for _ in 0..step["count"].as_u64().unwrap_or(1) {
+                            s.pending.push(button(true));
+                            s.pending.push(button(false));
+                        }
+                    }
+                }
+            }
+            "copy" => {
+                let s = self.script.as_mut().unwrap();
+                s.pending.push(Event::Copy);
+            }
+            "assert_copied" => {
+                // `value`: the whole text; or `starts` / `ends` / `contains` for the parts that do not depend on the machine
+                let got = ctx.data(|d| d.get_temp::<String>(egui::Id::new(crate::ui_panels::LAST_COPIED_ID))).unwrap_or_default();
+                let mut errors = vec![];
+                if step["value"].is_string() && got != sval {
+                    errors.push(format!("expected {sval:?}"));
+                }
+                if let Some(t) = step["starts"].as_str()
+                    && !got.starts_with(t)
+                {
+                    errors.push(format!("expected it to start with {t:?}"));
+                }
+                if let Some(t) = step["ends"].as_str()
+                    && !got.ends_with(t)
+                {
+                    errors.push(format!("expected it to end with {t:?}"));
+                }
+                if let Some(t) = step["contains"].as_str()
+                    && !got.contains(t)
+                {
+                    errors.push(format!("expected it to contain {t:?}"));
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_copied: {}; got {got:?}", errors.join("; ")));
+                }
+            }
             "screenshot" => {
                 let slot: Arc<Mutex<Option<Arc<egui::ColorImage>>>> = Arc::new(Mutex::new(None));
                 let s2 = slot.clone();
