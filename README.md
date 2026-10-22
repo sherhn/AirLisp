@@ -97,11 +97,19 @@ A project can be *built and run in Linux* while you work on Windows:
 * **make targets are run configurations** (`make all`, `make run`, `make debug`, `make clean`, test targets...).
   The output goes to the Run tool window; gcc, ld and nasm errors land in Problems and in the editor, with
   `make -C` sub-directories resolved. `make run` starts QEMU in its own window (WSLg).
-* **Build tools in one click.** Settings > Linux (WSL) > *Linux projects* checks make, gcc (with 32-bit support),
-  nasm, gdb, git and QEMU and installs what is missing; *Set up git* gives Linux git your name, e-mail and the
+* **Build tools in one click.** A project built with make whose distribution lacks them shows a banner with
+  *Install build tools* (and `make`/`command not found` in the terminal or Run says why). Settings > Linux (WSL) >
+  *Linux projects* checks make, gcc (with 32-bit support), nasm, gdb, git and QEMU and installs what is missing,
+  with a progress bar; *Set up git* gives Linux git your name, e-mail and the
   Windows credential manager (GitHub logins).
 * **C, assembly, shell and makefiles are not Lisp**: they get their own highlighting, bracket matching, brace
   indentation, folding and comment markers, and never show false Lisp errors.
+
+## Copying from the consoles
+
+The terminal, REPL and Run output are selectable: drag with the mouse (dragging past the edge scrolls), double click
+a word or path, triple click a line, **Ctrl+A** selects everything, **Ctrl+C** or right-click > *Copy* copies,
+*Copy all* takes the whole log; Esc lets go. After copying, the terminal's command line has the keys again.
 
 ## Layout
 
@@ -165,3 +173,9 @@ Windows: при открытии проекта с makefile AirLisp предло
 (`~/projects`, git дистрибутива) или в папку Windows с окончаниями строк Linux. На странице Linux (WSL) одной кнопкой
 ставятся make, gcc с 32-битной поддержкой, nasm, gdb, git и QEMU, а git в Linux настраивается на ваши имя, почту и вход
 в GitHub из Windows. Файлы C, ассемблера, shell и makefile подсвечиваются по-своему и не дают ложных Lisp-ошибок.
+Если в дистрибутиве нет этих инструментов, сверху появляется плашка «Установить инструменты сборки», а `make` в терминале
+или в Run объясняет причину (`make: Permission denied`, код 127 значит «не установлен»), с полосой прогресса установки.
+
+**Копирование из консолей.** Текст в терминале, REPL и окне Run можно выделять мышью (протяжка за край прокручивает),
+двойной клик — слово или путь, тройной — строка, Ctrl+A — всё, Ctrl+C или правая кнопка > «Копировать» копирует,
+«Копировать всё» берёт весь журнал, Esc снимает выделение.
