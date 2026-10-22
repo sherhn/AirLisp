@@ -325,7 +325,7 @@ impl App {
                 }
                 Action::InstallAll(ids) => {
                     for id in ids {
-                        self.module_install(&id);
+                        self.module_use(&id);
                     }
                 }
             }
@@ -341,13 +341,16 @@ impl App {
         let pal = self.pal;
         let names: Vec<String> = self.needed_modules.iter().map(|id| self.mods.cards().into_iter().find(|c| &c.id == id).map_or(id.clone(), |c| c.name)).collect();
         let (mut install, mut open, mut later) = (false, false, false);
+        // modules that are here but switched off only need switching on
+        let all_here = self.needed_modules.iter().all(|id| self.mods.installed.iter().any(|m| &m.manifest.id == id));
         egui::Frame::new().fill(pal.accent.gamma_multiply(0.12)).corner_radius(widgets::radius()).stroke(Stroke::new(1.0, pal.accent.gamma_multiply(0.4))).inner_margin(egui::Margin::symmetric(14, 10)).outer_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 0 }).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
                 icons::paint(ui.painter(), r, Icon::Puzzle, pal.accent);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(i18n::fmt("This project works with: {}", &[&names.join(", ")])).font(fonts::semibold(13.0)));
-                    ui.label(RichText::new(tr("Install the modules for highlighting, tools and run commands of these languages.")).color(pal.text_dim).size(12.0));
+                    let hint = if all_here { tr("Switch these modules on for highlighting, tools and run commands of these languages.") } else { tr("Install the modules for highlighting, tools and run commands of these languages.") };
+                    ui.label(RichText::new(hint).color(pal.text_dim).size(12.0));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::icon_button(ui, &pal, Icon::Close, 26.0, pal.text_dim, tr("Not now")).clicked() {
@@ -356,7 +359,7 @@ impl App {
                     if widgets::secondary_button(ui, &pal, tr("Modules...")).clicked() {
                         open = true;
                     }
-                    if self.mods.index.is_some() && widgets::primary_button(ui, &pal, tr("Install")).clicked() {
+                    if (all_here || self.mods.index.is_some()) && widgets::primary_button(ui, &pal, if all_here { tr("Switch on") } else { tr("Install") }).clicked() {
                         install = true;
                     }
                 });
@@ -370,7 +373,7 @@ impl App {
         }
         if install {
             for id in self.needed_modules.clone() {
-                self.module_install(&id);
+                self.module_use(&id);
             }
         }
         if self.mods.index.is_none() && !self.mods.loading_index && self.mods.index_error.is_none() {

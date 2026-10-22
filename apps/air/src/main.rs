@@ -127,6 +127,10 @@ fn main() -> eframe::Result {
                         }
                     }
                 }
+            // a first start with nothing installed: show what can be downloaded
+            if args.script.is_none() && app.mods.store.is_some() && app.mods.installed.is_empty() && !app.settings.modules_welcome_done {
+                app.open_modules_tab();
+            }
             if let Some(path) = &args.script {
                 match script::load(path) {
                     Ok(s) => app.script = Some(s),
