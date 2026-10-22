@@ -419,18 +419,57 @@ pub fn install_sbcl_command(distro: &str) -> Command {
     c
 }
 
-/// Programs a C/assembly project built with make needs (os-pi and the like), in the order they are shown.
+/// Programs a C/assembly project built with make needs (os-pi and the like): without one of them the project cannot
+/// be built, so these are what the "install" banner is about.
 pub const BUILD_TOOLS: [&str; 8] = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"];
 
-/// Script that prints `TOOL=<path>` for every build tool (an empty path: missing). A login shell, so tools on the
-/// user's PATH count too.
-pub fn tools_check_script() -> String {
-    BUILD_TOOLS.iter().map(|t| format!("echo \"{t}=$(command -v {t} 2>/dev/null)\"")).collect::<Vec<_>>().join("; ")
+/// A group of the developer tools put into a distribution: its name, the programs that show it is there and the
+/// Debian/Ubuntu packages that bring them. Debian and Ubuntu get all groups; the other package managers only the
+/// core set of [`INSTALL_TOOLS_SCRIPT`]'s other branches (C toolchain, nasm, gdb, git, QEMU).
+pub struct ToolGroup {
+    pub name: &'static str,
+    pub programs: &'static [&'static str],
+    pub packages: &'static str,
 }
 
-/// Which build tools the check found (`true`) or missed.
+pub const TOOL_GROUPS: [ToolGroup; 8] = [
+    ToolGroup { name: "C and C++", programs: &["make", "gcc", "g++", "ld", "gdb", "cmake", "ninja", "pkg-config"], packages: "build-essential gdb cmake ninja-build pkg-config autoconf automake libtool ccache bear gcc-multilib g++-multilib" },
+    ToolGroup { name: "Clang and LLVM", programs: &["clang", "clangd", "lldb", "clang-format"], packages: "clang clangd lldb clang-format clang-tidy" },
+    ToolGroup { name: "Debugging and analysis", programs: &["valgrind", "strace", "ltrace", "gdb-multiarch", "xxd"], packages: "valgrind strace ltrace gdb-multiarch xxd" },
+    ToolGroup { name: "Git and network", programs: &["git", "curl", "wget", "ssh", "rsync"], packages: "git curl wget openssh-client rsync ca-certificates" },
+    ToolGroup { name: "Files and text", programs: &["zip", "unzip", "xz", "jq", "rg", "fdfind", "tree", "vim", "nano", "htop"], packages: "zip unzip xz-utils jq ripgrep fd-find tree less vim nano htop" },
+    ToolGroup { name: "Documentation", programs: &["man", "doxygen"], packages: "man-db manpages-dev doxygen" },
+    ToolGroup { name: "Python", programs: &["python3", "pip3"], packages: "python3 python3-pip python3-venv" },
+    ToolGroup { name: "OS development", programs: &["nasm", "qemu-system-i386", "qemu-system-x86_64", "qemu-img", "xorriso", "grub-mkrescue"], packages: "nasm qemu-system-x86 qemu-utils xorriso mtools grub-pc-bin" },
+];
+
+/// Every program of every group, once, in the order the groups list them.
+pub fn all_programs() -> Vec<&'static str> {
+    let mut v: Vec<&'static str> = Vec::new();
+    for g in &TOOL_GROUPS {
+        for p in g.programs {
+            if !v.contains(p) {
+                v.push(p);
+            }
+        }
+    }
+    v
+}
+
+/// The [`BUILD_TOOLS`] a check found missing.
+pub fn missing_core(found: &[(String, bool)]) -> Vec<String> {
+    found.iter().filter(|(n, ok)| !*ok && BUILD_TOOLS.contains(&n.as_str())).map(|(n, _)| n.clone()).collect()
+}
+
+/// Script that prints `TOOL=<path>` for every program of the groups (an empty path: missing). A login shell, so tools
+/// on the user's PATH count too.
+pub fn tools_check_script() -> String {
+    all_programs().iter().map(|t| format!("echo \"{t}=$(command -v {t} 2>/dev/null)\"")).collect::<Vec<_>>().join("; ")
+}
+
+/// Which programs the check found (`true`) or missed.
 pub fn parse_tools(text: &str) -> Vec<(String, bool)> {
-    BUILD_TOOLS
+    all_programs()
         .iter()
         .map(|t| {
             let found = text.lines().any(|l| l.trim().strip_prefix(&format!("{t}=")).is_some_and(|v| !v.trim().is_empty()));
@@ -439,7 +478,7 @@ pub fn parse_tools(text: &str) -> Vec<(String, bool)> {
         .collect()
 }
 
-/// Look for the build tools inside `distro`.
+/// Look for the developer tools inside `distro`.
 pub fn check_tools(distro: &str) -> Result<Vec<(String, bool)>, String> {
     let mut c = wsl_command();
     c.args(["-d", distro, "-e", "sh", "-lc", &tools_check_script()]);
@@ -453,14 +492,24 @@ pub fn check_tools(distro: &str) -> Result<Vec<(String, bool)>, String> {
     Ok(parse_tools(&out.text))
 }
 
-/// Shell script installing a C toolchain with 32-bit support, a debugger, git and QEMU (run as root).
-pub const INSTALL_TOOLS_SCRIPT: &str = "set -e
+/// Shell script installing the developer tools (run as root): on Debian and Ubuntu every group of [`TOOL_GROUPS`]
+/// (packages this release of the distribution does not have are skipped, not fatal); with the other package managers
+/// a C toolchain with 32-bit support, nasm, a debugger, git and QEMU.
+pub fn install_tools_script() -> String {
+    let packages: Vec<&str> = TOOL_GROUPS.iter().flat_map(|g| g.packages.split_whitespace()).collect::<Vec<_>>();
+    let apt = packages.join(" ");
+    format!(
+        "set -e
 echo '@@airlisp stage prepare'
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
   echo '@@airlisp stage install'
-  apt-get install -y build-essential gcc-multilib nasm gdb git qemu-system-x86
+  have=''
+  for p in {apt}; do
+    if apt-cache show \"$p\" >/dev/null 2>&1; then have=\"$have $p\"; else echo \"Skipped (this distribution has no $p)\"; fi
+  done
+  apt-get install -y $have
 elif command -v dnf >/dev/null 2>&1; then
   echo '@@airlisp stage install'
   dnf install -y make gcc glibc-devel.i686 libgcc.i686 nasm gdb git qemu-system-x86
@@ -479,12 +528,14 @@ else
 fi
 echo '@@airlisp stage verify'
 make --version | head -n 1
-gcc --version | head -n 1";
+gcc --version | head -n 1"
+    )
+}
 
-/// Install the build tools inside `distro` as root (`wsl -u root` needs no password).
+/// Install the developer tools inside `distro` as root (`wsl -u root` needs no password).
 pub fn install_tools_command(distro: &str) -> Command {
     let mut c = wsl_command();
-    c.args(["-d", distro, "-u", "root", "-e", "sh", "-c", INSTALL_TOOLS_SCRIPT]);
+    c.args(["-d", distro, "-u", "root", "-e", "sh", "-c", &install_tools_script()]);
     c
 }
 
@@ -652,18 +703,40 @@ mod tests {
     }
 
     #[test]
-    fn build_tools_are_reported() {
-        let text = "make=/usr/bin/make\ngcc=/usr/bin/gcc\nld=/usr/bin/ld\nnasm=\ngdb=\ngit=/usr/bin/git\nqemu-system-i386=\nqemu-system-x86_64=\n";
+    fn developer_tools_are_reported_by_group() {
+        let all = all_programs();
+        assert!(all.len() > 30 && BUILD_TOOLS.iter().all(|t| all.contains(t)), "every core tool is checked: {all:?}");
+        assert_eq!(all.iter().filter(|p| **p == "gdb").count(), 1, "a program in two groups is checked once");
+        let text = "make=/usr/bin/make\ngcc=/usr/bin/gcc\nld=/usr/bin/ld\nnasm=\ngdb=\ngit=/usr/bin/git\nqemu-system-i386=\nqemu-system-x86_64=\ncmake=/usr/bin/cmake\n";
         let tools = parse_tools(text);
-        assert_eq!(tools.len(), BUILD_TOOLS.len());
+        assert_eq!(tools.len(), all.len());
         assert!(tools.contains(&("make".to_string(), true)));
+        assert!(tools.contains(&("cmake".to_string(), true)));
         assert!(tools.contains(&("gdb".to_string(), false)));
-        assert!(tools.contains(&("qemu-system-i386".to_string(), false)));
-        assert!(tools_check_script().contains("command -v qemu-system-i386"));
+        assert!(tools.contains(&("clangd".to_string(), false)), "not printed means not found");
+        assert_eq!(missing_core(&tools), ["gdb", "nasm", "qemu-system-i386", "qemu-system-x86_64"], "only the core tools matter for the banner");
+        assert!(tools_check_script().contains("command -v qemu-system-i386") && tools_check_script().contains("command -v valgrind"));
+    }
+
+    #[test]
+    fn the_install_script_brings_every_group() {
+        let script = install_tools_script();
+        for g in &TOOL_GROUPS {
+            assert!(!g.name.is_empty() && !g.programs.is_empty());
+            for pkg in g.packages.split_whitespace() {
+                assert!(script.contains(pkg), "{pkg} of {}", g.name);
+            }
+        }
+        // what a developer expects to find
+        for pkg in ["build-essential", "cmake", "ninja-build", "clang", "clangd", "valgrind", "python3-pip", "curl", "gcc-multilib", "nasm", "qemu-system-x86"] {
+            assert!(script.contains(pkg), "{pkg}");
+        }
+        // a package this release does not have is skipped, not fatal
+        assert!(script.contains("apt-cache show"));
         let c = install_tools_command("Ubuntu");
         let a = args(&c);
         assert!(a.windows(2).any(|w| w == ["-u", "root"]));
-        assert!(a.last().unwrap().contains("gcc-multilib") && a.last().unwrap().contains("qemu-system-x86"));
+        assert_eq!(a.last().unwrap(), &script);
     }
 
     #[test]
@@ -794,7 +867,8 @@ mod tests {
     #[test]
     fn install_scripts_announce_their_phases() {
         use crate::setup_progress::MARKER;
-        for script in [INSTALL_SBCL_SCRIPT, INSTALL_TOOLS_SCRIPT] {
+        let tools = install_tools_script();
+        for script in [INSTALL_SBCL_SCRIPT, tools.as_str()] {
             let marker = |name: &str| format!("echo '{MARKER}{name}'");
             // the lists phase comes first, the check last, and every package manager announces its install phase
             let prepare = script.find(&marker("prepare")).expect("prepare");
@@ -804,7 +878,9 @@ mod tests {
             for manager in ["apt-get install", "dnf install", "zypper --non-interactive install", "pacman -Sy", "apk add"] {
                 let at = script.find(manager).unwrap_or_else(|| panic!("{manager}"));
                 let announced = script[..at].rfind(&marker("install")).expect("install marker");
-                assert!(at - announced < 60, "{manager}: the install marker is right before the command");
+                // nothing that installs or ends the phase lies between the marker and the command (apt only picks its list)
+                let between = &script[announced..at];
+                assert!(!between.contains("install -y") && !between.contains("apk add") && !between.contains(&marker("verify")), "{manager}: the install marker is right before the command");
             }
         }
     }
@@ -856,5 +932,37 @@ mod tests {
         let left = sleeping();
         handle.kill();
         assert_eq!(left, 0, "sleep outlived kill_marked");
+    }
+
+    /// Needs a real Debian/Ubuntu WSL distribution (`AIRLISP_TEST_DISTRO`, default Ubuntu-24.04): run the whole install
+    /// script with `apt-get install` turned into a simulation, so nothing is installed, and see that it gets through
+    /// (package names exist, the lists phase and the check run) and that the progress model follows its output.
+    #[test]
+    #[ignore = "needs a real WSL distribution"]
+    fn real_wsl_install_script_runs_in_simulation() {
+        use crate::setup_progress::{Kind, Stage, Tracker};
+        let distro = std::env::var("AIRLISP_TEST_DISTRO").unwrap_or_else(|_| "Ubuntu-24.04".into());
+        // a wrapper first on PATH: `apt-get install ...` becomes `apt-get -s install ...` (a simulation)
+        let shim = r#"d=$(mktemp -d)
+cat > $d/apt-get <<'EOS'
+#!/bin/sh
+if [ "$1" = install ]; then exec /usr/bin/apt-get -s "$@"; else exec /usr/bin/apt-get "$@"; fi
+EOS
+chmod +x $d/apt-get
+PATH=$d:$PATH
+export PATH
+"#;
+        let mut c = wsl_command();
+        c.args(["-d", &distro, "-u", "root", "-e", "sh", "-c", &format!("{shim}{}", install_tools_script())]);
+        let out = capture(c, Duration::from_secs(600)).expect("run");
+        assert!(out.ok(), "the script failed: {}", out.text);
+        assert!(!out.text.contains("Skipped"), "a package of the list does not exist in {distro}: {}", out.text.lines().filter(|l| l.contains("Skipped")).collect::<Vec<_>>().join("
+"));
+        for pkg in ["cmake", "clangd", "valgrind", "python3-pip", "nasm"] {
+            assert!(out.text.contains(&format!("Inst {pkg} ")) || out.text.contains(&format!("Inst {pkg}:")) || out.text.contains(&format!("{pkg} is already")), "{pkg} is not part of the plan: {}", out.text);
+        }
+        let mut t = Tracker::new(Kind::Packages);
+        t.feed(&out.text);
+        assert_eq!(t.progress().stage, Stage::Verify, "all phases were announced");
     }
 }
