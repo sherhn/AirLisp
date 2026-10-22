@@ -13,6 +13,43 @@ use crate::icons::{self, Icon};
 use crate::state::*;
 use crate::widgets::{self, PANEL_HEADER_H, ROW_H};
 
+/// What drawing a console log found out.
+#[derive(Clone, Copy, Debug, Default)]
+struct LogOut {
+    /// The mouse went down in the log: the keys are meant for it.
+    pressed: bool,
+    /// Text was copied to the clipboard.
+    copied: bool,
+}
+
+/// Where the rows of the console log last drawn are on screen; kept for the UI tests only (they drive the mouse by text).
+#[derive(Clone, Debug, Default)]
+pub struct LogGeometry {
+    /// Left edge of the rows, top of the first one, their height and the width of one character.
+    pub left: f32,
+    pub top: f32,
+    pub row_h: f32,
+    pub char_w: f32,
+    /// The text of the rows on screen, as shown.
+    pub rows: Vec<String>,
+}
+
+/// Id of the egui data holding the last [`LogGeometry`] and the last text a console copied.
+pub const LOG_GEOMETRY_ID: &str = "log_geometry";
+pub const LAST_COPIED_ID: &str = "log_last_copied";
+
+/// Put `text` on the clipboard (and remember it for the tests).
+fn copy_log_text(ctx: &egui::Context, text: String) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(LAST_COPIED_ID), text.clone()));
+    ctx.copy_text(text);
+}
+
+enum LogMenu {
+    Copy,
+    SelectAll,
+    CopyAll,
+}
+
 fn kind_color(app: &App, k: SymbolKind) -> Color32 {
     let p = &app.pal;
     match k {
@@ -456,30 +493,211 @@ impl App {
         }
     }
 
-    fn draw_log(&self, ui: &mut egui::Ui, id: &str, lines: &[LogLine], stick: bool, prompt: &str) {
+    /// A log as it is shown: the prompt or `=>` first, then the text. Copying uses the same text.
+    fn log_row_text(l: &LogLine, prompt: &str) -> String {
+        let text = l.text.trim_end_matches('\n');
+        match l.kind {
+            LogKind::Input => format!("{prompt} {text}"),
+            LogKind::Value => format!("=> {text}"),
+            LogKind::Trace => format!("  {text}"),
+            _ => text.to_string(),
+        }
+    }
+
+    /// A console log (REPL, terminal, run output) whose text can be selected with the mouse (drag, double click for
+    /// a word, triple click for a line) and copied with Ctrl+C or the right-click menu.
+    fn draw_log(&self, ui: &mut egui::Ui, id: &str, lines: &[LogLine], stick: bool, prompt: &str) -> LogOut {
+        use crate::log_select::{Pos, Selection, select_all, selected_text, word_range};
+        let pal = self.pal;
         let font = egui::FontId::monospace((self.settings.font_size - 1.0).max(9.0));
         let row_h = (ui.fonts_mut(|f| f.row_height(&font)) + 5.0).round();
+        let sel_id = ui.id().with(("log_selection", id));
+        let mut sel: Option<Selection> = ui.data(|d| d.get_temp::<Selection>(sel_id)).and_then(|s| s.clamped(lines.len()));
+        let mut out = LogOut::default();
+        let row_len = |i: usize| Self::log_row_text(&lines[i], prompt).chars().count();
+        // the character of a row under a point (relative to the row's text), at most `max`
+        let col_at = |g: &egui::Galley, p: Vec2, max: usize| -> usize { usize::from(g.cursor_from_pos(p).index).min(max) };
+        // what the menu asked for
+        let mut menu: Option<LogMenu> = None;
         egui::ScrollArea::both().id_salt(id).auto_shrink([false, false]).stick_to_bottom(stick).show_rows(ui, row_h, lines.len(), |ui, range| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            for l in &lines[range] {
+            // the rows on screen: where they are and how their text is laid out, for finding the character under the mouse
+            let mut rows: Vec<(usize, Rect, Pos2, std::sync::Arc<egui::Galley>, usize, egui::Response)> = Vec::new();
+            for line in range.clone() {
+                let l = &lines[line];
                 let text = l.text.trim_end_matches('\n');
-                let (prefix, color) = match l.kind {
-                    LogKind::Input => (format!("{prompt} "), self.log_color(l.kind)),
-                    LogKind::Value => ("=> ".to_string(), self.log_color(l.kind)),
-                    LogKind::Trace => ("  ".to_string(), self.log_color(l.kind)),
-                    _ => (String::new(), self.log_color(l.kind)),
+                let color = self.log_color(l.kind);
+                let prefix = match l.kind {
+                    LogKind::Input => format!("{prompt} "),
+                    LogKind::Value => "=> ".to_string(),
+                    LogKind::Trace => "  ".to_string(),
+                    _ => String::new(),
                 };
+                let len = prefix.chars().count() + text.chars().count();
                 let mut job = egui::text::LayoutJob::default();
                 job.append("", 14.0, egui::TextFormat::simple(font.clone(), color));
                 if !prefix.is_empty() {
-                    job.append(&prefix, 0.0, egui::TextFormat::simple(font.clone(), if l.kind == LogKind::Input { self.pal.ok } else { color }));
+                    job.append(&prefix, 0.0, egui::TextFormat::simple(font.clone(), if l.kind == LogKind::Input { pal.ok } else { color }));
                 }
                 job.append(text, 0.0, egui::TextFormat::simple(font.clone(), color));
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::hover());
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::CLICK | Sense::DRAG);
                 let g = ui.painter().layout_job(job);
-                ui.painter().galley(Pos2::new(rect.min.x, rect.center().y - g.size().y / 2.0), g, color);
+                let origin = Pos2::new(rect.min.x, rect.center().y - g.size().y / 2.0);
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                }
+                if let Some((from, to, goes_on)) = sel.and_then(|s| s.span(line, len)) {
+                    let x = |col: usize| origin.x + g.pos_from_cursor(egui::text::CCursor::new(col)).min.x;
+                    let (x0, mut x1) = (x(from), x(to));
+                    if goes_on {
+                        // the line break is part of the selection
+                        x1 += 7.0;
+                    }
+                    if x1 > x0 {
+                        ui.painter().rect_filled(Rect::from_min_max(Pos2::new(x0, rect.top()), Pos2::new(x1, rect.bottom())), 0.0, pal.selection);
+                    }
+                }
+                ui.painter().galley(origin, g.clone(), color);
+                resp.context_menu(|ui| {
+                    if ui.add_enabled(sel.is_some_and(|s| !s.is_empty()), egui::Button::new(tr("Copy"))).clicked() {
+                        menu = Some(LogMenu::Copy);
+                        ui.close();
+                    }
+                    if ui.button(tr("Select all")).clicked() {
+                        menu = Some(LogMenu::SelectAll);
+                        ui.close();
+                    }
+                    if ui.button(tr("Copy all")).clicked() {
+                        menu = Some(LogMenu::CopyAll);
+                        ui.close();
+                    }
+                });
+                rows.push((line, rect, origin, g, len, resp));
+            }
+            // the position (line, column) under a point; above or below the rows on screen: the first or last one
+            let at = |p: Pos2| -> Option<Pos> {
+                let (first, last) = (rows.first()?, rows.last()?);
+                if p.y < first.1.top() {
+                    return Some(Pos { line: first.0, col: 0 });
+                }
+                if p.y >= last.1.bottom() {
+                    return Some(Pos { line: last.0, col: last.4 });
+                }
+                let r = rows.iter().find(|r| p.y >= r.1.top() && p.y < r.1.bottom())?;
+                Some(Pos { line: r.0, col: col_at(&r.3, p - r.2, r.4) })
+            };
+            if self.script.is_some()
+                && let Some(first) = rows.first()
+            {
+                let char_w = ui.fonts_mut(|f| f.glyph_width(&font, 'M'));
+                let shown = range.clone().map(|i| Self::log_row_text(&lines[i], prompt)).collect();
+                ui.data_mut(|d| d.insert_temp(egui::Id::new(LOG_GEOMETRY_ID), LogGeometry { left: first.1.left(), top: first.1.top(), row_h, char_w, rows: shown }));
+            }
+            let pointer = ui.input(|i| i.pointer.latest_pos());
+            let primary = egui::PointerButton::Primary;
+            if rows.iter().any(|r| r.5.hovered() && ui.input(|i| i.pointer.primary_pressed())) {
+                // the keys must reach the log, not a text field somewhere else
+                out.pressed = true;
+                ui.ctx().memory_mut(|m| {
+                    if let Some(f) = m.focused() {
+                        m.surrender_focus(f);
+                    }
+                });
+            }
+            if rows.iter().any(|r| r.5.drag_started_by(primary))
+                && let Some(p) = ui.input(|i| i.pointer.press_origin()).and_then(at)
+            {
+                sel = Some(Selection::new(p, p));
+            }
+            if rows.iter().any(|r| r.5.dragged_by(primary)) {
+                if let (Some(s), Some(p)) = (sel.as_mut(), pointer.and_then(at)) {
+                    s.head = p;
+                }
+                // dragging past the edge scrolls
+                if let Some(p) = pointer {
+                    let clip = ui.clip_rect();
+                    let past = if p.y < clip.top() { clip.top() - p.y } else if p.y > clip.bottom() { clip.bottom() - p.y } else { 0.0 };
+                    if past != 0.0 {
+                        ui.scroll_with_delta(Vec2::new(0.0, past.signum() * (past.abs() * 0.3 + 3.0).min(40.0)));
+                    }
+                }
+                ui.ctx().request_repaint();
+            }
+            let clicked_row = |f: fn(&egui::Response) -> bool| rows.iter().find(|r| f(&r.5));
+            if let Some(r) = clicked_row(egui::Response::triple_clicked) {
+                sel = Some(Selection::new(Pos { line: r.0, col: 0 }, Pos { line: r.0, col: r.4 }));
+            } else if let Some(r) = clicked_row(egui::Response::double_clicked) {
+                let col = pointer.map_or(0, |p| col_at(&r.3, p - r.2, r.4));
+                let (from, to) = word_range(&Self::log_row_text(&lines[r.0], prompt), col);
+                sel = Some(Selection::new(Pos { line: r.0, col: from }, Pos { line: r.0, col: to }));
+            } else if rows.iter().any(|r| r.5.clicked()) {
+                sel = None;
+            }
+            // keyboard: copy, select all, and Escape to let go (never while the editor or a text field has the keys)
+            let keys_here = !self.editor_focus && !ui.ctx().text_edit_focused() && !self.popup.is_open();
+            if keys_here {
+                let hovered = ui.rect_contains_pointer(ui.clip_rect());
+                let has_sel = sel.is_some();
+                let (copy, all, esc) = ui.input_mut(|i| {
+                    (
+                        i.events.iter().any(|e| matches!(e, egui::Event::Copy)),
+                        // Ctrl+A is the log's when it has a selection or the mouse is over it; it is consumed only then
+                        (has_sel || hovered) && i.consume_key(egui::Modifiers::COMMAND, Key::A),
+                        has_sel && i.consume_key(egui::Modifiers::NONE, Key::Escape),
+                    )
+                });
+                if all {
+                    sel = select_all(lines.len(), row_len);
+                }
+                if copy && let Some(s) = sel.filter(|s| !s.is_empty()) {
+                    copy_log_text(ui.ctx(), selected_text(&s, lines.len(), |i| Self::log_row_text(&lines[i], prompt)));
+                    out.copied = true;
+                }
+                if esc {
+                    sel = None;
+                }
             }
         });
+        match menu {
+            Some(LogMenu::Copy) => {
+                if let Some(s) = sel.filter(|s| !s.is_empty()) {
+                    copy_log_text(ui.ctx(), selected_text(&s, lines.len(), |i| Self::log_row_text(&lines[i], prompt)));
+                    out.copied = true;
+                }
+            }
+            Some(LogMenu::SelectAll) => sel = select_all(lines.len(), row_len),
+            Some(LogMenu::CopyAll) => {
+                if let Some(all) = select_all(lines.len(), row_len) {
+                    copy_log_text(ui.ctx(), selected_text(&all, lines.len(), |i| Self::log_row_text(&lines[i], prompt)));
+                    out.copied = true;
+                }
+            }
+            None => {}
+        }
+        ui.data_mut(|d| match sel {
+            Some(s) => {
+                d.insert_temp(sel_id, s);
+            }
+            None => {
+                d.remove::<Selection>(sel_id);
+            }
+        });
+        out
+    }
+
+    /// What drawing a log found out: the mouse went down in it, or its text was copied.
+    fn after_log(&mut self, out: LogOut, terminal: bool) {
+        if out.pressed {
+            self.editor_focus = false;
+        }
+        if out.copied {
+            // select, Ctrl+C, and carry on typing
+            if terminal {
+                self.term.focus_input = true;
+            } else {
+                self.repl.focus_input = true;
+            }
+        }
     }
 
     /// Rounded single/multi-line input row shared by REPL and terminal: the prompt and the first line of text
@@ -535,10 +753,12 @@ impl App {
         });
         let input_h = 64.0 + 20.0 * (self.repl.input.matches('\n').count().min(5) as f32);
         let avail = ui.available_height() - input_h;
+        let mut log_out = LogOut::default();
         ui.allocate_ui(Vec2::new(ui.available_width(), avail.max(40.0)), |ui| {
             let stick = self.repl.stick_to_bottom;
-            self.draw_log(ui, "repl_log", &self.repl.log, stick, ">");
+            log_out = self.draw_log(ui, "repl_log", &self.repl.log, stick, ">");
         });
+        self.after_log(log_out, false);
         let id = egui::Id::new("repl_input");
         let mut submit = false;
         let mut hist: Option<isize> = None;
@@ -639,9 +859,11 @@ impl App {
             self.terminal_pick_script();
         }
         let avail = ui.available_height() - 64.0;
+        let mut log_out = LogOut::default();
         ui.allocate_ui(Vec2::new(ui.available_width(), avail.max(40.0)), |ui| {
-            self.draw_log(ui, "term_log", &self.term.log, true, "$");
+            log_out = self.draw_log(ui, "term_log", &self.term.log, true, "$");
         });
+        self.after_log(log_out, true);
         let id = egui::Id::new("term_input");
         let mut submit = false;
         let mut hist: Option<isize> = None;
@@ -695,7 +917,10 @@ impl App {
         if self.run.log.is_empty() && self.run.handle.is_none() {
             return;
         }
-        self.draw_log(ui, "run_log", &self.run.log, true, "$");
+        let out = self.draw_log(ui, "run_log", &self.run.log, true, "$");
+        if out.pressed {
+            self.editor_focus = false;
+        }
     }
 
     pub fn empty_state(&self, ui: &mut egui::Ui, icon: Icon, color: Color32, text: &str) {

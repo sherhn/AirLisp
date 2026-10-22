@@ -20,6 +20,7 @@ mod fonts;
 mod i18n;
 mod i18n_ru;
 mod icons;
+mod log_select;
 mod lucide;
 mod input;
 mod script;
