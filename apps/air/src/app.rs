@@ -1310,7 +1310,11 @@ impl App {
     // ------------------------------------------------------------------ completion
 
     pub fn refresh_completion(&mut self, explicit: bool) {
-        // the vocabulary is Lisp's: no popup in C files or makefiles
+        // the Lisp vocabulary and the REPL are Lisp's; the languages of modules complete from their own words
+        if self.docs.get(self.active).is_some_and(|d| d.diff.is_none() && !d.ed.is_lisp()) {
+            self.refresh_language_completion(explicit);
+            return;
+        }
         let Some(d) = self.docs.get(self.active).filter(|d| d.ed.is_lisp()) else {
             self.completion.active = false;
             return;

@@ -5,6 +5,7 @@
 mod app;
 mod app_env;
 mod hover;
+mod lang_completion;
 mod modules;
 mod preview;
 mod ui_preview;

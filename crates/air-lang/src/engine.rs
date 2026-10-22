@@ -149,6 +149,8 @@ pub struct Language {
     fold: FoldKind,
     list_re: Regex,
     quote_re: Regex,
+    /// The words the grammar names (keywords, built-ins, types), with how they are coloured: the vocabulary of the language.
+    words: Vec<(String, Class)>,
 }
 
 struct Rule {
@@ -261,7 +263,17 @@ impl Language {
         let fold = parse_fold(&def.fold).map_err(|e| format!("{}: {e}", def.id))?;
         let list_re = Regex::new(r"^(\s*)((?:[-*+]|\d+[.)]|#\.))(\s+)(\[[ xX]\]\s+)?(.*)$").expect("list pattern");
         let quote_re = Regex::new(r"^(\s*>+\s?)(.*)$").expect("quote pattern");
-        Ok(Language { def, rules, pairs, outline, first_line, indent, fold, list_re, quote_re })
+        let mut words: Vec<(String, Class)> = Vec::new();
+        for r in &def.grammar {
+            if let Some(class) = class_named(&r.class) {
+                for w in &r.words {
+                    if !words.iter().any(|(x, _)| x == w) {
+                        words.push((w.clone(), class));
+                    }
+                }
+            }
+        }
+        Ok(Language { def, rules, pairs, outline, first_line, indent, fold, list_re, quote_re, words })
     }
 
     /// Text without any support: no colours, no brackets, the indentation of the line above.
@@ -275,6 +287,11 @@ impl Language {
 
     pub fn name(&self) -> &str {
         &self.def.name
+    }
+
+    /// The words the grammar lists - keywords, built-in functions, types, constants - and how each is coloured.
+    pub fn words(&self) -> &[(String, Class)] {
+        &self.words
     }
 
     /// The markup a preview of this language's files renders (`markdown`, `rst`), if it has one.

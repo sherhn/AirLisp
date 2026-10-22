@@ -187,7 +187,8 @@ impl App {
                         d.ed.type_text(&t);
                         d.view.scroll_to_caret = true;
                         d.view.last_input_time = now;
-                        typed_symbol = t.chars().all(is_symbol_char);
+                        // Lisp names hold `-` and `*`; the names of other languages are letters, digits and `_`
+                        typed_symbol = if d.ed.is_lisp() { t.chars().all(is_symbol_char) } else { t.chars().all(|c| c.is_alphanumeric() || c == '_') };
                     }
                     if !typed_symbol {
                         self.completion.active = false;
@@ -231,7 +232,7 @@ impl App {
             // backspace etc. keep the list in sync
             let still = self.doc().is_some_and(|d| {
                 let c = d.ed.caret();
-                let (s, _) = d.ed.symbol_range_at(c);
+                let (s, _) = if d.ed.is_lisp() { d.ed.symbol_range_at(c) } else { d.ed.identifier_range_at(c) };
                 s == self.completion.start && c >= s
             });
             if still {

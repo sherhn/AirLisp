@@ -68,7 +68,14 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
 * **Documentation on hover** - rest the pointer on a name and a popup shows its arguments and what its author wrote: for
   Lisp from the project's own definition (lambda list and docstring) or, with the REPL running, from the image itself
   (`(car list)`, the documentation string); for the languages of modules from the definition found in the project, with
-  its docstring (Python) or the comment block above it (`///`, `/** */`, `#`, `;`), also when it is in another file.
+  its docstring (Python) or the comment block above it (`///`, `/** */`, `#`, `;`), also when it is in another file. A
+  call is matched to a definition by its number of arguments, so `open(path, flags)` is not taken for a project's own
+  one-argument `open`. Go to Declaration (Ctrl+B, Ctrl+click) and Find Usages use the same index in these languages.
+* **Completion in the languages of modules** - the popup (Ctrl+Space, or as you type) offers the names the project
+  defines (open files as they are now, the rest from the background index), the identifiers of the file, and the
+  words of the language - keywords, built-in functions, types - which are the ones its grammar lists. No server and no
+  model: the vocabulary is data of the module. Not in comments and strings. (Lisp keeps its own: the project, the
+  file and the running image.)
 * **Navigation** - Search Everywhere (Double Shift), Go to File/Symbol/Line, Recent Files,
   File Structure, Go to Declaration (Ctrl+B / Ctrl+click), Back/Forward, Find Usages, Find in Files.
 * **Refactoring** - Rename symbol across the project (token based: strings and comments untouched).
@@ -236,7 +243,14 @@ PyCharm: «Только редактор», «Редактор и просмот
 **Документация при наведении.** Если задержать указатель на имени, всплывает окно с аргументами и описанием: для Lisp —
 из определения в проекте (лямбда-список и докстрока) или, когда запущен REPL, из самого образа; для языков модулей —
 из найденного в проекте определения с докстрокой (Python) или комментарием над ним (`///`, `/** */`, `#`, `;`), в том
-числе из другого файла.
+числе из другого файла. Вызов сопоставляется с определением по числу аргументов: `open(path, flags)` не принимается за
+собственную функцию проекта `open` с одним аргументом. «Перейти к объявлению» (Ctrl+B, Ctrl+клик) и «Найти
+использования» в этих языках работают по тому же индексу.
+
+**Автодополнение в языках модулей.** Список (Ctrl+Space или при наборе) предлагает имена, определённые в проекте
+(открытые файлы — как они сейчас, остальные — из фонового индекса), идентификаторы файла и слова языка: ключевые слова,
+встроенные функции, типы — те, что перечислены в грамматике модуля. Ни сервера, ни модели: словарь — данные модуля.
+В комментариях и строках список не появляется.
 
 **Репозитории GitHub.** Во вкладке GitHub диалога «Получить из системы контроля версий» виден список ваших
 репозиториев (в том числе приватных): поиск, значки форков и архивов, язык, звёзды; клик выбирает, двойной клик
