@@ -246,6 +246,7 @@ impl App {
             self.editor_focus = true;
             self.completion.active = false;
         }
+        self.update_hover(ctx, idx, &out);
         if focused && let Some(off) = out.ctrl_click {
             let doc = &mut self.docs[idx];
             doc.ed.set_caret(off, false);

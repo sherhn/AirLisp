@@ -44,6 +44,15 @@ pub struct ViewState {
 }
 
 
+impl ViewState {
+    /// How the character at `offset` was coloured last (comment, string...), if it was drawn.
+    pub fn class_at(&self, offset: usize) -> Option<lisp_syntax::highlight::Class> {
+        let (_, spans) = self.spans.as_ref()?;
+        let i = spans.partition_point(|s| s.end <= offset);
+        spans.get(i).filter(|s| s.start <= offset).map(|s| s.class)
+    }
+}
+
 pub struct ViewCfg<'a> {
     pub pal: &'a Palette,
     pub font_size: f32,
@@ -67,6 +76,10 @@ pub struct ViewOut {
     /// Screen position just below the caret, for popups.
     pub caret_screen: Option<Pos2>,
     pub hover_offset: Option<usize>,
+    /// The character the pointer is exactly over (`None` past the end of a line).
+    pub hover_char: Option<usize>,
+    /// Where the pointer is.
+    pub hover_pos: Option<Pos2>,
     pub text_rect: Option<Rect>,
     /// A fold chevron was clicked.
     pub fold_toggle: Option<FoldKey>,
@@ -420,6 +433,20 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
             let disp = (rel.x / cw + 0.5).floor().max(0.0) as usize;
             ed.offset_of(line_no, char_col_from_display(line, disp))
         };
+        let char_at = |p: Pos2, ed: &Editor| -> Option<usize> {
+            let row = ((p.y - rect.min.y) / lh).floor();
+            if row < 0.0 || row as usize >= rows.len() {
+                return None;
+            }
+            let line_no = rows.at(row as usize);
+            let line = ed.line_text(line_no);
+            let disp = ((p.x - origin.x) / cw).floor();
+            if disp < 0.0 {
+                return None;
+            }
+            let col = char_col_from_display(line, disp as usize);
+            (col < line.chars().count()).then(|| ed.offset_of(line_no, col))
+        };
         if resp.hovered() {
             let ctrl = ui.input(|i| i.modifiers.command);
             if let Some(hp) = ui.input(|i| i.pointer.hover_pos())
@@ -427,6 +454,8 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
             {
                 let off = pos_to_offset(hp, ed);
                 out.hover_offset = Some(off);
+                out.hover_char = char_at(hp, ed);
+                out.hover_pos = Some(hp);
                 ui.set_cursor_icon(if ctrl { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Text });
                 if let Some(m) = cfg.markers.iter().find(|m| m.start <= off && off <= m.end.max(m.start + 1) && !m.msg.is_empty()) {
                     hover_marker = Some(m.msg.clone());

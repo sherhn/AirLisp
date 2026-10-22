@@ -175,6 +175,8 @@ pub enum Pending {
     ParamInfo { name: String },
     Macroexpand,
     Definition { name: String },
+    /// What the hover popup shows for a name.
+    Hover { cache_key: String, name: String },
 }
 
 #[derive(Default)]

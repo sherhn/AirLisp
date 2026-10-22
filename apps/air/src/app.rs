@@ -49,6 +49,10 @@ pub struct App {
     pub completion: Completion,
     pub toasts: Vec<Toast>,
     pub hint: Option<(String, f64)>,
+    /// The documentation popup of the name the pointer rests on.
+    pub hover: crate::hover::HoverState,
+    /// UI tests: the pointer rests on this offset of the active document, wherever the real pointer is.
+    pub fake_hover: Option<usize>,
     pub status: String,
     pub editor_focus: bool,
     pub nav_back: Vec<(PathBuf, usize)>,
@@ -135,6 +139,8 @@ impl App {
             completion: Completion::default(),
             toasts: vec![],
             hint: None,
+            hover: Default::default(),
+            fake_hover: None,
             status: String::new(),
             editor_focus: true,
             nav_back: vec![],
@@ -851,6 +857,7 @@ impl App {
                     self.hint = Some((i18n::fmt("No parameter info for {}", &[&name]), self.now + 3.0));
                 }
             }
+            Pending::Hover { cache_key, name } => self.hover_reply(&cache_key, &name, payload),
             Pending::Macroexpand => {
                 self.popup = Popup::Info { title: tr("Macroexpand").into(), text: payload.to_string() };
             }
@@ -1103,6 +1110,43 @@ impl App {
                 self.popup = Popup::Palette(PaletteState { mode: PaletteMode::Choose, query: String::new(), items: items.clone(), selected: 0, built_for: None, fixed: Some(items), just_opened: true });
             }
         }
+    }
+
+    /// A definition of the project, taken apart: what the hover popup and Quick Documentation show.
+    pub fn local_definition_parts(&self, name: &str) -> Option<DefinitionParts> {
+        let defs = self.project.as_ref()?.index.find_definitions(name);
+        let d = defs.first()?;
+        let text = self
+            .docs
+            .iter()
+            .find(|x| x.path.as_deref() == Some(d.path.as_path()))
+            .map(|x| x.ed.text().to_string())
+            .or_else(|| std::fs::read_to_string(&d.path).ok())?;
+        let dialect = lisp_dialect_of(&d.path);
+        let p = lisp_syntax::parse(&text, dialect);
+        let tl = p.top_level();
+        let form = tl.iter().find(|f| p.start_of(**f) == d.def.start)?;
+        let open = p.partner.get(form.last).copied().flatten()?;
+        let kids = p.children(open);
+        let sig_end = kids.iter().take(3).map(|k| p.end_of(*k)).max()?;
+        let header = text[d.def.start..sig_end].to_string() + ")";
+        let is_var = matches!(d.def.operator.to_ascii_lowercase().as_str(), "defvar" | "defparameter" | "defconstant" | "define-constant");
+        // (defun name (lambda list) "doc" body...): the string is documentation only when forms follow it
+        let doc = kids
+            .get(3)
+            .filter(|k| p.tokens[k.first].kind == TokenKind::String && (is_var || kids.len() > 4))
+            .map(|k| text[p.start_of(*k)..p.end_of(*k)].to_string())
+            .map(|s| s.trim().trim_matches('"').replace("\\\"", "\"").replace("\\\\", "\\"));
+        // the call as written: (name a b &optional c)
+        let signature = if is_var || kids.len() < 3 {
+            d.def.name.clone()
+        } else {
+            let ll = &text[p.start_of(kids[2])..p.end_of(kids[2])];
+            let inner = ll.trim().strip_prefix('(').and_then(|r| r.strip_suffix(')')).unwrap_or(ll.trim()).split_whitespace().collect::<Vec<_>>().join(" ");
+            if inner.is_empty() { format!("({})", d.def.name) } else { format!("({} {})", d.def.name, inner) }
+        };
+        let line = text[..d.def.start.min(text.len())].matches('\n').count();
+        Some(DefinitionParts { header, signature, doc, kind: d.def.kind.label().to_string(), path: d.path.clone(), line })
     }
 
     fn local_definition_text(&self, name: &str) -> Option<String> {
@@ -1573,4 +1617,17 @@ impl App {
 
 fn live_len_gt1() -> bool {
     true
+}
+
+/// A definition of the project, taken apart (see `App::local_definition_parts`).
+pub struct DefinitionParts {
+    /// `(defun name (args)` plus the closing bracket, as Quick Documentation shows it.
+    pub header: String,
+    /// The call as written: `(name a b)`.
+    pub signature: String,
+    pub doc: Option<String>,
+    pub kind: String,
+    pub path: PathBuf,
+    /// 0-based line of the definition.
+    pub line: usize,
 }

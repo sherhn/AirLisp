@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::def::LangDef;
 use crate::engine::Language;
 
+#[derive(Clone)]
 pub struct LanguageSet {
     langs: Vec<Arc<Language>>,
     plain: Arc<Language>,

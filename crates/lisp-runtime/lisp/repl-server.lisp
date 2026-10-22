@@ -134,6 +134,32 @@
                         for i below 300
                         collect (format nil "~A~C~A" nm #\Tab kind))))))
 
+(defun arglist-string (s)
+  "\"(name arg ...)\" for the function or macro S, or an empty string."
+  (if (fboundp s)
+      (let ((ll #+sbcl (ignore-errors (sb-introspect:function-lambda-list (if (macro-function s) (macro-function s) (fdefinition s))))
+                #-sbcl nil)
+            (*print-case* :downcase)
+            (*package* (or (symbol-package s) *package*)))
+        (format nil "(~A~@[ ~{~A~^ ~}~])" (string-downcase (symbol-name s))
+                (mapcar (lambda (x) (let ((*print-case* :downcase)) (prin1-to-string x))) ll)))
+      ""))
+
+(defun do-hover (id text)
+  "What the hover popup shows for a symbol: its kind, its lambda list and its documentation, one per line."
+  (let ((s (parse-symbol-designator text)))
+    (emit "reply" id
+          (if (and s (not (keywordp s)) (or (fboundp s) (boundp s) (find-class s nil)))
+              (let ((*print-case* :downcase))
+                (with-output-to-string (o)
+                  (format o "~A~%" (symbol-kind s))
+                  (format o "~A~%" (substitute #\Space #\Newline (arglist-string s)))
+                  (let ((d (or (and (fboundp s) (ignore-errors (documentation s 'function)))
+                               (and (boundp s) (ignore-errors (documentation s 'variable)))
+                               (ignore-errors (documentation s 'type)))))
+                    (when d (write-string d o)))))
+              ""))))
+
 (defun do-arglist (id text)
   (let* ((s (parse-symbol-designator text))
          (ll (and s (fboundp s)
@@ -211,6 +237,7 @@
         ((string= kind "complete") (do-complete id payload))
         ((string= kind "arglist") (do-arglist id payload))
         ((string= kind "doc") (do-doc id payload))
+        ((string= kind "hover") (do-hover id payload))
         ((string= kind "macroexpand") (do-macroexpand id payload))
         ((string= kind "definition") (do-find-definition id payload))
         ((string= kind "apropos") (do-apropos id payload))

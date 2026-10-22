@@ -107,6 +107,15 @@ def run_one(script_path):
                 shutil.copy2(f, site / f.name)
             subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
             subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "markup"], cwd=proj, capture_output=True, check=True)
+        if "@hover" in text:
+            # documented functions in Lisp, Python and C, and a call of one of them from another file
+            for f in (ROOT / "tests" / "fixtures" / "hover").rglob("*"):
+                if f.is_file():
+                    dest = proj / f.relative_to(ROOT / "tests" / "fixtures" / "hover")
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, dest)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "hover"], cwd=proj, capture_output=True, check=True)
         if "@echo_module" in text:
             # a module of its own with a run command that needs no tools: `echo`, on Windows and in the fake Linux alike
             files = {"tools/hello.zz": "say hello\n"}

@@ -6,6 +6,7 @@ pub mod clone;
 pub mod cmdscript;
 pub mod commands;
 pub mod diff;
+pub mod docinfo;
 pub mod editor;
 pub mod exec;
 pub mod git;

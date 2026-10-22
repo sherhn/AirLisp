@@ -66,6 +66,7 @@ impl App {
                 self.repl.log.iter().any(|l| l.text.contains(t))
             }
             "completion" => self.completion.active && !self.completion.items.is_empty(),
+            "hover" => self.hover.info.is_some(),
             "git_ready" => self.git.repo.is_some() && self.git.head.is_some() && self.git.rx.is_none(),
             "git_dirty" => self.git.rx.is_none() && !self.git.changes.is_empty(),
             "git_settled" => self.git.rx.is_none(),
@@ -830,6 +831,57 @@ impl App {
                 }
                 if !errors.is_empty() {
                     self.fail(format!("assert_preview: {}", errors.join("; ")));
+                }
+            }
+            // rest the pointer on the first occurrence of `value` in the active document (`occurrence`: which one, from 1)
+            "hover_on" => {
+                let nth = step["occurrence"].as_u64().unwrap_or(1).max(1) as usize;
+                let found = self.doc().and_then(|d| d.ed.text().match_indices(sval.as_str()).nth(nth - 1).map(|(i, _)| i));
+                match found {
+                    Some(off) => {
+                        self.fake_hover = Some(off);
+                        self.hide_hover();
+                    }
+                    None => self.fail(format!("hover_on: {sval:?} not in the document")),
+                }
+            }
+            "hover_off" => {
+                self.fake_hover = None;
+                self.hide_hover();
+            }
+            // the hover popup: `title`, and `contains` (in the signature or the documentation); `value: "none"`: no popup
+            "assert_hover" => {
+                let info = self.hover.info.clone();
+                if step["value"].as_str() == Some("none") {
+                    if let Some(i) = info {
+                        self.fail(format!("assert_hover: expected no popup, got {:?}", i.title));
+                    }
+                } else {
+                    match info {
+                        None => self.fail("assert_hover: no popup".to_string()),
+                        Some(i) => {
+                            let mut errors = vec![];
+                            if let Some(t) = step["title"].as_str()
+                                && i.title != t
+                            {
+                                errors.push(format!("title: expected {t:?}, got {:?}", i.title));
+                            }
+                            if let Some(c) = step["contains"].as_str()
+                                && !i.signature.contains(c)
+                                && !i.doc.contains(c)
+                            {
+                                errors.push(format!("{c:?} is in neither the signature {:?} nor the documentation {:?}", i.signature, i.doc));
+                            }
+                            if let Some(k) = step["kind"].as_str()
+                                && i.kind != k
+                            {
+                                errors.push(format!("kind: expected {k:?}, got {:?}", i.kind));
+                            }
+                            if !errors.is_empty() {
+                                self.fail(format!("assert_hover: {}", errors.join("; ")));
+                            }
+                        }
+                    }
                 }
             }
             "assert_toast" => {

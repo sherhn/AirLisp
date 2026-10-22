@@ -885,4 +885,6 @@ pub const RU: &[(&str, &str)] = &[
     ("Preview Only", "Только просмотр"),
     ("Only Markdown and reStructuredText files have a preview", "Просмотр есть только у файлов Markdown и reStructuredText"),
     ("Cannot find {}", "Не найден {}"),
+    ("Common Lisp image", "образ Common Lisp"),
+    ("Common Lisp standard name. Start the REPL (Alt+8) to see its arguments and documentation.", "Стандартное имя Common Lisp. Запустите REPL (Alt+8), чтобы увидеть его аргументы и документацию."),
 ];

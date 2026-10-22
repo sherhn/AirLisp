@@ -579,6 +579,26 @@ impl Editor {
         (s, e)
     }
 
+    /// The identifier (letters, digits and `_`) that contains `offset` or ends at it: what a name of another language is.
+    pub fn identifier_range_at(&self, offset: usize) -> (usize, usize) {
+        let is_id = |c: char| c.is_alphanumeric() || c == '_';
+        let mut s = offset;
+        let mut e = offset;
+        while let Some(c) = self.char_before(s) {
+            if !is_id(c) {
+                break;
+            }
+            s -= c.len_utf8();
+        }
+        while let Some(c) = self.char_after(e) {
+            if !is_id(c) {
+                break;
+            }
+            e += c.len_utf8();
+        }
+        (s, e)
+    }
+
     pub fn extend_selection(&mut self) {
         let (s, e) = self.selection();
         let cur = (s, e);

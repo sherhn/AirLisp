@@ -56,6 +56,7 @@ impl App {
         self.draw_info_dialogs(ctx);
         self.draw_completion(ctx);
         self.draw_hint(ctx);
+        self.draw_hover(ctx);
         self.draw_hunk_popup(ctx);
     }
 

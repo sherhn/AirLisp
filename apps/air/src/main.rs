@@ -4,6 +4,7 @@
 
 mod app;
 mod app_env;
+mod hover;
 mod modules;
 mod preview;
 mod ui_preview;
