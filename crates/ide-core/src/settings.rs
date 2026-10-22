@@ -65,6 +65,10 @@ pub struct Settings {
     pub wsl_sbcl: String,
     /// Where Windows drives are mounted inside the distribution; empty = `/mnt/`.
     pub wsl_mount_root: String,
+    /// Where modules are downloaded from (a web address or a folder); empty: the published registry.
+    pub registry_url: String,
+    /// The first-run welcome (choosing modules) has been shown.
+    pub modules_welcome_done: bool,
     /// Default parent folder for "Get from Version Control"; empty = ~/AirProjects.
     pub clone_dir: String,
     /// The GitHub login last signed in with or looked up (prefills the GitHub tab); never a secret.
@@ -95,6 +99,8 @@ impl Default for Settings {
             wsl_distro: String::new(),
             wsl_sbcl: String::new(),
             wsl_mount_root: String::new(),
+            registry_url: String::new(),
+            modules_welcome_done: false,
             clone_dir: String::new(),
             github_user: String::new(),
             github_autologin: false,

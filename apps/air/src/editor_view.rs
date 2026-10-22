@@ -140,8 +140,8 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     // ---- caches
     let rev = ed.revision();
     if state.spans.as_ref().is_none_or(|(r, _)| *r != rev) {
-        let spans = match ed.other_lang() {
-            Some(l) => lisp_syntax::other::highlight(ed.text(), l),
+        let spans = match ed.language_spans() {
+            Some(s) => s.as_ref().clone(),
             None => highlight(ed.text(), &ed.parsed()),
         };
         state.spans = Some((rev, spans));

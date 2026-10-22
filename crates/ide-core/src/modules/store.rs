@@ -146,23 +146,50 @@ impl ModuleStore {
             let _ = fs::remove_dir_all(&tmp);
             return Err(e);
         }
-        let manifest = match fs::read_to_string(tmp.join("module.json")).map_err(|e| e.to_string()).and_then(|j| Manifest::parse(&j)) {
-            Ok(m) if m.id == entry.id => m,
-            Ok(m) => {
+        self.put_in_place(&entry.id, &tmp)
+    }
+
+    /// Install a module from files that come with the program (nothing is downloaded).
+    pub fn install_bytes(&self, id: &str, files: &[(&str, &[u8])]) -> Result<Manifest, String> {
+        if !is_plain_name(id) {
+            return Err(format!("{id}: not a module id"));
+        }
+        fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
+        let tmp = self.dir.join(format!(".installing-{id}"));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+        for (name, bytes) in files {
+            if !is_plain_name(name) {
                 let _ = fs::remove_dir_all(&tmp);
-                return Err(format!("{}: the downloaded module calls itself {:?}", entry.id, m.id));
+                return Err(format!("{id}: the file name {name:?} is not allowed"));
+            }
+            if let Err(e) = fs::write(tmp.join(name), bytes) {
+                let _ = fs::remove_dir_all(&tmp);
+                return Err(format!("{name}: {e}"));
+            }
+        }
+        self.put_in_place(id, &tmp)
+    }
+
+    /// Check the module in `tmp` and move it to its place, keeping what was there if anything goes wrong.
+    fn put_in_place(&self, id: &str, tmp: &Path) -> Result<Manifest, String> {
+        let manifest = match fs::read_to_string(tmp.join("module.json")).map_err(|e| e.to_string()).and_then(|j| Manifest::parse(&j)) {
+            Ok(m) if m.id == id => m,
+            Ok(m) => {
+                let _ = fs::remove_dir_all(tmp);
+                return Err(format!("{id}: the module calls itself {:?}", m.id));
             }
             Err(e) => {
-                let _ = fs::remove_dir_all(&tmp);
-                return Err(format!("{}: {e}", entry.id));
+                let _ = fs::remove_dir_all(tmp);
+                return Err(format!("{id}: {e}"));
             }
         };
-        let (dest, old) = (self.dir.join(&entry.id), self.dir.join(format!(".replaced-{}", entry.id)));
+        let (dest, old) = (self.dir.join(id), self.dir.join(format!(".replaced-{id}")));
         let _ = fs::remove_dir_all(&old);
         if dest.exists() {
             fs::rename(&dest, &old).map_err(|e| format!("{}: {e}", dest.display()))?;
         }
-        if let Err(e) = fs::rename(&tmp, &dest) {
+        if let Err(e) = fs::rename(tmp, &dest) {
             // put the old one back
             if old.exists() {
                 let _ = fs::rename(&old, &dest);
@@ -171,7 +198,7 @@ impl ModuleStore {
         }
         let _ = fs::remove_dir_all(&old);
         let mut s = self.state();
-        s.enabled.entry(entry.id.clone()).or_insert(true);
+        s.enabled.entry(id.to_string()).or_insert(true);
         self.save_state(&s)?;
         Ok(manifest)
     }
@@ -310,5 +337,20 @@ mod tests {
         assert!(ok.is_empty());
         assert_eq!(bad.len(), 2, "{bad:?}");
         assert!(st.remove("../x").is_err());
+    }
+
+    #[test]
+    fn modules_that_come_with_the_program_install_without_a_registry() {
+        let d = TempDir::new("bytes");
+        let st = store(&d);
+        let m = st.install_bytes("lisp", &[("module.json", br#"{"id":"lisp","name":"Lisp","version":"1.0.0","builtin":"lisp"}"#), ("cover.png", &[1, 2])]).unwrap();
+        assert_eq!(m.builtin, "lisp");
+        assert!(st.get("lisp").unwrap().enabled);
+        // wrong id, bad file names and bad manifests leave nothing behind
+        assert!(st.install_bytes("other", &[("module.json", br#"{"id":"lisp","name":"L","version":"1.0.0"}"#)]).is_err());
+        assert!(st.install_bytes("x", &[("../module.json", b"{}")]).is_err());
+        assert!(st.install_bytes("y", &[("module.json", b"nope")]).is_err());
+        assert_eq!(st.installed().len(), 1);
+        assert!(fs::read_dir(st.dir()).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with(".installing")));
     }
 }

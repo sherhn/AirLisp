@@ -55,7 +55,10 @@ impl Doc {
         let text = String::from_utf8(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not valid UTF-8 text"))?;
         let dialect = Dialect::from_path(path).unwrap_or_default();
         let mut ed = Editor::new(&text, dialect);
-        ed.set_other_lang(lisp_syntax::other::lang_of(path));
+        // until the app says what language it is: Lisp is Lisp, anything else plain text
+        if !lisp_syntax::dialect::is_lisp_file(path) {
+            ed.set_language(Some(std::sync::Arc::new(air_lang::Language::plain())));
+        }
         Ok(Doc {
             id: next_id(),
             diff: None,
@@ -111,7 +114,10 @@ impl Doc {
         let rev = self.ed.revision();
         if self.outline_cache.as_ref().is_none_or(|(r, _)| *r != rev) {
             // the outline is made of Lisp definitions; other files have none
-            let defs = if self.ed.is_lisp() { lisp_syntax::outline::outline_parsed(self.ed.text(), &self.ed.parsed()) } else { vec![] };
+            let defs = match self.ed.language() {
+                None => lisp_syntax::outline::outline_parsed(self.ed.text(), &self.ed.parsed()),
+                Some(l) => l.outline(self.ed.text()),
+            };
             self.outline_cache = Some((rev, defs));
         }
         &self.outline_cache.as_ref().expect("just filled").1
@@ -141,8 +147,13 @@ impl Doc {
     pub fn save_as(&mut self, path: &Path) -> io::Result<()> {
         self.path = Some(path.to_path_buf());
         self.ed.set_dialect(Dialect::from_path(path).unwrap_or_default());
-        self.ed.set_other_lang(lisp_syntax::other::lang_of(path));
         self.save()
+    }
+
+    /// Read the text in `lang` (`None`: Lisp).
+    pub fn set_language(&mut self, lang: Option<std::sync::Arc<air_lang::Language>>) {
+        self.ed.set_language(lang);
+        self.outline_cache = None;
     }
 
     pub fn reload(&mut self) -> io::Result<()> {

@@ -4,6 +4,7 @@
 
 mod app;
 mod app_env;
+mod modules;
 mod brand;
 mod app_git;
 mod app_github;

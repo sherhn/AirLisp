@@ -29,9 +29,28 @@ pub fn scan(root: &Path) -> (HashSet<String>, HashSet<String>) {
     (exts, names)
 }
 
+/// The extensions and file names (lower case) of a list of files.
+pub fn scan_files<'a>(files: impl IntoIterator<Item = &'a Path>) -> (HashSet<String>, HashSet<String>) {
+    let (mut exts, mut names) = (HashSet::new(), HashSet::new());
+    for p in files {
+        if let Some(name) = p.file_name() {
+            names.insert(name.to_string_lossy().to_ascii_lowercase());
+        }
+        if let Some(ext) = p.extension() {
+            exts.insert(ext.to_string_lossy().to_ascii_lowercase());
+        }
+    }
+    (exts, names)
+}
+
 /// The ids of the modules (given as `(id, how to detect it)`, in this order) whose extensions or files are in `root`.
 pub fn needed(root: &Path, modules: &[(String, Detect)]) -> Vec<String> {
     let (exts, names) = scan(root);
+    needed_in(&exts, &names, modules)
+}
+
+/// The same from a scan (see [`scan`] and [`scan_files`]).
+pub fn needed_in(exts: &HashSet<String>, names: &HashSet<String>, modules: &[(String, Detect)]) -> Vec<String> {
     modules
         .iter()
         .filter(|(_, d)| d.extensions.iter().any(|e| exts.contains(&e.to_ascii_lowercase())) || d.files.iter().any(|f| names.contains(&f.to_ascii_lowercase())))

@@ -86,6 +86,12 @@ pub struct App {
     pub unix_project: bool,
     /// The "build tools are missing" banner was closed (until the project is opened again or a command is not found).
     pub tools_banner_dismissed: bool,
+    /// The modules (languages and their tools): what is installed, what the registry offers.
+    pub mods: crate::modules::ModulesState,
+    /// Modules the open project asks for or looks like it needs that are not on yet (the banner offers them).
+    pub needed_modules: Vec<String>,
+    /// The "this project needs modules" banner was closed.
+    pub modules_banner_dismissed: bool,
     /// Targets of the project's makefile, offered as run configurations.
     pub make_targets: Vec<String>,
     /// The running/last make: where it ran, to find the files of its compiler messages.
@@ -108,7 +114,7 @@ impl App {
         let pal = Palette::for_theme(settings.theme);
         crate::i18n::set(settings.language);
         let lisp = crate::app_wsl::resolve_lisp(&settings);
-        App {
+        let mut app = App {
             pal,
             keymap: Keymap::default_keymap(),
             project: None,
@@ -158,6 +164,9 @@ impl App {
             env_banner: false,
             unix_project: false,
             tools_banner_dismissed: false,
+            mods: Default::default(),
+            needed_modules: vec![],
+            modules_banner_dismissed: false,
             make_targets: vec![],
             make_run: None,
             script: None,
@@ -166,7 +175,9 @@ impl App {
             frame_no: 0,
             shift_tap: (false, false, -10.0),
             settings,
-        }
+        };
+        app.modules_init();
+        app
     }
 
     // ------------------------------------------------------------------ small helpers
@@ -279,6 +290,7 @@ impl App {
             p.files = files;
             p.index_rx = None;
             p.tree_ver += 1;
+            self.refresh_needed_modules();
         }
     }
 
@@ -338,7 +350,8 @@ impl App {
             _ => {}
         }
         match Doc::open(path) {
-            Ok(d) => {
+            Ok(mut d) => {
+                self.assign_language(&mut d);
                 if let Some(p) = self.project.as_mut() {
                     p.index.update_file(path, d.ed.text(), d.ed.dialect());
                 }
@@ -437,7 +450,9 @@ impl App {
             }
         }
         self.untitled_counter += 1;
-        self.docs.push(Doc::untitled(self.untitled_counter));
+        let mut d = Doc::untitled(self.untitled_counter);
+        self.assign_language(&mut d);
+        self.docs.push(d);
         self.active = self.docs.len() - 1;
         self.editor_focus = true;
     }
@@ -614,6 +629,7 @@ impl App {
         self.git_poll();
         self.poll_terminal();
         self.poll_wsl();
+        self.poll_modules(ctx);
         self.poll_github();
         self.git_update_bases();
 

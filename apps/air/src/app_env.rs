@@ -23,6 +23,8 @@ pub struct ProjectConfig {
     pub linux: Option<String>,
     /// The user chose (answered the question or switched by hand); until then the global setting applies.
     pub decided: bool,
+    /// Modules the project asks for (chosen when it was created or imported): they are offered when missing.
+    pub modules: Vec<String>,
 }
 
 fn config_path(root: &Path) -> std::path::PathBuf {
@@ -106,7 +108,7 @@ impl App {
         if self.project_on_linux_fs() {
             return;
         }
-        self.project_cfg = ProjectConfig { linux: distro.clone(), decided: true };
+        self.project_cfg = ProjectConfig { linux: distro.clone(), decided: true, modules: self.project_cfg.modules.clone() };
         if let Err(e) = save_config(&root, &self.project_cfg) {
             self.toast(i18n::fmt("Cannot save the project settings: {}", &[&e]), Sev::Error);
         }

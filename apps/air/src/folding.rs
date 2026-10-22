@@ -29,19 +29,11 @@ pub fn regions(ed: &Editor) -> Vec<Region> {
             }
         }
     };
-    if let Some(lang) = ed.other_lang() {
-        // other languages fold their brace blocks (C functions, structs, ...)
-        let mut stack = Vec::new();
-        for s in lisp_syntax::other::highlight(text, lang).iter().filter(|s| s.class == lisp_syntax::highlight::Class::Bracket) {
-            match text.as_bytes()[s.start] {
-                b'{' => stack.push(s.start),
-                b'}' => {
-                    if let Some(o) = stack.pop() {
-                        add(line_of(o), line_of(s.start));
-                    }
-                }
-                _ => {}
-            }
+    if let Some(lang) = ed.language() {
+        // another language folds the way its definition says: braces, indentation or headings
+        let spans = ed.language_spans().unwrap_or_default();
+        for (a, b) in lang.fold_regions(text, &spans) {
+            add(a, b);
         }
         return keyed(text, &starts, by_start);
     }

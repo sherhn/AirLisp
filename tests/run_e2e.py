@@ -8,6 +8,7 @@ Screenshots (taken by the app itself, never of the desktop) are written to targe
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -121,6 +122,18 @@ def run_one(script_path):
 
             shutil.rmtree(proj / ".git", onexc=_unlock)
         env = dict(os.environ, AIR_CONFIG_DIR=str(tmp / "cfg"))
+        # modules come from the registry of this repository; a script gets Lisp, plus what `@modules a,b` names (a kernel
+        # project also C, assembler and make), and `@no_modules` starts with none
+        env["AIR_REGISTRY"] = str(ROOT / "registry")
+        preload = ["lisp"]
+        tag = re.search(r"@modules ([\w,-]+)", text)
+        if tag:
+            preload += tag.group(1).split(",")
+        if "@os_project" in text:
+            preload += ["c-cpp", "assembler", "shell-make"]
+        if "@no_modules" in text:
+            preload = []
+        env["AIR_PRELOAD_MODULES"] = ",".join(dict.fromkeys(preload))
         # the tests never read the real GitHub login (gh / Git credential store) nor call api.github.com
         env["AIR_GITHUB_AUTODETECT"] = "0"
         env.pop("AIR_GITHUB_FAKE_TOKEN", None)

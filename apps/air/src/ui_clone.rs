@@ -316,7 +316,7 @@ impl App {
         if let Some(dest) = open_dest {
             if st.build_in_linux && !st.linux && !st.linux_distro.is_empty() {
                 // the project opens in Linux right away
-                let cfg = crate::app_env::ProjectConfig { linux: Some(st.linux_distro.clone()), decided: true };
+                let cfg = crate::app_env::ProjectConfig { linux: Some(st.linux_distro.clone()), decided: true, modules: vec![] };
                 if let Err(e) = crate::app_env::save_config(&dest, &cfg) {
                     self.toast(i18n::fmt("Cannot save the project settings: {}", &[&e]), Sev::Error);
                 }
