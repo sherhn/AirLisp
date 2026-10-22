@@ -1080,6 +1080,11 @@ impl App {
     }
 
     pub fn goto_declaration(&mut self, name: Option<String>) {
+        // a language of a module: its definitions come from the project's index, not from the Lisp reader
+        if self.doc().is_some_and(|d| d.diff.is_none() && !d.ed.is_lisp()) {
+            self.goto_language_declaration(name);
+            return;
+        }
         let Some(name) = name.or_else(|| self.symbol_at_caret()) else { return };
         self.reindex_open_docs();
         let defs = self.project.as_ref().map(|p| p.index.find_definitions(&name)).unwrap_or_default();
@@ -1224,6 +1229,10 @@ impl App {
     }
 
     pub fn find_usages(&mut self) {
+        if self.doc().is_some_and(|d| d.diff.is_none() && !d.ed.is_lisp()) {
+            self.find_language_usages();
+            return;
+        }
         let Some(name) = self.symbol_at_caret() else { return };
         let Some(root) = self.project_root().map(Path::to_path_buf) else { return };
         self.reindex_open_docs();

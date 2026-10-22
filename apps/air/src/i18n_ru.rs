@@ -887,4 +887,5 @@ pub const RU: &[(&str, &str)] = &[
     ("Cannot find {}", "Не найден {}"),
     ("Common Lisp image", "образ Common Lisp"),
     ("Common Lisp standard name. Start the REPL (Alt+8) to see its arguments and documentation.", "Стандартное имя Common Lisp. Запустите REPL (Alt+8), чтобы увидеть его аргументы и документацию."),
+    ("Cannot find declaration of '{}' yet: the project is still being read", "Объявление '{}' пока не найдено: проект ещё читается"),
 ];

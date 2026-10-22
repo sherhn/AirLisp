@@ -25,6 +25,115 @@ pub fn definition_doc(text: &str, def_line: usize, lang: &Language) -> DocInfo {
     DocInfo { signature, doc }
 }
 
+/// How many arguments the call that starts right after the name (at byte `after` of `text`) passes: `None` when the
+/// name is not followed by `(` or the call is not closed within a reasonable distance.
+pub fn call_arity(text: &str, after: usize) -> Option<usize> {
+    let rest = text.get(after..)?.trim_start_matches([' ', '\t']);
+    let body = rest.strip_prefix('(')?;
+    let (mut depth, mut commas, mut segment) = (0usize, 0usize, false);
+    let mut quote: Option<char> = None;
+    let mut chars = body.chars().take(4000);
+    while let Some(c) = chars.next() {
+        if let Some(q) = quote {
+            if c == '\\' {
+                chars.next();
+            } else if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' => {
+                quote = Some(c);
+                segment = true;
+            }
+            '(' | '[' | '{' => {
+                depth += 1;
+                segment = true;
+            }
+            ')' | ']' | '}' => {
+                if depth == 0 {
+                    return Some(commas + usize::from(segment));
+                }
+                depth -= 1;
+            }
+            ',' if depth == 0 => {
+                commas += 1;
+                segment = false;
+            }
+            c if !c.is_whitespace() => segment = true,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The fewest and the most arguments a definition with this `signature` takes (`None`: any number), or `None` when
+/// the signature has no parameter list to read (a variable, a label, a shell function called without parentheses).
+pub fn signature_arity(signature: &str, name: &str) -> Option<(usize, Option<usize>)> {
+    // the name itself, not a letter of `def` or of a type: whole word, then the parameter list
+    let at = signature.match_indices(name).find_map(|(i, _)| {
+        let before = signature[..i].chars().next_back();
+        let after = &signature[i + name.len()..];
+        (before.is_none_or(|c| !(c.is_alphanumeric() || c == '_')) && after.trim_start().starts_with('(')).then_some(i + name.len())
+    })?;
+    let body = signature[at..].trim_start().strip_prefix('(')?;
+    let mut params: Vec<String> = vec![];
+    let (mut depth, mut cur) = (0usize, String::new());
+    let mut closed = false;
+    for c in body.chars() {
+        match c {
+            '(' | '[' | '{' => {
+                depth += 1;
+                cur.push(c);
+            }
+            ')' | ']' | '}' if depth == 0 => {
+                closed = true;
+                break;
+            }
+            ')' | ']' | '}' => {
+                depth -= 1;
+                cur.push(c);
+            }
+            ',' if depth == 0 => params.push(std::mem::take(&mut cur)),
+            _ => cur.push(c),
+        }
+    }
+    if !closed {
+        return None;
+    }
+    params.push(cur);
+    let params: Vec<String> = params.iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect();
+    if params.len() == 1 && params[0] == "void" {
+        return Some((0, Some(0)));
+    }
+    let (mut min, mut max) = (0usize, Some(0usize));
+    for (k, p) in params.iter().enumerate() {
+        let receiver = k == 0 && (p == "self" || p == "cls" || p.starts_with("self:") || p.starts_with("self =") || p == "&self" || p == "&mut self");
+        if receiver || p == "/" || p == "*" {
+            continue;
+        }
+        // *args, **kwargs, and C's `...`
+        if p.starts_with('*') || p.ends_with("...") {
+            max = None;
+            continue;
+        }
+        if !p.contains('=') {
+            min += 1;
+        }
+        max = max.map(|m| m + 1);
+    }
+    Some((min, max))
+}
+
+/// Can a call with `call` arguments (if known) be a call of a definition with these `limits` (if known)?
+pub fn arity_fits(call: Option<usize>, limits: Option<(usize, Option<usize>)>) -> bool {
+    match (call, limits) {
+        (Some(n), Some((min, max))) => n >= min && max.is_none_or(|m| n <= m),
+        _ => true,
+    }
+}
+
 /// The definition's header and the line it ends on.
 fn signature_at(lines: &[&str], def_line: usize) -> (String, usize) {
     let mut sig = String::new();
@@ -198,6 +307,44 @@ mod tests {
         assert_eq!((sh.signature.as_str(), sh.doc.as_str()), ("build()", "Build it."));
         let asm = definition_doc("section .text\n; Entry point.\n; Called by the loader.\nstart:\n  mov eax, 1\n", 3, &lang(";", &[]));
         assert_eq!((asm.signature.as_str(), asm.doc.as_str()), ("start:", "Entry point.\nCalled by the loader."));
+    }
+
+    #[test]
+    fn arguments_of_a_call_are_counted() {
+        let t = "f(a, g(b, c), \"x,y\", [1, 2])";
+        assert_eq!(call_arity(t, 1), Some(4));
+        assert_eq!(call_arity("f()", 1), Some(0));
+        assert_eq!(call_arity("f( )", 1), Some(0));
+        assert_eq!(call_arity("f(a,)", 1), Some(1));
+        assert_eq!(call_arity("f (a)", 1), Some(1));
+        assert_eq!(call_arity("f(a, ')', b)", 1), Some(3));
+        // not a call, or never closed
+        assert_eq!(call_arity("f = 1", 1), None);
+        assert_eq!(call_arity("f(a, b", 1), None);
+    }
+
+    #[test]
+    fn parameters_of_a_signature_are_counted() {
+        assert_eq!(signature_arity("int open(char *name)", "open"), Some((1, Some(1))));
+        assert_eq!(signature_arity("int run(void)", "run"), Some((0, Some(0))));
+        assert_eq!(signature_arity("int printf(const char *fmt, ...)", "printf"), Some((1, None)));
+        assert_eq!(signature_arity("def area(width, height=1):", "area"), Some((1, Some(2))));
+        assert_eq!(signature_arity("def method(self, a, *args, **kw):", "method"), Some((1, None)));
+        assert_eq!(signature_arity("def f(a, /, b, *, c):", "f"), Some((3, Some(3))));
+        assert_eq!(signature_arity("void cb(int (*fn)(int, int), int x)", "cb"), Some((2, Some(2))));
+        assert_eq!(signature_arity("start:", "start"), None);
+        assert_eq!(signature_arity("build()", "build"), Some((0, Some(0))));
+    }
+
+    #[test]
+    fn calls_are_matched_to_definitions_by_their_arguments() {
+        assert!(arity_fits(Some(1), signature_arity("int open(char *name)", "open")));
+        assert!(!arity_fits(Some(2), signature_arity("int open(char *name)", "open")));
+        assert!(arity_fits(Some(0), signature_arity("def area(width, height=1):", "area")) == false);
+        assert!(arity_fits(Some(7), signature_arity("int printf(const char *fmt, ...)", "printf")));
+        // when either side is unknown, nothing is ruled out
+        assert!(arity_fits(None, Some((1, Some(1)))));
+        assert!(arity_fits(Some(3), None));
     }
 
     #[test]

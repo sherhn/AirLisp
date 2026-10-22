@@ -45,6 +45,47 @@ pub struct DefEntry {
     pub kind: String,
 }
 
+/// A definition found for a name: where it is, and what it says about itself.
+#[derive(Clone, Debug)]
+pub struct LangDefHit {
+    pub path: PathBuf,
+    /// 0-based line.
+    pub line: usize,
+    pub kind: String,
+    /// Byte offset of the name in the file.
+    pub offset: usize,
+    pub doc: docinfo::DocInfo,
+    /// `portable/file.c:35`.
+    pub source: String,
+}
+
+/// The uses of `name` in `text` that are code (not comments or strings), as the hits of a search.
+pub fn usages_in(path: &Path, text: &str, name: &str, lang: &Language) -> Vec<ide_core::search::FileHit> {
+    let spans = lang.highlight(text);
+    let dead = |at: usize| {
+        let i = spans.partition_point(|s| s.end <= at);
+        spans.get(i).is_some_and(|s| s.start <= at && matches!(s.class, Class::Comment | Class::String | Class::Char))
+    };
+    let id = |c: char| c.is_alphanumeric() || c == '_';
+    let mut hits = vec![];
+    for (at, _) in text.match_indices(name) {
+        let end = at + name.len();
+        if text[..at].chars().next_back().is_some_and(id) || text[end..].chars().next().is_some_and(id) || dead(at) {
+            continue;
+        }
+        let line_start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+        hits.push(ide_core::search::FileHit {
+            path: path.to_path_buf(),
+            line: text[..at].matches('\n').count(),
+            col: text[line_start..at].chars().count(),
+            len: name.chars().count(),
+            line_text: text[line_start..line_end].trim_end().to_string(),
+        });
+    }
+    hits
+}
+
 /// The definitions of the project in the languages modules bring: language and name -> where they are.
 #[derive(Default)]
 pub struct LangIndex {
@@ -108,6 +149,20 @@ impl LangIndex {
     /// The background build is still running.
     pub fn building(&self) -> bool {
         self.rx.is_some()
+    }
+
+    /// The names of `lang` that start with `prefix` (any case), with the kind of their first definition.
+    pub fn with_prefix(&self, lang: &str, prefix: &str, limit: usize) -> Vec<(String, String)> {
+        let low = prefix.to_lowercase();
+        let mut out: Vec<(String, String)> = self
+            .map
+            .iter()
+            .filter(|((l, n), v)| l == lang && !v.is_empty() && n.to_lowercase().starts_with(&low))
+            .map(|((_, n), v)| (n.clone(), v[0].kind.clone()))
+            .collect();
+        out.sort();
+        out.truncate(limit);
+        out
     }
 
     pub fn get(&self, lang: &str, name: &str) -> &[DefEntry] {
@@ -198,7 +253,7 @@ impl App {
         if self.hover.info.is_none() && !self.hover.asked {
             if self.now - self.hover.since >= DELAY {
                 self.hover.asked = true;
-                self.resolve_hover(idx, &name);
+                self.resolve_hover(idx, &name, e);
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_millis(80));
             }
@@ -210,7 +265,7 @@ impl App {
         format!("{lang}:{name}")
     }
 
-    fn resolve_hover(&mut self, idx: usize, name: &str) {
+    fn resolve_hover(&mut self, idx: usize, name: &str, end: usize) {
         let ck = self.hover_cache_key(idx, name);
         if let Some((at, info)) = self.hover.cache.get(&ck)
             && self.now - *at < CACHE_SECS
@@ -219,11 +274,11 @@ impl App {
             return;
         }
         let lisp = self.docs[idx].ed.is_lisp();
-        let found = if lisp { self.lisp_hover(name, &ck) } else { self.language_hover(idx, name) };
+        let found = if lisp { self.lisp_hover(name, &ck) } else { self.language_hover(idx, name, end) };
         match found {
             Some(info) => {
                 let info = Arc::new(info);
-                if !info.fallback {
+                if lisp && !info.fallback {
                     self.hover.cache.insert(ck, (self.now, Some(info.clone())));
                 }
                 self.hover.info = Some(info);
@@ -279,45 +334,162 @@ impl App {
         }
     }
 
-    /// A name of a language from a module: its definition in this file, the open files or the project.
-    fn language_hover(&mut self, idx: usize, name: &str) -> Option<HoverInfo> {
-        let lang: Arc<Language> = self.docs[idx].ed.language()?.clone();
+    /// The definitions of `name` for a call in tab `idx` that passes `args` arguments (if known): in this file, the
+    /// other open files of the language, then the rest of the project (from the background index). A definition that
+    /// takes another number of arguments is a different function with the same name and is left out.
+    pub fn language_definitions(&mut self, idx: usize, name: &str, args: Option<usize>) -> Vec<LangDefHit> {
+        let Some(lang) = self.docs[idx].ed.language().cloned() else { return vec![] };
         let lang_id = lang.id().to_string();
-        let root = self.project_root().map(Path::to_path_buf);
-        let show = |path: &Path, line: usize, kind: &str, text: &str| -> HoverInfo {
-            let d = docinfo::definition_doc(text, line, &lang);
-            let source = match &root {
-                Some(r) if path.starts_with(r) => format!("{}:{}", ide_core::workspace::relative(r, path), line + 1),
-                _ => format!("{}:{}", path.display(), line + 1),
-            };
-            HoverInfo { title: name.to_string(), kind: kind.to_string(), signature: d.signature, doc: d.doc, source, fallback: false }
-        };
+        let mut raw: Vec<(PathBuf, usize, String, Option<String>)> = vec![];
         // this file first, then the other open ones of the same language
         let order: Vec<usize> = std::iter::once(idx).chain((0..self.docs.len()).filter(|i| *i != idx)).collect();
+        let mut open_paths: Vec<PathBuf> = vec![];
         for i in order {
             let d = &mut self.docs[i];
             if d.diff.is_some() || d.ed.language().is_none_or(|l| l.id() != lang_id) {
                 continue;
             }
             let path = d.path.clone().unwrap_or_default();
-            let hit = d.defs().iter().find(|def| def.name == name).map(|def| (def.line, def.kind.label().to_string()));
-            if let Some((line, kind)) = hit {
-                return Some(show(&path, line, &kind, d.ed.text()));
+            open_paths.push(path.clone());
+            let text = d.ed.text().to_string();
+            for def in d.defs().iter().filter(|def| def.name == name) {
+                raw.push((path.clone(), def.line, def.kind.label().to_string(), Some(text.clone())));
             }
         }
         // the rest of the project, from the background index
+        self.ensure_lang_index();
+        let here = self.docs[idx].path.as_ref().and_then(|p| p.parent().map(Path::to_path_buf));
+        let mut cands: Vec<DefEntry> = self.hover.index.get(&lang_id, name).iter().filter(|c| !open_paths.contains(&c.path)).cloned().collect();
+        cands.sort_by_key(|c| (c.path.parent().map(Path::to_path_buf) != here, c.path.clone(), c.line));
+        raw.extend(cands.into_iter().take(12).map(|c| (c.path, c.line, c.kind, None)));
+        let root = self.project_root().map(Path::to_path_buf);
+        let mut out: Vec<LangDefHit> = vec![];
+        for (path, line, kind, text) in raw {
+            let Some(text) = text.or_else(|| std::fs::read_to_string(&path).ok()) else { continue };
+            let doc = docinfo::definition_doc(&text, line, &lang);
+            if !docinfo::arity_fits(args, docinfo::signature_arity(&doc.signature, name)) {
+                continue;
+            }
+            // where the name is on its line
+            let line_start: usize = text.split_inclusive('\n').take(line).map(str::len).sum();
+            let col = text[line_start.min(text.len())..].lines().next().and_then(|l| l.find(name)).unwrap_or(0);
+            let source = match &root {
+                Some(r) if path.starts_with(r) => format!("{}:{}", ide_core::workspace::relative(r, &path), line + 1),
+                _ => format!("{}:{}", path.display(), line + 1),
+            };
+            out.push(LangDefHit { path, line, kind, offset: line_start + col, doc, source });
+            if out.len() >= 8 {
+                break;
+            }
+        }
+        out
+    }
+
+    /// Start reading the project's definitions in the languages of the modules that are on, unless that is done.
+    pub fn ensure_lang_index(&mut self) {
         if let Some(p) = self.project.as_ref() {
             let key = format!("{}|{}", p.root.display(), self.mods.installed.iter().filter(|m| m.enabled).map(|m| format!("{}@{}", m.manifest.id, m.manifest.version)).collect::<Vec<_>>().join(","));
             let (files, langs) = (p.files.clone(), self.mods.langs.clone());
             self.hover.index.ensure(key, files, langs);
         }
         self.hover.index.poll();
-        let here = self.docs[idx].path.as_ref().and_then(|p| p.parent().map(Path::to_path_buf));
-        let mut cands: Vec<DefEntry> = self.hover.index.get(&lang_id, name).to_vec();
-        cands.sort_by_key(|c| (c.path.parent().map(Path::to_path_buf) != here, c.path.clone()));
-        let c = cands.first()?;
-        let text = std::fs::read_to_string(&c.path).ok()?;
-        Some(show(&c.path, c.line, &c.kind, &text))
+    }
+
+    /// A name of a language from a module: what the first definition that fits the call says.
+    fn language_hover(&mut self, idx: usize, name: &str, end: usize) -> Option<HoverInfo> {
+        let args = docinfo::call_arity(self.docs[idx].ed.text(), end);
+        let hit = self.language_definitions(idx, name, args).into_iter().next()?;
+        Some(HoverInfo { title: name.to_string(), kind: hit.kind, signature: hit.doc.signature, doc: hit.doc.doc, source: hit.source, fallback: false })
+    }
+
+    /// Go to the definition of the name at the caret of a document in a language of a module.
+    pub fn goto_language_declaration(&mut self, name: Option<String>) {
+        let idx = self.active;
+        let Some(d) = self.docs.get(idx) else { return };
+        let (s, e) = d.ed.identifier_range_at(d.ed.caret());
+        let name = name.or_else(|| d.ed.text().get(s..e).filter(|w| !w.is_empty()).map(str::to_string));
+        let Some(name) = name else { return };
+        let args = docinfo::call_arity(d.ed.text(), e);
+        let hits = self.language_definitions(idx, &name, args);
+        match hits.len() {
+            0 => {
+                // the project may still be being read
+                let msg = if self.hover.index.building() {
+                    crate::i18n::fmt("Cannot find declaration of '{}' yet: the project is still being read", &[&name])
+                } else {
+                    crate::i18n::fmt("Cannot find declaration of '{}'", &[&name])
+                };
+                self.toast(msg, crate::editor_view::Sev::Weak);
+            }
+            1 => {
+                let h = &hits[0];
+                self.goto(&h.path, h.offset, true);
+            }
+            _ => {
+                use crate::state::{Item, PTarget, PaletteMode, PaletteState, Popup};
+                let items: Vec<Item> = hits
+                    .iter()
+                    .map(|h| Item {
+                        label: name.clone(),
+                        detail: h.source.clone(),
+                        badge: h.kind.chars().next().map(|c| c.to_string()).unwrap_or_default(),
+                        section: "",
+                        target: PTarget::Symbol { path: h.path.clone(), offset: h.offset },
+                        hits: vec![],
+                        shortcut: String::new(),
+                    })
+                    .collect();
+                self.popup = Popup::Palette(PaletteState { mode: PaletteMode::Choose, query: String::new(), items: items.clone(), selected: 0, built_for: None, fixed: Some(items), just_opened: true });
+            }
+        }
+    }
+
+    /// Find the uses of the name at the caret in the files of the same language (not in comments and strings).
+    pub fn find_language_usages(&mut self) {
+        let idx = self.active;
+        let Some(d) = self.docs.get(idx) else { return };
+        let Some(lang) = d.ed.language().cloned() else { return };
+        let (s, e) = d.ed.identifier_range_at(d.ed.caret());
+        let Some(name) = d.ed.text().get(s..e).filter(|w| !w.is_empty()).map(str::to_string) else { return };
+        if self.project.is_none() {
+            return;
+        }
+        self.reindex_open_docs();
+        let files = self.project.as_ref().map(|p| p.files.clone()).unwrap_or_default();
+        let langs = self.mods.langs.clone();
+        let open: Vec<(PathBuf, String)> = self.docs.iter().filter(|d| d.diff.is_none()).filter_map(|d| d.path.clone().map(|p| (p, d.ed.text().to_string()))).collect();
+        let title = crate::i18n::fmt("Usages of '{}'", &[&name]);
+        self.find_results = crate::state::FindResults { title: crate::i18n::fmt("{} - searching...", &[&title]), hits: vec![] };
+        let (tx, rx) = mpsc::channel();
+        self.find_rx = Some(rx);
+        let lang_id = lang.id().to_string();
+        std::thread::spawn(move || {
+            let mut hits = vec![];
+            'files: for path in files {
+                let Some(l) = langs.find(&path, None) else { continue };
+                if l.id() != lang_id {
+                    continue;
+                }
+                // an open file is read as it is in the editor
+                let text = match open.iter().find(|(p, _)| *p == path) {
+                    Some((_, t)) => t.clone(),
+                    None => match std::fs::metadata(&path) {
+                        Ok(m) if m.len() <= 2_000_000 => match std::fs::read_to_string(&path) {
+                            Ok(t) => t,
+                            Err(_) => continue,
+                        },
+                        _ => continue,
+                    },
+                };
+                hits.extend(usages_in(&path, &text, &name, &l));
+                if hits.len() >= 2000 {
+                    break 'files;
+                }
+            }
+            hits.truncate(2000);
+            let _ = tx.send((title, hits));
+        });
+        self.bottom_tool = Some(crate::state::BottomTool::Find);
     }
 
     /// The popup itself, near the pointer.
