@@ -115,6 +115,7 @@ impl eframe::App for App {
 impl App {
     fn draw_central(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.draw_env_banner(ui);
+        self.draw_tools_banner(ui);
         if self.docs.is_empty() {
             self.split = None;
             self.draw_welcome(ui, ctx);

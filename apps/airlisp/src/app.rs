@@ -82,6 +82,10 @@ pub struct App {
     pub project_cfg: crate::app_env::ProjectConfig,
     /// Ask whether the open (Unix-style) project should be built in Linux.
     pub env_banner: bool,
+    /// The open project has a makefile, a configure script or shell scripts at its top.
+    pub unix_project: bool,
+    /// The "build tools are missing" banner was closed (until the project is opened again or a command is not found).
+    pub tools_banner_dismissed: bool,
     /// Targets of the project's makefile, offered as run configurations.
     pub make_targets: Vec<String>,
     /// The running/last make: where it ran, to find the files of its compiler messages.
@@ -152,6 +156,8 @@ impl App {
             run_config: Default::default(),
             project_cfg: Default::default(),
             env_banner: false,
+            unix_project: false,
+            tools_banner_dismissed: false,
             make_targets: vec![],
             make_run: None,
             script: None,

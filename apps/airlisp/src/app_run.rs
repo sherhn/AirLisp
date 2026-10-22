@@ -158,6 +158,15 @@ impl App {
     /// A make run ended: its compiler messages become problems (and markers in open files).
     pub fn make_finished(&mut self, code: Option<i32>) {
         let Some(run) = self.make_run.take() else { return };
+        if code == Some(127) && run.target.is_some() {
+            // make itself was not found: the distribution has no build tools yet
+            if let Some(hint) = self.linux_command_not_found(Some("make")) {
+                self.run.log.push(LogLine { kind: LogKind::Error, text: hint.clone() });
+                self.toast(hint, Sev::Error);
+                self.status = tr("make is not installed").into();
+                return;
+            }
+        }
         let output: String = self.run.log.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n");
         let messages = build::parse_output(&output);
         if messages.is_empty() && code != Some(0) {

@@ -65,11 +65,14 @@ impl App {
         let Some(root) = self.project_root().map(Path::to_path_buf) else {
             self.project_cfg = ProjectConfig::default();
             self.env_banner = false;
+            self.unix_project = false;
             return;
         };
         self.project_cfg = load_config(&root);
+        self.unix_project = looks_like_linux_project(&root);
+        self.forget_build_tools();
         let on_linux_fs = ide_core::wsl::wsl_path(&root).is_some();
-        self.env_banner = cfg!(windows) && !on_linux_fs && !self.project_cfg.decided && self.wsl_target().is_none() && looks_like_linux_project(&root);
+        self.env_banner = cfg!(windows) && !on_linux_fs && !self.project_cfg.decided && self.wsl_target().is_none() && self.unix_project;
         if self.env_banner && self.wsl.probe.is_none() && !self.wsl.probing() {
             self.wsl_probe();
         }
@@ -108,6 +111,7 @@ impl App {
             self.toast(i18n::fmt("Cannot save the project settings: {}", &[&e]), Sev::Error);
         }
         self.env_banner = false;
+        self.forget_build_tools();
         self.lisp_environment_changed();
         match distro {
             Some(d) => self.toast(i18n::fmt("{0} is now built and run in Linux ({1})", &[&self.project.as_ref().map(|p| p.name.clone()).unwrap_or_default(), &d]), Sev::Weak),
@@ -125,7 +129,95 @@ impl App {
         self.wsl.probe.as_ref().and_then(|p| p.default_distro()).map(|d| d.name.clone()).filter(|d| usable_distro(d)).or_else(|| distros.into_iter().next())
     }
 
+    // ------------------------------------------------------------------ build tools
+
+    /// Look for the build tools in the project's distribution again (something may have been installed meanwhile) and
+    /// offer to install them again if they are missing.
+    fn forget_build_tools(&mut self) {
+        self.tools_banner_dismissed = false;
+        if let Some(t) = self.wsl_target() {
+            self.wsl.tools.remove(&t.distro);
+        }
+    }
+
+    /// The project builds in Linux and the distribution lacks tools it needs: (distribution, missing programs).
+    pub fn missing_build_tools(&self) -> Option<(String, Vec<String>)> {
+        if !self.unix_project {
+            return None;
+        }
+        let t = self.wsl_target()?;
+        let Some(Ok(found)) = self.wsl.tools.get(&t.distro) else { return None };
+        let missing: Vec<String> = found.iter().filter(|(_, ok)| !*ok).map(|(n, _)| n.clone()).collect();
+        (!missing.is_empty()).then_some((t.distro, missing))
+    }
+
+    /// Whether the "install the build tools" banner is on screen.
+    pub fn tools_banner_visible(&self) -> bool {
+        !self.env_banner && !self.tools_banner_dismissed && self.wsl.task.is_none() && self.missing_build_tools().is_some()
+    }
+
+    /// What to tell when a command was not found in Linux (exit code 127): the program, if known. Also makes the
+    /// banner come back, after a fresh look at what is installed. `None`: the project does not run in Linux.
+    pub fn linux_command_not_found(&mut self, program: Option<&str>) -> Option<String> {
+        let t = self.wsl_target()?;
+        self.forget_build_tools();
+        let is_tool = |p: &str| lisp_runtime::wsl::BUILD_TOOLS.contains(&p) || p.starts_with("qemu") || matches!(p, "cc" | "g++" | "c++" | "as" | "ar" | "nm" | "objdump");
+        Some(match program.filter(|p| is_tool(p)) {
+            Some(p) => i18n::fmt("{0} is not installed in Linux ({1}). Install the build tools: Settings > Linux (WSL) > Install build tools.", &[&p, &t.distro]),
+            None => i18n::fmt("Command not found in Linux ({}). Build tools (make, gcc, nasm, gdb, QEMU) can be installed in Settings > Linux (WSL).", &[&t.distro]),
+        })
+    }
+
     // ------------------------------------------------------------------ UI
+
+    /// Offer to install what a project built with make needs, when its Linux lacks it.
+    pub fn draw_tools_banner(&mut self, ui: &mut egui::Ui) {
+        // the check runs once per project (and again when a command was not found)
+        if self.unix_project
+            && let Some(t) = self.wsl_target()
+            && !self.wsl.tools.contains_key(&t.distro)
+            && !self.wsl_checking_tools()
+        {
+            self.wsl_check_tools(&t.distro);
+        }
+        if !self.tools_banner_visible() {
+            return;
+        }
+        let Some((distro, missing)) = self.missing_build_tools() else { return };
+        let pal = self.pal;
+        let (mut install, mut later) = (false, false);
+        let list = if missing.len() > 4 { format!("{}…", missing[..4].join(", ")) } else { missing.join(", ") };
+        egui::Frame::new().fill(pal.warning.gamma_multiply(0.14)).corner_radius(widgets::radius()).inner_margin(egui::Margin::symmetric(14, 10)).outer_margin(egui::Margin { left: 12, right: 12, top: 8, bottom: 0 }).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                icons::paint(ui.painter(), r, Icon::Hammer, pal.warning);
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(i18n::fmt("Build tools are missing in {}", &[&distro])).font(fonts::semibold(13.0)));
+                    ui.label(RichText::new(i18n::fmt("Needed to build and run this project, but not found: {}", &[&list])).color(pal.text_dim).size(12.0));
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if widgets::icon_button(ui, &pal, Icon::Close, 26.0, pal.text_dim, tr("Not now")).clicked() {
+                        later = true;
+                    }
+                    if widgets::primary_button(ui, &pal, tr("Install build tools")).clicked() {
+                        install = true;
+                    }
+                });
+            });
+        });
+        if later {
+            self.tools_banner_dismissed = true;
+        }
+        if install {
+            self.install_build_tools_here(&distro);
+        }
+    }
+
+    /// Install the build tools and show the progress on the Linux page.
+    pub fn install_build_tools_here(&mut self, distro: &str) {
+        self.wsl_install_tools(distro);
+        self.open_settings_page(crate::ui_settings::WSL_PAGE);
+    }
 
     /// The question shown on top of the editor when a Unix-style project is opened on Windows.
     pub fn draw_env_banner(&mut self, ui: &mut egui::Ui) {

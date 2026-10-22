@@ -388,6 +388,13 @@ impl App {
         }
         if let Some(code) = exited {
             self.term.handle = None;
+            if code == Some(127) {
+                // "not found": in Linux that is usually a build tool that was never installed
+                let program = self.term.history.last().and_then(|l| l.split_whitespace().find(|w| *w != "sudo")).map(str::to_string);
+                if let Some(hint) = self.linux_command_not_found(program.as_deref()) {
+                    self.term_info(hint);
+                }
+            }
             self.git.last_refresh = -100.0; // commands may have changed the repository
             let finished = self.term.script.as_mut().and_then(|r| r.current.take());
             if let Some(step) = finished {
