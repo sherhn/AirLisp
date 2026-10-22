@@ -56,7 +56,7 @@ def no_distro(name):
     return 255
 
 
-TOOLS = ["make", "gcc", "ld", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"]
+TOOLS = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"]
 
 
 def fake_make(lcwd, target, merged):

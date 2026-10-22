@@ -800,6 +800,9 @@ impl App {
                     "install_sbcl" => self.wsl_install_sbcl(&arg),
                     "use" => self.wsl_use(&arg),
                     "use_windows" => self.use_windows(),
+                    "check_tools" => self.wsl_check_tools(&arg),
+                    "install_tools" => self.wsl_install_tools(&arg),
+                    "git_setup" => self.wsl_git_setup(&arg),
                     other => self.fail(format!("wsl_action: unknown action {other}")),
                 }
             }
@@ -831,6 +834,17 @@ impl App {
                     let found = w.sbcl_path(&w.selected).is_some();
                     if (s == "found") != found {
                         errors.push(format!("sbcl in {:?}: {:?}, expected {s}", w.selected, w.sbcl.get(&w.selected)));
+                    }
+                }
+                if let Some(s) = step["tools"].as_str() {
+                    let got = match w.tools.get(&w.selected) {
+                        Some(Ok(v)) if v.iter().all(|(_, f)| *f) => "ready",
+                        Some(Ok(_)) => "missing",
+                        Some(Err(_)) => "error",
+                        None => "unknown",
+                    };
+                    if got != s {
+                        errors.push(format!("tools in {:?}: {got} {:?}, expected {s}", w.selected, w.tools.get(&w.selected)));
                     }
                 }
                 if let Some(e) = step["run_env"].as_str() {

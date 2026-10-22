@@ -24,6 +24,10 @@ pub enum SetupTask {
     InstallDistro(String),
     ImportFile(String),
     InstallSbcl(String),
+    /// make, gcc (32-bit too), nasm, gdb, git and QEMU for C/assembly projects.
+    InstallTools(String),
+    /// Git in the distribution: name, e-mail and the Windows credential manager.
+    GitSetup(String),
 }
 
 pub struct RunningTask {
@@ -44,6 +48,9 @@ pub struct WslState {
     pub sbcl: HashMap<String, Result<SbclCheck, String>>,
     sbcl_rx: Option<Receiver<(String, Result<SbclCheck, String>)>>,
     pub checking_sbcl: Option<String>,
+    /// Build tools found in each distribution: (tool, found) (`Err`: the check failed).
+    pub tools: HashMap<String, Result<Vec<(String, bool)>, String>>,
+    tools_rx: Option<Receiver<(String, Result<Vec<(String, bool)>, String>)>>,
     pub task: Option<RunningTask>,
     /// Output of the last setup task; a progress bar redrawing its line replaces the last entry.
     pub log: Vec<String>,
@@ -69,7 +76,7 @@ impl WslState {
     }
 
     pub fn busy(&self) -> bool {
-        self.probe_rx.is_some() || self.online_rx.is_some() || self.sbcl_rx.is_some() || self.task.is_some()
+        self.probe_rx.is_some() || self.online_rx.is_some() || self.sbcl_rx.is_some() || self.tools_rx.is_some() || self.task.is_some()
     }
 
     pub fn wsl_installed(&self) -> bool {
@@ -278,6 +285,44 @@ impl App {
         });
     }
 
+    /// Look for make, gcc, QEMU and friends inside `distro` (in the background).
+    pub fn wsl_check_tools(&mut self, distro: &str) {
+        if self.wsl.tools_rx.is_some() || distro.is_empty() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        self.wsl.tools_rx = Some(rx);
+        let d = distro.to_string();
+        std::thread::spawn(move || {
+            let r = wsl::check_tools(&d);
+            let _ = tx.send((d, r));
+        });
+    }
+
+    pub fn wsl_checking_tools(&self) -> bool {
+        self.wsl.tools_rx.is_some()
+    }
+
+    /// Install the build tools of C/assembly projects inside `distro`.
+    pub fn wsl_install_tools(&mut self, distro: &str) {
+        let title = i18n::fmt("Installing build tools in {}...", &[&distro]);
+        self.wsl_start(SetupTask::InstallTools(distro.to_string()), wsl::install_tools_command(distro), title);
+    }
+
+    /// Give git in `distro` the name and e-mail of Windows git and its credential manager (GitHub logins).
+    pub fn wsl_git_setup(&mut self, distro: &str) {
+        let get = |k: &str| {
+            let mut c = Command::new("git");
+            c.args(["config", "--global", k]);
+            lisp_runtime::no_window(&mut c);
+            c.output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
+        };
+        let (name, email) = (get("user.name"), get("user.email"));
+        let t = Target::new(distro, if distro == self.settings.wsl_distro { self.settings.wsl_mount_root.as_str() } else { "" });
+        let title = i18n::fmt("Setting up git in {}...", &[&distro]);
+        self.wsl_start(SetupTask::GitSetup(distro.to_string()), wsl::git_setup_command(&t, &name, &email), title);
+    }
+
     pub fn wsl_refresh_free(&mut self) {
         if self.wsl.free_rx.is_some() {
             return;
@@ -440,6 +485,12 @@ impl App {
                 Err(e) => self.wsl.online_error = Some(e),
             }
         }
+        if let Some(rx) = &self.wsl.tools_rx
+            && let Ok((d, r)) = rx.try_recv()
+        {
+            self.wsl.tools_rx = None;
+            self.wsl.tools.insert(d, r);
+        }
         if let Some(rx) = &self.wsl.sbcl_rx
             && let Ok((d, r)) = rx.try_recv()
         {
@@ -500,8 +551,17 @@ impl App {
             SetupTask::InstallDistro(n) | SetupTask::ImportFile(n) => fail(i18n::fmt("{} was not installed", &[&n])),
             SetupTask::InstallSbcl(d) if ok => Ok(i18n::fmt("SBCL is installed in {}.", &[&d])),
             SetupTask::InstallSbcl(d) => fail(i18n::fmt("SBCL was not installed in {}", &[&d])),
+            SetupTask::InstallTools(d) if ok => Ok(i18n::fmt("The build tools are installed in {}.", &[&d])),
+            SetupTask::InstallTools(d) => fail(i18n::fmt("The build tools were not installed in {}", &[&d])),
+            SetupTask::GitSetup(d) if ok => Ok(i18n::fmt("Git in {} uses your name, e-mail and Windows logins.", &[&d])),
+            SetupTask::GitSetup(d) => fail(i18n::fmt("Git in {} was not set up", &[&d])),
         });
         match task {
+            SetupTask::InstallTools(d) => {
+                self.wsl.tools.remove(&d);
+                self.wsl_check_tools(&d);
+            }
+            SetupTask::GitSetup(_) => {}
             SetupTask::InstallSbcl(d) => {
                 self.wsl.sbcl.remove(&d);
                 self.wsl_check_sbcl(&d);

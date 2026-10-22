@@ -36,6 +36,9 @@ enum Act {
     InstallSbcl(String),
     OpenWindow(String),
     Use(String),
+    CheckTools(String),
+    InstallTools(String),
+    GitSetup(String),
     Cancel,
 }
 
@@ -110,6 +113,8 @@ impl App {
                             Some(SetupTask::InstallWsl) => tr("Installing WSL...").to_string(),
                             Some(SetupTask::InstallDistro(n)) | Some(SetupTask::ImportFile(n)) => i18n::fmt("Installing {}...", &[n]),
                             Some(SetupTask::InstallSbcl(d)) => i18n::fmt("Installing SBCL in {}...", &[d]),
+                            Some(SetupTask::InstallTools(d)) => i18n::fmt("Installing build tools in {}...", &[d]),
+                            Some(SetupTask::GitSetup(d)) => i18n::fmt("Setting up git in {}...", &[d]),
                             None => String::new(),
                         };
                         ui.label(RichText::new(what).font(fonts::semibold(13.0)));
@@ -153,7 +158,7 @@ impl App {
 
         // ---------------------------------------------------------------- mode
         group(ui, &pal, tr("Where Lisp runs"), |ui, rows| {
-            let desc = if wsl_on { i18n::fmt("In Linux: {} through WSL", &[&self.settings.wsl_distro]) } else { tr("On Windows, with SBCL for Windows").to_string() };
+            let desc = format!("{}. {}", if wsl_on { i18n::fmt("In Linux: {} through WSL", &[&self.settings.wsl_distro]) } else { tr("On Windows, with SBCL for Windows").to_string() }, tr("A project can choose for itself in the status bar"));
             rows.row(ui, &pal, tr("Run Lisp, the REPL and the terminal"), &desc, 250.0, |ui| {
                 if let Some(i) = widgets::segmented(ui, &pal, &[tr("Windows"), tr("Linux (WSL)")], usize::from(wsl_on)) {
                     act = Some(if i == 0 { Act::UseWindows } else { Act::UseLinux });
@@ -327,6 +332,47 @@ impl App {
             }
         });
 
+        // ---------------------------------------------------------------- C / make projects (os-pi and the like)
+        if !selected.is_empty() {
+            let tools = self.wsl.tools.get(&selected).cloned();
+            let checking_tools = self.wsl_checking_tools();
+            if tools.is_none() && !checking_tools && installed {
+                act = act.or(Some(Act::CheckTools(selected.clone())));
+            }
+            group(ui, &pal, tr("Linux projects: C, assembly, make"), |ui, rows| {
+                let missing: Vec<String> = tools.as_ref().and_then(|r| r.as_ref().ok()).map(|v| v.iter().filter(|(_, f)| !f).map(|(t, _)| t.clone()).collect()).unwrap_or_default();
+                let desc = match &tools {
+                    _ if checking_tools => i18n::fmt("Looking for make, gcc, nasm, gdb, git and QEMU in {}...", &[&selected]),
+                    Some(Ok(_)) if missing.is_empty() => tr("make, gcc (with 32-bit support), nasm, gdb, git and QEMU are installed.").to_string(),
+                    Some(Ok(_)) => i18n::fmt("Missing: {}", &[&missing.join(", ")]),
+                    Some(Err(e)) => i18n::fmt("Could not check {0}: {1}", &[&selected, &crate::ui_chrome::elide(e, 140)]),
+                    None => tr("Not checked yet.").to_string(),
+                };
+                rows.row(ui, &pal, tr("Build tools"), &desc, 210.0, |ui| {
+                    if checking_tools {
+                        spinner(ui, &pal);
+                    } else if matches!(&tools, Some(Ok(_))) && missing.is_empty() {
+                        status_ok(ui, &pal, tr("Ready"));
+                    } else {
+                        ui.add_enabled_ui(!busy_task, |ui| {
+                            if widgets::primary_button(ui, &pal, tr("Install build tools")).clicked() {
+                                act = Some(Act::InstallTools(selected.clone()));
+                            }
+                        });
+                    }
+                });
+                rows.row(ui, &pal, tr("Git in Linux"), tr("Use your git name, e-mail and GitHub logins from Windows in this distribution (needs the Linux user from its first start)."), 210.0, |ui| {
+                    ui.add_enabled_ui(!busy_task, |ui| {
+                        if widgets::secondary_button(ui, &pal, tr("Set up git")).clicked() {
+                            act = Some(Act::GitSetup(selected.clone()));
+                        }
+                    });
+                });
+                ui.label(RichText::new(tr("A project is built in Linux when you choose it in the status bar (or open it from \\\\wsl.localhost). Its terminal, make targets and Lisp then run in the distribution; the files can stay on Windows.")).color(pal.text_dim).size(11.5));
+                ui.add_space(10.0);
+            });
+        }
+
         // ---------------------------------------------------------------- advanced
         if installed {
             let mut changed = false;
@@ -386,6 +432,9 @@ impl App {
             Some(Act::OpenWindow(d)) => self.wsl_open_window(&d),
             Some(Act::Use(d)) => self.wsl_use(&d),
             Some(Act::Cancel) => self.wsl_cancel(),
+            Some(Act::CheckTools(d)) => self.wsl_check_tools(&d),
+            Some(Act::InstallTools(d)) => self.wsl_install_tools(&d),
+            Some(Act::GitSetup(d)) => self.wsl_git_setup(&d),
         }
     }
 }

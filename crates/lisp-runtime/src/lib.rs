@@ -16,7 +16,7 @@ pub use runner::{RunEvent, RunHandle};
 use std::process::Command;
 
 /// Hide the console window of spawned processes on Windows.
-pub(crate) fn no_window(cmd: &mut Command) -> &mut Command {
+pub fn no_window(cmd: &mut Command) -> &mut Command {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

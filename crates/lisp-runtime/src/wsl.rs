@@ -411,6 +411,113 @@ pub fn install_sbcl_command(distro: &str) -> Command {
     c
 }
 
+/// Programs a C/assembly project built with make needs (os-pi and the like), in the order they are shown.
+pub const BUILD_TOOLS: [&str; 8] = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"];
+
+/// Script that prints `TOOL=<path>` for every build tool (an empty path: missing). A login shell, so tools on the
+/// user's PATH count too.
+pub fn tools_check_script() -> String {
+    BUILD_TOOLS.iter().map(|t| format!("echo \"{t}=$(command -v {t} 2>/dev/null)\"")).collect::<Vec<_>>().join("; ")
+}
+
+/// Which build tools the check found (`true`) or missed.
+pub fn parse_tools(text: &str) -> Vec<(String, bool)> {
+    BUILD_TOOLS
+        .iter()
+        .map(|t| {
+            let found = text.lines().any(|l| l.trim().strip_prefix(&format!("{t}=")).is_some_and(|v| !v.trim().is_empty()));
+            (t.to_string(), found)
+        })
+        .collect()
+}
+
+/// Look for the build tools inside `distro`.
+pub fn check_tools(distro: &str) -> Result<Vec<(String, bool)>, String> {
+    let mut c = wsl_command();
+    c.args(["-d", distro, "-e", "sh", "-lc", &tools_check_script()]);
+    let out = capture(c, Duration::from_secs(90)).map_err(|e| e.to_string())?;
+    if out.timed_out {
+        return Err("the distribution did not answer in time".into());
+    }
+    if !out.text.contains("make=") {
+        return Err(out.text.trim().to_string());
+    }
+    Ok(parse_tools(&out.text))
+}
+
+/// Shell script installing a C toolchain with 32-bit support, a debugger, git and QEMU (run as root).
+pub const INSTALL_TOOLS_SCRIPT: &str = "set -e
+if command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y build-essential gcc-multilib nasm gdb git qemu-system-x86
+elif command -v dnf >/dev/null 2>&1; then
+  dnf install -y make gcc glibc-devel.i686 libgcc.i686 nasm gdb git qemu-system-x86
+elif command -v zypper >/dev/null 2>&1; then
+  zypper --non-interactive install make gcc gcc-32bit nasm gdb git qemu-x86
+elif command -v pacman >/dev/null 2>&1; then
+  pacman -Sy --noconfirm base-devel lib32-gcc-libs nasm gdb git qemu-system-x86
+elif command -v apk >/dev/null 2>&1; then
+  apk add build-base nasm gdb git qemu-system-i386 qemu-system-x86_64
+else
+  echo 'No supported package manager (apt, dnf, zypper, pacman, apk) found.' >&2
+  exit 2
+fi
+make --version | head -n 1
+gcc --version | head -n 1";
+
+/// Install the build tools inside `distro` as root (`wsl -u root` needs no password).
+pub fn install_tools_command(distro: &str) -> Command {
+    let mut c = wsl_command();
+    c.args(["-d", distro, "-u", "root", "-e", "sh", "-c", INSTALL_TOOLS_SCRIPT]);
+    c
+}
+
+/// Where Git for Windows keeps its credential manager, as Linux sees it: Linux git can then use the logins already
+/// saved on Windows (GitHub included), the way Microsoft's WSL guide sets it up.
+pub fn windows_credential_manager(t: &Target) -> Option<String> {
+    let candidates = [r"C:\Program Files\Git\mingw64\bin\git-credential-manager.exe", r"C:\Program Files\Git\mingw64\libexec\git-core\git-credential-manager.exe", r"C:\Program Files (x86)\Git\mingw64\bin\git-credential-manager.exe"];
+    candidates.iter().map(Path::new).find(|p| p.exists()).map(|p| to_linux(p, t))
+}
+
+/// Script for the distribution's default user: Windows git's name and e-mail, and its credential manager.
+pub fn git_setup_script(name: &str, email: &str, helper: Option<&str>) -> String {
+    let mut lines = vec!["set -e".to_string()];
+    if !name.trim().is_empty() {
+        lines.push(format!("git config --global user.name {}", sh_quote(name.trim())));
+    }
+    if !email.trim().is_empty() {
+        lines.push(format!("git config --global user.email {}", sh_quote(email.trim())));
+    }
+    if let Some(h) = helper {
+        // the path has spaces: git runs a helper that starts with `!` through the shell, so quote it inside
+        lines.push(format!("git config --global credential.helper {}", sh_quote(&format!("!{}", sh_quote(h)))));
+    }
+    lines.push("git config --global core.autocrlf input".into());
+    lines.push("echo \"name: $(git config --global user.name)\"; echo \"email: $(git config --global user.email)\"; echo \"credentials: $(git config --global credential.helper)\"".into());
+    lines.join("\n")
+}
+
+/// Set up git for the default user of `t`'s distribution (see [`git_setup_script`]).
+pub fn git_setup_command(t: &Target, name: &str, email: &str) -> Command {
+    let helper = windows_credential_manager(t);
+    let mut c = wsl_command();
+    c.args(["-d", &t.distro, "-e", "sh", "-lc", &git_setup_script(name, email, helper.as_deref())]);
+    c
+}
+
+/// The default user's home folder inside `distro` (`/home/me`).
+pub fn home_dir(distro: &str) -> Result<String, String> {
+    let mut c = wsl_command();
+    c.args(["-d", distro, "-e", "sh", "-c", "cd ~ && pwd"]);
+    let out = capture(c, Duration::from_secs(60)).map_err(|e| e.to_string())?;
+    let home = out.text.lines().map(str::trim).rfind(|l| l.starts_with('/')).map(str::to_string);
+    match home {
+        Some(h) if out.ok() => Ok(h),
+        _ => Err(out.text.trim().to_string()),
+    }
+}
+
 /// Open an interactive window of `distro` (its first start asks for a Linux user name and password).
 pub fn open_window(distro: &str) -> io::Result<()> {
     if is_faked() {
@@ -501,6 +608,30 @@ mod tests {
 
     fn args(c: &Command) -> Vec<String> {
         c.get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+    }
+
+    #[test]
+    fn build_tools_are_reported() {
+        let text = "make=/usr/bin/make\ngcc=/usr/bin/gcc\nld=/usr/bin/ld\nnasm=\ngdb=\ngit=/usr/bin/git\nqemu-system-i386=\nqemu-system-x86_64=\n";
+        let tools = parse_tools(text);
+        assert_eq!(tools.len(), BUILD_TOOLS.len());
+        assert!(tools.contains(&("make".to_string(), true)));
+        assert!(tools.contains(&("gdb".to_string(), false)));
+        assert!(tools.contains(&("qemu-system-i386".to_string(), false)));
+        assert!(tools_check_script().contains("command -v qemu-system-i386"));
+        let c = install_tools_command("Ubuntu");
+        let a = args(&c);
+        assert!(a.windows(2).any(|w| w == ["-u", "root"]));
+        assert!(a.last().unwrap().contains("gcc-multilib") && a.last().unwrap().contains("qemu-system-x86"));
+    }
+
+    #[test]
+    fn git_setup_quotes_everything() {
+        let s = git_setup_script("O'Brien", "me@example.com", Some("/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"));
+        assert!(s.contains(r"git config --global user.name 'O'\''Brien'"));
+        assert!(s.contains("user.email 'me@example.com'"));
+        assert!(s.contains("credential.helper '!") && s.contains("/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"));
+        assert!(!git_setup_script("", "", None).contains("--global user.name '"));
     }
 
     #[test]
