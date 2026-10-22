@@ -14,6 +14,10 @@ use crate::widgets::{self, Pill, CRUMB_H, STATUS_H, TAB_H};
 impl App {
     fn menu_item(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, id: &str) {
         let Some(c) = commands::by_id(id) else { return };
+        // Lisp's commands are there while the Lisp module is on
+        if commands::is_lisp_command(id) && !self.lisp_enabled() {
+            return;
+        }
         let sc = c.shortcuts.first().map(|s| commands::display_shortcut(s)).unwrap_or_default();
         let mut btn = egui::Button::new(tr(c.title));
         if !sc.is_empty() {
@@ -85,12 +89,14 @@ impl App {
             });
             ui.menu_button(tr("Code"), |ui| {
                 self.menu_items(ui, ctx, &["code.complete", "code.quick_doc", "code.param_info", "code.expand_macro", "-", "code.reformat", "code.auto_indent"]);
-                ui.separator();
-                ui.menu_button(tr("Structural Editing"), |ui| {
-                    for c in commands::COMMANDS.iter().filter(|c| c.id.starts_with("lisp.")) {
-                        self.menu_item(ui, ctx, c.id);
-                    }
-                });
+                if self.lisp_enabled() {
+                    ui.separator();
+                    ui.menu_button(tr("Structural Editing"), |ui| {
+                        for c in commands::COMMANDS.iter().filter(|c| c.id.starts_with("lisp.")) {
+                            self.menu_item(ui, ctx, c.id);
+                        }
+                    });
+                }
             });
             ui.menu_button(tr("Refactor"), |ui| self.menu_items(ui, ctx, &["refactor.rename"]));
             ui.menu_button(tr("Git"), |ui| {
@@ -249,7 +255,13 @@ impl App {
                     self.run_command(ctx, "run.run_file");
                 }
                 let label = self.run_config_label();
-                let icon = if matches!(self.run_config, RunConfig::Make(_)) { (Icon::Hammer, pal.accent) } else { (Icon::Lisp, pal.keyword_form) };
+                let icon = if matches!(self.run_config, RunConfig::Make(_)) {
+                    (Icon::Hammer, pal.accent)
+                } else if self.lisp_enabled() {
+                    (Icon::Lisp, pal.keyword_form)
+                } else {
+                    (Icon::Play, pal.ok)
+                };
                 let resp = Pill::new(&label).icon(icon.0, icon.1).chevron().bordered().height(34.0).show(ui, &pal);
                 let systems = self.asd_systems();
                 let targets = self.make_targets.clone();
@@ -341,7 +353,8 @@ impl App {
                 (Icon::Eye, BottomTool::Repl, tr("REPL (Alt+8)"), self.repl.ready.then_some(pal.ok)),
                 (Icon::History, BottomTool::Git, tr("Git (Alt+9)"), None),
             ];
-            for (icon, tool, tip, badge) in tools {
+            let lisp = self.lisp_enabled();
+            for (icon, tool, tip, badge) in tools.into_iter().filter(|t| lisp || t.1 != BottomTool::Repl) {
                 if self.strip_button(ui, icon, self.bottom_tool == Some(tool), tip, badge) {
                     self.toggle_bottom(tool);
                 }
@@ -565,6 +578,7 @@ impl App {
                     ui.label(small("UTF-8".into()));
                     ui.label(small(eol));
                 }
+                if self.lisp_enabled() {
                 let (txt, color) = if self.repl.starting {
                     (tr("REPL starting...").to_string(), pal.warning)
                 } else if self.repl.ready {
@@ -580,6 +594,7 @@ impl App {
                 ui.painter().circle_filled(r.center(), 4.0, color);
                 if resp.clicked() {
                     self.run_command(ctx, "view.repl");
+                }
                 }
                 // where the project is built and run, with a menu to switch it
                 self.draw_env_chip(ui);

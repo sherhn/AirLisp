@@ -99,6 +99,21 @@ def run_one(script_path):
                 (proj / rel).write_bytes(content.encode("utf-8"))
             subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
             subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "polyglot"], cwd=proj, capture_output=True, check=True)
+        if "@echo_module" in text:
+            # a module of its own with a run command that needs no tools: `echo`, on Windows and in the fake Linux alike
+            files = {"tools/hello.zz": "say hello\n"}
+            for rel, content in files.items():
+                (proj / rel).parent.mkdir(parents=True, exist_ok=True)
+                (proj / rel).write_bytes(content.encode("utf-8"))
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "echo"], cwd=proj, capture_output=True, check=True)
+            echo = tmp / "cfg" / "modules" / "echo"
+            echo.mkdir(parents=True)
+            (echo / "module.json").write_text(json.dumps({
+                "id": "echo", "name": "Echo", "version": "1.0.0", "category": "Languages", "summary": "a test language",
+                "languages": [{"id": "echo", "name": "Echo", "extensions": ["zz"], "grammar": [{"match": r"\bhello\b", "class": "keyword"}]}],
+                "run": [{"language": "echo", "name": "Say", "command": "echo ran {name} in {stem}"}],
+            }), encoding="utf-8")
         if "@linux_distro" in text:
             (tmp / "fake-wsl.json").write_text(json.dumps({"installed": True, "distros": {"Ubuntu-24.04": {"sbcl": False}}, "default": "Ubuntu-24.04"}), encoding="utf-8")
         if "@long_file" in text:

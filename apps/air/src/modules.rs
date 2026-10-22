@@ -16,6 +16,7 @@ use lisp_syntax::dialect::is_lisp_file;
 use crate::app::App;
 use crate::doc::Doc;
 use crate::editor_view::Sev;
+use crate::state::BottomTool;
 use crate::i18n::{self, tr};
 
 /// The Lisp module is part of the program (its engine is compiled in), so its files come with it: a person who used
@@ -219,6 +220,17 @@ impl App {
         self.wsl.tools.clear();
         self.mods.langs = langs;
         self.mods.lisp = lisp;
+        if !lisp {
+            // the REPL goes with the Lisp module
+            if let Some(s) = self.repl.session.take() {
+                s.kill();
+            }
+            self.repl.ready = false;
+            self.repl.starting = false;
+            if self.bottom_tool == Some(BottomTool::Repl) {
+                self.bottom_tool = None;
+            }
+        }
         self.apply_languages();
         self.refresh_needed_modules();
         self.refresh_make_targets();
@@ -330,6 +342,15 @@ impl App {
             });
             let _ = tx.send(Event::Finished { id, removed: false, result });
         });
+    }
+
+    /// Make `id` usable: switch it on if it is installed, else download it.
+    pub fn module_use(&mut self, id: &str) {
+        if self.mods.installed.iter().any(|m| m.manifest.id == id) {
+            self.module_set_enabled(id, true);
+        } else {
+            self.module_install(id);
+        }
     }
 
     pub fn module_remove(&mut self, id: &str) {

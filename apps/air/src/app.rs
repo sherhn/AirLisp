@@ -669,6 +669,9 @@ impl App {
         if self.repl.session.as_ref().is_some_and(|s| s.is_alive()) {
             return true;
         }
+        if !self.lisp_enabled() {
+            return false;
+        }
         self.repl.session = None;
         if self.lisp.is_none() {
             self.lisp = self.resolve_lisp();
@@ -871,9 +874,24 @@ impl App {
     pub fn run_current_file(&mut self) {
         let Some(d) = self.doc() else { return };
         if !d.ed.is_lisp() && d.diff.is_none() {
+            // a file of a language a module brings: that module's run command; else the project's make
+            let lang = d.ed.language().map(|l| l.id().to_string()).unwrap_or_default();
+            if let Some(def) = self.run_def_for(&lang) {
+                if d.path.is_none() {
+                    let a = self.active;
+                    if !self.save_doc(a) {
+                        return;
+                    }
+                }
+                self.save_all();
+                if let Some(path) = self.doc().and_then(|d| d.path.clone()) {
+                    self.run_language_command(&def, &path);
+                }
+                return;
+            }
             match self.make_targets.first().cloned() {
                 Some(t) => self.run_make(&t),
-                None => self.toast(tr("This is not a Lisp file, and the project has no makefile to run"), Sev::Weak),
+                None => self.toast(tr("There is nothing to run for this file: no module with a run command for it, and no makefile"), Sev::Weak),
             }
             return;
         }
@@ -1484,7 +1502,8 @@ impl App {
                 .collect()
         };
         let action_items = |limit: usize, section: &'static str| -> Vec<Item> {
-            let list: Vec<&commands::Command> = commands::COMMANDS.iter().filter(|c| !c.title.is_empty() && !matches!(c.id, "edit.newline" | "edit.backspace" | "edit.delete" | "app.escape") && !c.id.starts_with("caret.") && !c.id.starts_with("select.") && !c.id.starts_with("scroll.")).collect();
+            let lisp_on = self.mods.lisp;
+            let list: Vec<&commands::Command> = commands::COMMANDS.iter().filter(|c| (lisp_on || !commands::is_lisp_command(c.id)) && !c.title.is_empty() && !matches!(c.id, "edit.newline" | "edit.backspace" | "edit.delete" | "app.escape") && !c.id.starts_with("caret.") && !c.id.starts_with("select.") && !c.id.starts_with("scroll.")).collect();
             let mk = |c: &commands::Command, hits: Vec<usize>| Item { label: tr(c.title).to_string(), detail: tr(c.category.title()).to_string(), badge: "A".into(), section, target: PTarget::Command(c.id.to_string()), hits, shortcut: c.shortcuts.first().map(|s| commands::display_shortcut(s)).unwrap_or_default() };
             if query.trim().is_empty() {
                 return list.iter().take(limit).map(|c| mk(c, vec![])).collect();

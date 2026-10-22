@@ -27,6 +27,8 @@ pub enum RunConfig {
 pub struct MakeRun {
     pub root: PathBuf,
     pub target: Option<Target>,
+    /// What to call the run in messages: `make`, or the name of the run command.
+    pub label: String,
 }
 
 /// `a/b/../c` -> `a/c` for `/`-separated paths.
@@ -79,6 +81,10 @@ impl App {
     /// ASDF systems defined by `.asd` files of the project (system name = file stem).
     pub fn asd_systems(&self) -> Vec<String> {
         let Some(p) = &self.project else { return vec![] };
+        // ASDF systems are the Lisp module's
+        if !self.lisp_enabled() {
+            return vec![];
+        }
         let mut v: Vec<String> = p.files.iter().filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("asd"))).filter_map(|f| f.file_stem().map(|s| s.to_string_lossy().into_owned())).collect();
         v.sort();
         v.dedup();
@@ -136,23 +142,58 @@ impl App {
                 Launch { cmd, cleanup: None }
             }
         };
+        self.start_run(format!("make {target}"), launch, "make", root, t, Some(tr("make is not installed on Windows - build this project in Linux (WSL): click Windows in the status bar")));
+    }
+
+    /// Show `launch` in the Run window as the current run; its compiler messages become problems when it ends.
+    fn start_run(&mut self, title: String, launch: Launch, label: &str, root: PathBuf, t: Option<Target>, not_found: Option<&str>) {
         match runner::spawn_launch(launch) {
             Ok(h) => {
                 let place = match &t {
                     Some(t) => i18n::fmt("in Linux ({0}): {1}", &[&t.distro, &wsl::to_linux(&root, t)]),
                     None => root.display().to_string(),
                 };
-                self.run = RunState { handle: Some(h), title: format!("make {target}"), log: vec![], running: true, exit_code: None, file: None };
-                self.run.log.push(LogLine { kind: LogKind::Info, text: format!("make {target}   {place}") });
-                self.make_run = Some(MakeRun { root, target: t });
+                self.run = RunState { handle: Some(h), title: title.clone(), log: vec![], running: true, exit_code: None, file: None };
+                self.run.log.push(LogLine { kind: LogKind::Info, text: format!("{title}   {place}") });
+                self.make_run = Some(MakeRun { root, target: t, label: label.to_string() });
                 self.compiler_problems.retain(|p| p.source != "make");
                 self.bottom_tool = Some(BottomTool::Run);
             }
-            Err(e) if t.is_none() && e.kind() == std::io::ErrorKind::NotFound => {
-                self.toast(tr("make is not installed on Windows - build this project in Linux (WSL): click Windows in the status bar"), Sev::Error);
+            Err(e) if t.is_none() && e.kind() == std::io::ErrorKind::NotFound && not_found.is_some() => {
+                self.toast(not_found.unwrap_or_default(), Sev::Error);
             }
             Err(e) => self.toast(i18n::fmt("Cannot run: {}", &[&e]), Sev::Error),
         }
+    }
+
+    /// The command that runs files of language `lang`, from the modules that are on.
+    pub fn run_def_for(&self, lang: &str) -> Option<ide_core::modules::RunDef> {
+        self.mods.installed.iter().filter(|m| m.enabled).flat_map(|m| m.manifest.run.iter()).find(|r| r.language == lang).cloned()
+    }
+
+    /// Run `file` with the run command of its language: in the project's Linux, or on Windows.
+    pub fn run_language_command(&mut self, def: &ide_core::modules::RunDef, file: &Path) {
+        let root = self.project_root().map(Path::to_path_buf).or_else(|| file.parent().map(Path::to_path_buf)).unwrap_or_default();
+        let t = self.wsl_target();
+        let dir = file.parent().unwrap_or(Path::new("."));
+        let (file_s, dir_s) = match &t {
+            Some(t) => (wsl::to_linux(file, t), wsl::to_linux(dir, t)),
+            None => (file.display().to_string().replace('\\', "/"), dir.display().to_string().replace('\\', "/")),
+        };
+        let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let line = def.command_line(&file_s, &dir_s, t.is_none());
+        if let Some(h) = self.run.handle.take() {
+            h.kill();
+        }
+        let launch = match &t {
+            Some(t) => {
+                let marker = wsl::new_marker();
+                let cmd = wsl::shell(t, &root, &format!("{line} 2>&1"), &[], &marker);
+                Launch { cmd, cleanup: Some(wsl::Cleanup { target: t.clone(), marker }) }
+            }
+            None => Launch { cmd: ide_core::cmdscript::shell_command(&line, &root, &[]), cleanup: None },
+        };
+        self.start_run(format!("{} '{}'", def.name, name), launch, &def.name, root, t, None);
     }
 
     /// A make run ended: its compiler messages become problems (and markers in open files).
@@ -160,17 +201,18 @@ impl App {
         let Some(run) = self.make_run.take() else { return };
         if code == Some(127) && run.target.is_some() {
             // make itself was not found: the distribution has no build tools yet
-            if let Some(hint) = self.linux_command_not_found(Some("make")) {
+            let program = if run.label == "make" { Some("make") } else { None };
+            if let Some(hint) = self.linux_command_not_found(program) {
                 self.run.log.push(LogLine { kind: LogKind::Error, text: hint.clone() });
                 self.toast(hint, Sev::Error);
-                self.status = tr("make is not installed").into();
+                self.status = tr(if program.is_some() { "make is not installed" } else { "The command was not found" }).into();
                 return;
             }
         }
         let output: String = self.run.log.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n");
         let messages = build::parse_output(&output);
         if messages.is_empty() && code != Some(0) {
-            self.status = tr("make failed").into();
+            self.status = i18n::fmt("{} failed", &[&run.label]);
         }
         let (mut errors, mut warnings) = (0, 0);
         let mut by_file: std::collections::HashMap<PathBuf, Vec<crate::editor_view::Marker>> = std::collections::HashMap::new();
@@ -215,10 +257,10 @@ impl App {
             }
         }
         if errors > 0 {
-            self.status = i18n::fmt("make: {0} error(s), {1} warning(s)", &[&errors, &warnings]);
-            self.toast(i18n::fmt("make: {0} error(s), {1} warning(s) - see Problems", &[&errors, &warnings]), Sev::Error);
+            self.status = i18n::fmt("{0}: {1} error(s), {2} warning(s)", &[&run.label, &errors, &warnings]);
+            self.toast(i18n::fmt("{0}: {1} error(s), {2} warning(s) - see Problems", &[&run.label, &errors, &warnings]), Sev::Error);
         } else if code == Some(0) {
-            self.status = i18n::fmt("make finished: {} warning(s)", &[&warnings]);
+            self.status = i18n::fmt("{0} finished: {1} warning(s)", &[&run.label, &warnings]);
         }
     }
 

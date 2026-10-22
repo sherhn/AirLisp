@@ -234,6 +234,17 @@ cmds! {
     "app.escape", "Close Popup / Return to Editor", Window, ["Escape"];
 }
 
+/// Commands that only make sense for Lisp (its reader, its REPL, its compiler): they are hidden and off while the Lisp
+/// module is.
+pub fn is_lisp_command(id: &str) -> bool {
+    id.starts_with("lisp.")
+        || id.starts_with("repl.")
+        || matches!(
+            id,
+            "view.repl" | "code.expand_macro" | "run.load_system" | "run.test_system" | "run.compile_file"
+        )
+}
+
 pub fn by_id(id: &str) -> Option<&'static Command> {
     COMMANDS.iter().find(|c| c.id == id)
 }
@@ -330,6 +341,17 @@ impl Keymap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lisp_commands_are_told_apart() {
+        for id in ["lisp.slurp_forward", "repl.eval", "run.load_system", "code.expand_macro", "view.repl"] {
+            assert!(is_lisp_command(id), "{id}");
+            assert!(by_id(id).is_some(), "{id} exists");
+        }
+        for id in ["file.save", "edit.copy", "run.run_file", "run.stop", "find.find", "app.modules", "code.comment_line"] {
+            assert!(!is_lisp_command(id), "{id}");
+        }
+    }
     use std::collections::HashSet;
 
     #[test]

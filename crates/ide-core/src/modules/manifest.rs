@@ -22,6 +22,17 @@ pub struct RunDef {
     pub windows: String,
 }
 
+impl RunDef {
+    /// The command line that runs `file`, with the placeholders filled in. `file` and `dir` are the paths as the shell
+    /// that runs the line sees them (slashes, not backslashes); `windows`: the project runs on Windows.
+    pub fn command_line(&self, file: &str, dir: &str, windows: bool) -> String {
+        let template = if windows && !self.windows.is_empty() { &self.windows } else { &self.command };
+        let name = file.rsplit('/').next().unwrap_or(file);
+        let stem = name.rsplit_once('.').filter(|(s, _)| !s.is_empty()).map_or(name, |(s, _)| s);
+        template.replace("{file}", file).replace("{dir}", dir).replace("{name}", name).replace("{stem}", stem)
+    }
+}
+
 /// A group of tools a module wants in the project's Linux (see the developer tools on the Linux page).
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
@@ -128,6 +139,18 @@ mod tests {
         "tools":[{"name":"Python","programs":["python3"],"apt":"python3"}],
         "detect":{"extensions":["py"],"files":["pyproject.toml"]},
         "templates":[{"name":"Hello","files":{"main.py":"print(1)\n"}}]}"##;
+
+    #[test]
+    fn a_run_command_gets_the_file_filled_in() {
+        let r = RunDef { language: "c".into(), name: "Run".into(), command: "cc \"{file}\" -o \"{dir}/{stem}\" && ./{name}".into(), windows: "gcc \"{file}\" -o \"{dir}/{stem}.exe\"".into() };
+        assert_eq!(r.command_line("/home/u/p/main.c", "/home/u/p", false), "cc \"/home/u/p/main.c\" -o \"/home/u/p/main\" && ./main.c");
+        assert_eq!(r.command_line("C:/p/main.c", "C:/p", true), "gcc \"C:/p/main.c\" -o \"C:/p/main.exe\"");
+        // no Windows variant: the same line
+        let same = RunDef { windows: String::new(), ..r.clone() };
+        assert_eq!(same.command_line("C:/p/a.b.c", "C:/p", true), "cc \"C:/p/a.b.c\" -o \"C:/p/a.b\" && ./a.b.c");
+        // a name that is all extension keeps it as the stem
+        assert_eq!(same.command_line("/x/.hidden", "/x", false), "cc \"/x/.hidden\" -o \"/x/.hidden\" && ./.hidden");
+    }
 
     #[test]
     fn a_manifest_parses_and_checks() {

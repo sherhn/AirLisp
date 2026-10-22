@@ -407,6 +407,11 @@ impl App {
                         errors.push(format!("{key}: expected {want:?}, got {got:?}"));
                     }
                 }
+                if let Some(b) = step["lisp"].as_bool()
+                    && b != self.lisp_enabled()
+                {
+                    errors.push(format!("lisp: expected {b}, got {}", self.lisp_enabled()));
+                }
                 if let Some(b) = step["tab"].as_bool() {
                     let open = self.docs.iter().any(|d| d.page.is_some());
                     if open != b {

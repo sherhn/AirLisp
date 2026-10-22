@@ -369,6 +369,7 @@ impl App {
         let err_count = problems.iter().filter(|p| p.sev == Sev::Error).count();
         let (hr, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), PANEL_HEADER_H), Sense::hover());
         let mut x = hr.min.x + 12.0;
+        let lisp = self.lisp_enabled();
         let tabs = [
             (BottomTool::Repl, tr("REPL").to_string()),
             (BottomTool::Run, tr("Run").to_string()),
@@ -378,7 +379,7 @@ impl App {
             (BottomTool::Find, if self.find_results.hits.is_empty() { tr("Find").to_string() } else { format!("{}  {}", tr("Find"), self.find_results.hits.len()) }),
         ];
         let mut switch_to = None;
-        for (t, label) in tabs {
+        for (t, label) in tabs.into_iter().filter(|(t, _)| lisp || *t != BottomTool::Repl) {
             let active = t == tool;
             let font = if active { fonts::semibold(13.5) } else { fonts::ui(13.5) };
             let g = ui.painter().layout_no_wrap(label.clone(), font.clone(), pal.text);

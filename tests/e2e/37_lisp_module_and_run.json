@@ -1,0 +1,43 @@
+[
+  {"op": "log", "value": "@echo_module: Lisp is a module - its REPL and commands go when it is off; other languages run with their module's command"},
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+  {"op": "assert_modules", "installed": ["echo", "lisp"], "enabled": ["echo", "lisp"], "lisp": true},
+
+  {"op": "log", "value": "with the Lisp module on the REPL is there"},
+  {"op": "command", "value": "view.repl"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_bottom", "value": "repl"},
+  {"op": "command", "value": "view.repl"},
+  {"op": "frames", "value": 3},
+
+  {"op": "log", "value": "switch it off: the REPL and the Lisp commands say where they went"},
+  {"op": "module_enable", "value": "lisp", "on": false},
+  {"op": "frames", "value": 3},
+  {"op": "assert_modules", "lisp": false, "enabled": ["echo"]},
+  {"op": "command", "value": "view.repl"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_bottom", "value": "none"},
+  {"op": "assert_toast", "value": "Lisp module"},
+  {"op": "command", "value": "lisp.slurp_forward"},
+  {"op": "frames", "value": 2},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_lisp_off.png"},
+
+  {"op": "log", "value": "a file of another language runs with the command its module brings"},
+  {"op": "open", "path": "${PROJ}/tools/hello.zz"},
+  {"op": "assert_language", "value": "echo"},
+  {"op": "command", "value": "run.run_file"},
+  {"op": "wait", "what": "run_done", "timeout": 30},
+  {"op": "assert_run_contains", "value": "ran hello.zz in hello"},
+  {"op": "assert_bottom", "value": "run"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_run.png"},
+
+  {"op": "log", "value": "switch Lisp on again: the REPL is back"},
+  {"op": "module_enable", "value": "lisp", "on": true},
+  {"op": "frames", "value": 3},
+  {"op": "assert_modules", "lisp": true},
+  {"op": "command", "value": "view.repl"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_bottom", "value": "repl"},
+  {"op": "quit"}
+]

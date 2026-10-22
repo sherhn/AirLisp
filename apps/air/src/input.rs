@@ -1,7 +1,7 @@
 //! Keyboard handling and command execution. Every key goes through the keymap -> command registry.
 
 use eframe::egui::{self, Event, Key, Modifiers};
-use ide_core::commands::Shortcut;
+use ide_core::commands::{self, Shortcut};
 use ide_core::exec::{self, ExecCtx};
 use ide_core::search::TextQuery;
 
@@ -265,6 +265,10 @@ impl App {
     }
 
     pub fn run_command(&mut self, ctx: &egui::Context, id: &str) {
+        if commands::is_lisp_command(id) && !self.lisp_enabled() {
+            self.toast(tr("This is part of the Lisp module - install and switch it on in Modules"), Sev::Weak);
+            return;
+        }
         let editor_on = self.doc().is_some_and(|d| d.diff.is_none());
         match id {
             // ---- file
