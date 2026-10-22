@@ -1,107 +1,87 @@
-"""Generates the Air app icon (PNG sizes + .ico) with Pillow. Run: python assets/icon/make_icon.py
+"""Generates the Air app icon (PNG sizes + .ico). Run: python assets/icon/make_icon.py
 
-Design: a JetBrains-style black tile with the white underline bar, and a luminous gradient lambda
-(the Lisp symbol) whose strokes fade into "air" streaks on the left - ArtCraft-like colour, JetBrains-like structure.
+The mark: a letter A made of liquid glass - two legs and a crossbar that is a stream of air - on a black tile that
+glows green in one corner and blue in the other. The look is drawn with tools/glass.py.
 """
 import math
 import os
+import pathlib
+import sys
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+import numpy as np
+from PIL import Image, ImageDraw, ImageFilter
 
-S = 2048  # supersampled canvas
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent / "tools"))
+import glass as g  # noqa: E402
+
+S = 1024
+SS = 2  # supersampling of the shapes
 OUT = os.path.dirname(os.path.abspath(__file__))
 
 
-def lerp(a, b, t):
-    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(len(a)))
+def letter_mask(w, h):
+    """The A as a mask: two round-capped legs meeting at the apex, and a crossbar that curves like a stream."""
+    big = Image.new("L", (w * SS, h * SS), 0)
+    d = ImageDraw.Draw(big)
+    P = lambda x, y: (x * w * SS, y * h * SS)
+    stroke = 0.118 * w * SS
+    apex, left, right = P(0.50, 0.215), P(0.255, 0.80), P(0.745, 0.80)
 
+    def thick(a, b):
+        d.line([a, b], fill=255, width=int(stroke))
+        for c in (a, b):
+            r = stroke / 2
+            d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=255)
 
-def gradient(size, stops, angle_deg=0.0):
-    """Linear gradient image; stops = [(pos, (r,g,b)), ...]."""
-    w, h = size
-    img = Image.new("RGB", size)
-    px = img.load()
-    ca, sa = math.cos(math.radians(angle_deg)), math.sin(math.radians(angle_deg))
-    half = (abs(w * ca) + abs(h * sa)) / 2
-    for y in range(h):
-        for x in range(w):
-            t = (((x - w / 2) * ca + (y - h / 2) * sa) / half + 1) / 2
-            t = min(1.0, max(0.0, t))
-            for i in range(len(stops) - 1):
-                p0, c0 = stops[i]
-                p1, c1 = stops[i + 1]
-                if t <= p1 or i == len(stops) - 2:
-                    u = 0 if p1 == p0 else min(1.0, max(0.0, (t - p0) / (p1 - p0)))
-                    px[x, y] = lerp(c0, c1, u)
-                    break
-    return img
-
-
-def rounded_mask(size, radius):
-    m = Image.new("L", size, 0)
-    ImageDraw.Draw(m).rounded_rectangle([0, 0, size[0] - 1, size[1] - 1], radius=radius, fill=255)
-    return m
-
-
-def stroke_mask(points_list, width):
-    m = Image.new("L", (S, S), 0)
-    d = ImageDraw.Draw(m)
-    for (x0, y0), (x1, y1) in points_list:
-        d.line([(x0, y0), (x1, y1)], fill=255, width=width)
-        r = width // 2
-        for (x, y) in ((x0, y0), (x1, y1)):
-            d.ellipse([x - r, y - r, x + r, y + r], fill=255)
-    return m
+    thick(left, apex)
+    thick(apex, right)
+    # the crossbar: a gentle wave from leg to leg
+    pts = []
+    for i in range(41):
+        t = i / 40
+        x = 0.37 + (0.63 - 0.37) * t
+        y = 0.625 - 0.06 * math.sin(t * math.pi)
+        pts.append(P(x, y))
+    bar = stroke * 0.5
+    d.line(pts, fill=255, width=int(bar), joint="curve")
+    for c in (pts[0], pts[-1]):
+        r = bar / 2
+        d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=255)
+    return np.asarray(big.resize((w, h), Image.LANCZOS), np.float32) / 255.0
 
 
 def build():
-    # ---- tile: near-black with a faint cool vertical gradient
-    tile_bg = gradient((S, S), [(0.0, (22, 24, 33)), (1.0, (6, 7, 10))], angle_deg=90)
-    tile = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    tile.paste(tile_bg, (0, 0), rounded_mask((S, S), int(S * 0.225)))
+    w = h = S
+    tile = g.rounded_mask(w, h, (S * 0.035, S * 0.035, S * 0.965, S * 0.965), S * 0.215)
+    # the ground: black with two orbs of light
+    ground = g.vgradient(w, h, (12, 21, 19), (6, 9, 15))
+    ground = g.over(ground, g.glow(w, h, S * 0.22, S * 0.16, S * 0.85, g.GREEN, 0.78))
+    ground = g.over(ground, g.glow(w, h, S * 0.86, S * 0.90, S * 0.78, g.BLUE, 0.80))
+    ground = g.over(ground, g.glow(w, h, S * 0.62, S * 0.40, S * 0.36, g.TEAL, 0.16))
+    canvas = ground.copy()
 
-    # ---- lambda geometry (in 2048 space)
-    w = int(S * 0.125)
-    long_stroke = ((int(S * 0.355), int(S * 0.215)), (int(S * 0.700), int(S * 0.775)))
-    short_stroke = ((int(S * 0.512), int(S * 0.470)), (int(S * 0.330), int(S * 0.775)))
-    lam = stroke_mask([long_stroke, short_stroke], w)
+    a = letter_mask(w, h)
+    # soft light spilling out of the letter
+    spill = g.blur(g.layer(w, h, g.GREEN, a * 0.5), S * 0.045)
+    canvas = g.over(canvas, spill)
+    # the letter is a pane of frosted glass (the glows behind it shine through) with colour poured into it...
+    canvas = g.glass(canvas, a, tint_alpha=0.07, frost=S * 0.014, rim=0.0, highlight=0.0, dark_edge=0.0)
+    ink = g.diagonal(w, h, (30, 232, 112), (62, 112, 255), 50)
+    ink[..., 3] = a * 0.66
+    canvas = g.over(canvas, ink)
+    # ...and light on its edge and across its top
+    canvas = g.glass(canvas, a, tint_alpha=0.0, frost=0.6, rim=0.60, highlight=0.32, dark_edge=0.25, rim_width=max(2, int(S * 0.004)))
+    # a drop of light on the apex
+    canvas = g.bubble(canvas, S * 0.50, S * 0.235, S * 0.030, strength=0.9)
 
-    # gradient fill across the lambda: cyan -> blue -> magenta -> orange
-    fill = gradient((S, S), [(0.0, (60, 220, 255)), (0.38, (80, 110, 255)), (0.70, (226, 70, 255)), (1.0, (255, 150, 60))], angle_deg=55)
-
-    # soft glow behind the glyph
-    glow = lam.filter(ImageFilter.GaussianBlur(S * 0.035))
-    glow_rgba = Image.merge("RGBA", (*fill.split(), glow.point(lambda v: int(v * 0.55))))
-    tile = Image.alpha_composite(tile, glow_rgba)
-
-    # airy streaks: thin horizontal wisps fading to the left, as if the lambda moves through air
-    streaks = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(streaks)
-    wisps = [(0.15, 0.340, 0.50, 0.016, 235), (0.09, 0.430, 0.44, 0.012, 190), (0.19, 0.520, 0.47, 0.016, 220), (0.13, 0.610, 0.40, 0.011, 160)]
-    for x0, y, x1, th, alpha in wisps:
-        h = int(S * th)
-        sd.rounded_rectangle([int(S * x0), int(S * y) - h // 2, int(S * x1), int(S * y) + h // 2], radius=h // 2, fill=(150, 225, 255, alpha))
-    fade = gradient((S, S), [(0.0, (0, 0, 0)), (0.55, (255, 255, 255)), (1.0, (255, 255, 255))], angle_deg=0).convert("L")
-    sa = streaks.split()[3]
-    streaks.putalpha(ImageChops.multiply(sa, fade))
-    tile = Image.alpha_composite(tile, streaks)
-
-    # the glyph itself
-    glyph = Image.merge("RGBA", (*fill.split(), lam))
-    tile = Image.alpha_composite(tile, glyph)
-
-    # JetBrains signature: the white bar at the bottom left
-    bar = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(bar)
-    bd.rounded_rectangle([int(S * 0.165), int(S * 0.835), int(S * 0.385), int(S * 0.870)], radius=int(S * 0.0175), fill=(255, 255, 255, 255))
-    tile = Image.alpha_composite(tile, bar)
-
-    # subtle top highlight inside the tile
-    hi = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    hd = ImageDraw.Draw(hi)
-    hd.rounded_rectangle([int(S * 0.02), int(S * 0.02), int(S * 0.98), int(S * 0.98)], radius=int(S * 0.21), outline=(255, 255, 255, 38), width=int(S * 0.006))
-    tile = Image.alpha_composite(tile, hi)
-    return tile
+    # the tile's own rim
+    edge = g.ring_from_mask(tile, max(2, int(S * 0.006)))
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    light = np.clip(1 - (xs / w * 0.8 + ys / h) / 1.1, 0, 1) ** 1.3
+    canvas = g.over(canvas, g.layer(w, h, g.WHITE, edge * (0.10 + light * 0.34)))
+    out = canvas.copy()
+    out[..., 3] = tile
+    return g.to_image(out)
 
 
 def main():
@@ -112,7 +92,7 @@ def main():
         img = big.resize((sz, sz), Image.LANCZOS)
         img.save(os.path.join(OUT, f"air-{sz}.png"))
         images[sz] = img
-    big.resize((1024, 1024), Image.LANCZOS).save(os.path.join(OUT, "air-1024.png"))
+    big.save(os.path.join(OUT, "air-1024.png"))
     images[256].save(os.path.join(OUT, "air.ico"), format="ICO", sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
     print("icons written to", OUT)
 

@@ -27,7 +27,23 @@ pub fn radius() -> CornerRadius {
 
 // ---------------------------------------------------------------------- surfaces
 
-/// The window background: a soft vertical gradient.
+/// A soft round glow: `color` at the centre fading to nothing at `radius`.
+fn glow(painter: &Painter, center: Pos2, radius: f32, color: Color32) {
+    const N: usize = 40;
+    let mut m = Mesh::default();
+    m.colored_vertex(center, color);
+    for i in 0..N {
+        let a = i as f32 / N as f32 * std::f32::consts::TAU;
+        m.colored_vertex(Pos2::new(center.x + radius * a.cos(), center.y + radius * a.sin()), Color32::TRANSPARENT);
+    }
+    for i in 0..N {
+        m.add_triangle(0, 1 + i as u32, 1 + ((i + 1) % N) as u32);
+    }
+    painter.add(Shape::mesh(m));
+}
+
+/// The window background: a dark gradient with a green glow in one corner and a blue one in the opposite one, which
+/// the glass cards on top let shine through.
 pub fn paint_base(painter: &Painter, rect: Rect, pal: &Palette) {
     let mut m = Mesh::default();
     m.colored_vertex(rect.left_top(), pal.base_top);
@@ -37,22 +53,40 @@ pub fn paint_base(painter: &Painter, rect: Rect, pal: &Palette) {
     m.add_triangle(0, 1, 2);
     m.add_triangle(0, 2, 3);
     painter.add(Shape::mesh(m));
+    let big = rect.width().max(rect.height());
+    let alpha = if pal.dark { 58 } else { 70 };
+    let tint = |c: Color32| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha);
+    glow(painter, Pos2::new(rect.min.x + rect.width() * 0.12, rect.min.y + rect.height() * 0.05), big * 0.62, tint(pal.glow_a));
+    glow(painter, Pos2::new(rect.max.x - rect.width() * 0.08, rect.max.y - rect.height() * 0.02), big * 0.58, tint(pal.glow_b));
 }
 
-/// A floating tool-window card: filled and rounded, no border, no shadow.
-pub fn card_frame(_pal: &Palette, fill: Color32) -> egui::Frame {
-    egui::Frame::new().fill(fill).corner_radius(CornerRadius::same(CARD_RADIUS))
+/// A floating tool-window card: translucent glass with a light rim, no shadow.
+pub fn card_frame(pal: &Palette, fill: Color32) -> egui::Frame {
+    egui::Frame::new().fill(fill).corner_radius(CornerRadius::same(CARD_RADIUS)).stroke(Stroke::new(1.0, pal.border))
 }
 
 /// "Glass" surface for popups and dialogs (no border, no shadow; a soft sheen on the top edge instead).
 pub fn glass_frame(pal: &Palette) -> egui::Frame {
-    egui::Frame::new().fill(pal.glass).corner_radius(CornerRadius::same(CARD_RADIUS + 2)).inner_margin(Margin::same(18))
+    egui::Frame::new().fill(pal.glass).corner_radius(CornerRadius::same(CARD_RADIUS + 2)).inner_margin(Margin::same(18)).stroke(Stroke::new(1.0, pal.border))
 }
 
 /// Thin highlight along the top edge of a glass surface (a light reflection, not a border).
 pub fn sheen(painter: &Painter, rect: Rect, pal: &Palette) {
+    // brightest in the middle, gone at both ends: the look of light on a curved edge
     let y = rect.min.y + 0.5;
-    painter.line_segment([Pos2::new(rect.min.x + 16.0, y), Pos2::new(rect.max.x - 16.0, y)], Stroke::new(1.0, pal.sheen));
+    let (x0, x1) = (rect.min.x + 14.0, rect.max.x - 14.0);
+    let mid = (x0 + x1) / 2.0;
+    let clear = Color32::TRANSPARENT;
+    let mut m = Mesh::default();
+    for (x, c) in [(x0, clear), (mid, pal.sheen), (x1, clear)] {
+        m.colored_vertex(Pos2::new(x, y), c);
+        m.colored_vertex(Pos2::new(x, y + 1.5), clear);
+    }
+    m.add_triangle(0, 2, 1);
+    m.add_triangle(1, 2, 3);
+    m.add_triangle(2, 4, 3);
+    m.add_triangle(3, 4, 5);
+    painter.add(Shape::mesh(m));
 }
 
 /// Dim everything behind a modal dialog.
@@ -148,11 +182,13 @@ pub fn icon_button(ui: &mut egui::Ui, pal: &Palette, icon: Icon, size: f32, colo
 
 /// Filled accent button for the main action of a dialog.
 pub fn primary_button(ui: &mut egui::Ui, pal: &Palette, label: &str) -> egui::Response {
-    let galley = ui.painter().layout_no_wrap(label.to_string(), fonts::semibold(13.5), Color32::WHITE);
+    let galley = ui.painter().layout_no_wrap(label.to_string(), fonts::semibold(13.5), pal.text_on_accent);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(galley.size().x + 36.0, 36.0), Sense::click());
     let fill = if resp.is_pointer_button_down_on() { pal.accent.gamma_multiply(0.8) } else if resp.hovered() { pal.accent.gamma_multiply(1.15) } else { pal.accent };
     ui.painter().rect_filled(rect, CornerRadius::same(12), fill);
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, fonts::semibold(13.5), Color32::WHITE);
+    // a light edge along the top: the button is a drop of glass
+    ui.painter().rect_stroke(rect, CornerRadius::same(12), Stroke::new(1.0, Color32::from_white_alpha(if pal.dark { 60 } else { 90 })), StrokeKind::Inside);
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, label, fonts::semibold(13.5), pal.text_on_accent);
     resp
 }
 
