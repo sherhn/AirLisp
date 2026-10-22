@@ -63,10 +63,26 @@ pub fn git_available() -> bool {
     run_in(Path::new("."), &["--version"]).is_ok()
 }
 
+/// `git` working in `dir`: the Windows git, or the distribution's own git for a folder on a WSL file system.
+pub fn git_command(dir: &Path) -> Command {
+    let env = [("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()), ("LC_ALL".to_string(), "C".to_string())];
+    match crate::wsl::wsl_path(dir) {
+        Some(w) => {
+            let mut cmd = crate::wsl::command(&w.distro, Some(&w.linux), "git");
+            crate::wsl::pass_env(&mut cmd, &env);
+            cmd
+        }
+        None => {
+            let mut cmd = Command::new("git");
+            cmd.current_dir(dir).envs(env);
+            cmd
+        }
+    }
+}
+
 fn run_in(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let mut cmd = Command::new("git");
-    cmd.arg("-c").arg("core.quotepath=false").arg("-c").arg("color.ui=false").args(args).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    cmd.env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
+    let mut cmd = git_command(dir);
+    cmd.arg("-c").arg("core.quotepath=false").arg("-c").arg("color.ui=false").args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -106,6 +122,10 @@ impl Repo {
     pub fn is_valid(&self) -> bool {
         // git may silently use a parent repository when our `.git` is unusable: require the same top level
         let Ok(top) = self.run(&["rev-parse", "--show-toplevel"]) else { return false };
+        if let Some(w) = crate::wsl::wsl_path(&self.root) {
+            // git inside the distribution answers with a Linux path
+            return top.trim().trim_end_matches('/') == w.linux.trim_end_matches('/') || (w.linux == "/" && top.trim() == "/");
+        }
         let norm = |p: &Path| {
             let c = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
             c.to_string_lossy().trim_start_matches(r"\\?\").replace('\\', "/").to_lowercase()

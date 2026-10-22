@@ -62,6 +62,9 @@ pub struct CloneOptions {
     pub branch: Option<String>,
     /// Extra environment for the git process (e.g. the credentials of a private GitHub repository).
     pub env: Vec<(String, String)>,
+    /// Check files out with Linux line endings whatever Windows git is configured to do (for projects that are
+    /// built in Linux: shell scripts and makefiles break on CRLF).
+    pub lf: bool,
 }
 
 /// Percent of a git progress line (`Receiving objects:  42% (...)`), if it has one.
@@ -80,17 +83,39 @@ pub fn clone_repo(url: &str, dest: &Path, opts: &CloneOptions, cancel: &Arc<Atom
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
-    let mut cmd = Command::new("git");
+    // a folder on a WSL file system is cloned by the distribution's git, into its Linux path
+    let wsl = crate::wsl::wsl_path(dest);
+    let mut cmd = match &wsl {
+        Some(w) => {
+            let mut c = crate::wsl::command(&w.distro, None, "git");
+            let mut env = opts.env.clone();
+            env.extend([("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()), ("LC_ALL".to_string(), "C".to_string())]);
+            crate::wsl::pass_env(&mut c, &env);
+            c
+        }
+        None => {
+            let mut c = Command::new("git");
+            c.envs(opts.env.iter().map(|(k, v)| (k, v)));
+            c.env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
+            c
+        }
+    };
     cmd.arg("clone").arg("--progress");
+    if opts.lf && wsl.is_none() {
+        cmd.args(["--config", "core.autocrlf=false", "--config", "core.eol=lf"]);
+    }
     if opts.shallow {
         cmd.args(["--depth", "1"]);
     }
     if let Some(b) = opts.branch.as_deref().filter(|b| !b.trim().is_empty()) {
         cmd.args(["--branch", b.trim()]);
     }
-    cmd.arg("--").arg(url).arg(dest).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
-    cmd.envs(opts.env.iter().map(|(k, v)| (k, v)));
-    cmd.env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C");
+    cmd.arg("--").arg(url);
+    match &wsl {
+        Some(w) => cmd.arg(&w.linux),
+        None => cmd.arg(dest),
+    };
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -209,6 +234,20 @@ mod tests {
     }
 
     #[test]
+    fn linux_line_endings_are_kept_on_request() {
+        let Some((d, src)) = source_repo() else { return };
+        std::fs::write(src.join("build.sh"), "#!/bin/sh\necho hi\n").unwrap();
+        git::find_repo(&src).unwrap().commit("script", &["build.sh".into()]).unwrap();
+        let url = normalize_url(&src.to_string_lossy()).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let dest = d.path().join("lf-copy");
+        clone_repo(&url, &dest, &CloneOptions { lf: true, ..CloneOptions::default() }, &cancel, &mut |_| {}).unwrap();
+        assert_eq!(std::fs::read(dest.join("build.sh")).unwrap(), b"#!/bin/sh\necho hi\n", "no CRLF in a file meant for Linux");
+        let cfg = std::fs::read_to_string(dest.join(".git").join("config")).unwrap();
+        assert!(cfg.contains("autocrlf = false"), "{cfg}");
+    }
+
+    #[test]
     fn failed_clone_reports_git_error_and_cleans_up() {
         if !git::git_available() {
             return;
@@ -231,7 +270,7 @@ mod tests {
         let url = normalize_url(&src.to_string_lossy()).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         let dest = d.path().join("dev-copy");
-        clone_repo(&url, &dest, &CloneOptions { shallow: false, branch: Some("dev".into()), env: vec![] }, &cancel, &mut |_| {}).unwrap();
+        clone_repo(&url, &dest, &CloneOptions { branch: Some("dev".into()), ..CloneOptions::default() }, &cancel, &mut |_| {}).unwrap();
         assert!(dest.join("dev.lisp").exists());
         // cancelled before it starts reading: no leftovers
         let cancel2 = Arc::new(AtomicBool::new(true));

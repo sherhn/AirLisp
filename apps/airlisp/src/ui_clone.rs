@@ -42,7 +42,7 @@ impl App {
         let dest = PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&url));
         // signed in to GitHub: private repositories clone too (the token reaches git for github.com only)
         let env = self.github.token.as_deref().map(|t| ide_core::github::git_auth_env(&url, t)).unwrap_or_default();
-        let opts = clone::CloneOptions { shallow: st.shallow, branch: Some(st.branch.clone()).filter(|b| !b.trim().is_empty()), env };
+        let opts = clone::CloneOptions { shallow: st.shallow, branch: Some(st.branch.clone()).filter(|b| !b.trim().is_empty()), env, lf: false };
         let (tx, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let (c2, d2) = (cancel.clone(), dest.clone());

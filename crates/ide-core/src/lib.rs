@@ -15,6 +15,7 @@ pub mod localvcs;
 pub mod search;
 pub mod settings;
 pub mod workspace;
+pub mod wsl;
 
 #[cfg(test)]
 pub(crate) mod testutil {
