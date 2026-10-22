@@ -155,9 +155,17 @@ def run_inside(s, name, cwd, prog, args):
     if prog == "sh" and args[:1] == ["-lc"]:
         line = args[1] if len(args) > 1 else ""
         marker = args[2] if len(args) > 2 else ""
-        if line.startswith("make "):
-            target = line[5:].split()[0].strip("'") if line[5:].split() else "all"
-            return fake_make(lcwd or "/", target, "2>&1" in line)
+        words = line.split()
+        first = words[0] if words else ""
+        if first in TOOLS and first != "ld":
+            if not d.get("tools"):
+                # what dash says when the program is not installed and a Windows folder of PATH cannot be read
+                sys.stderr.write(f"{marker}: 1: {first}: Permission denied\n")
+                sys.stderr.flush()
+                return 127
+            if first == "make":
+                target = words[1].strip("'") if len(words) > 1 and not words[1].startswith("2>") else "all"
+                return fake_make(lcwd or "/", target, "2>&1" in line)
         return subprocess.call(f"cmd /d /c {line} & rem {marker}", cwd=cwd, env=env)
     if prog.endswith("sbcl"):
         if not d.get("sbcl"):

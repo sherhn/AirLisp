@@ -485,6 +485,11 @@ impl App {
                 {
                     self.fail(format!("assert_env: banner expected {b}, got {}", self.env_banner));
                 }
+                if let Some(b) = step["tools_banner"].as_bool()
+                    && b != self.tools_banner_visible()
+                {
+                    self.fail(format!("assert_env: tools banner expected {b}, got {} (missing: {:?})", self.tools_banner_visible(), self.missing_build_tools()));
+                }
                 if let Some(rc) = step["run_config"].as_str() {
                     let label = self.run_config_label();
                     if label != rc {
@@ -492,6 +497,11 @@ impl App {
                     }
                 }
             }
+            // the "Install build tools" button of the banner
+            "banner_install_tools" => match self.missing_build_tools() {
+                Some((d, _)) if self.tools_banner_visible() => self.install_build_tools_here(&d),
+                other => self.fail(format!("banner_install_tools: no banner ({other:?})")),
+            },
             "assert_make_problem" => {
                 let file = step["file"].as_str().unwrap_or("").replace('/', "\\");
                 let line = step["line"].as_u64().unwrap_or(1) as usize;
