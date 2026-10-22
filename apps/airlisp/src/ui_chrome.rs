@@ -531,7 +531,7 @@ impl App {
                 let info = self.doc().filter(|d| d.diff.is_none()).map(|d| {
                     let (line, col) = d.ed.line_col(d.ed.caret());
                     let sel = if d.ed.has_selection() { format!(" ({} chars)", d.ed.selected_text().chars().count()) } else { String::new() };
-                    (format!("{}:{}{}", line + 1, col + 1, sel), d.ed.dialect().name().to_string(), d.ed.line_ending.label().to_string())
+                    (format!("{}:{}{}", line + 1, col + 1, sel), d.ed.other_lang().map_or(d.ed.dialect().name(), |l| l.name()).to_string(), d.ed.line_ending.label().to_string())
                 });
                 if let Some((pos, dialect, eol)) = info {
                     if ui.add(egui::Label::new(small(pos)).sense(Sense::click())).on_hover_text(tr("Go to Line (Ctrl+G)")).clicked() {

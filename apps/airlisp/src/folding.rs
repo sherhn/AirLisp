@@ -17,24 +17,47 @@ pub struct Region {
 
 /// All multi-line list regions; for every start line only the outermost region is kept.
 pub fn regions(ed: &Editor) -> Vec<Region> {
-    let p = ed.parsed();
     let text = ed.text();
     let starts = lisp_syntax::indent::line_starts(text);
     let line_of = |off: usize| starts.partition_point(|&s| s <= off) - 1;
     let mut by_start: HashMap<usize, usize> = HashMap::new();
-    for (i, t) in p.tokens.iter().enumerate() {
-        if t.kind != TokenKind::Open {
-            continue;
-        }
-        let Some(c) = p.partner[i] else { continue };
-        let (sl, el) = (line_of(t.start), line_of(p.tokens[c].start));
+    let mut add = |sl: usize, el: usize| {
         if el > sl {
             let e = by_start.entry(sl).or_insert(el);
             if el > *e {
                 *e = el;
             }
         }
+    };
+    if let Some(lang) = ed.other_lang() {
+        // other languages fold their brace blocks (C functions, structs, ...)
+        let mut stack = Vec::new();
+        for s in lisp_syntax::other::highlight(text, lang).iter().filter(|s| s.class == lisp_syntax::highlight::Class::Bracket) {
+            match text.as_bytes()[s.start] {
+                b'{' => stack.push(s.start),
+                b'}' => {
+                    if let Some(o) = stack.pop() {
+                        add(line_of(o), line_of(s.start));
+                    }
+                }
+                _ => {}
+            }
+        }
+        return keyed(text, &starts, by_start);
     }
+    let p = ed.parsed();
+    for (i, t) in p.tokens.iter().enumerate() {
+        if t.kind != TokenKind::Open {
+            continue;
+        }
+        let Some(c) = p.partner[i] else { continue };
+        add(line_of(t.start), line_of(p.tokens[c].start));
+    }
+    keyed(text, &starts, by_start)
+}
+
+/// Regions (start line -> end line) with keys that survive edits elsewhere in the file.
+fn keyed(text: &str, starts: &[usize], by_start: HashMap<usize, usize>) -> Vec<Region> {
     let mut v: Vec<(usize, usize)> = by_start.into_iter().collect();
     v.sort_unstable();
     let mut seen: HashMap<String, usize> = HashMap::new();

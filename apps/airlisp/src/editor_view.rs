@@ -140,8 +140,11 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     // ---- caches
     let rev = ed.revision();
     if state.spans.as_ref().is_none_or(|(r, _)| *r != rev) {
-        let p = ed.parsed();
-        state.spans = Some((rev, highlight(ed.text(), &p)));
+        let spans = match ed.other_lang() {
+            Some(l) => lisp_syntax::other::highlight(ed.text(), l),
+            None => highlight(ed.text(), &ed.parsed()),
+        };
+        state.spans = Some((rev, spans));
     }
     if state.regions.as_ref().is_none_or(|(r, _)| *r != rev) {
         state.regions = Some((rev, folding::regions(ed)));
@@ -186,7 +189,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
 
     let (sel_s, sel_e) = ed.selection();
     let caret = ed.caret();
-    let bracket = ed.parsed().matching_bracket(caret);
+    let bracket = ed.matching_bracket(caret);
     let now = ui.input(|i| i.time);
     let blink_on = ((now - state.last_input_time).max(0.0) * 1.7) as i64 % 2 == 0;
 

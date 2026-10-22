@@ -978,7 +978,7 @@ impl App {
 
     pub fn all_problems(&self) -> Vec<ProblemRow> {
         let mut v = Vec::new();
-        for d in &self.docs {
+        for d in self.docs.iter().filter(|d| d.ed.is_lisp() && d.diff.is_none()) {
             for diag in &d.ed.parsed().diagnostics {
                 v.push(ProblemRow {
                     path: d.path.clone(),
@@ -1187,7 +1187,8 @@ impl App {
     // ------------------------------------------------------------------ completion
 
     pub fn refresh_completion(&mut self, explicit: bool) {
-        let Some(d) = self.docs.get(self.active) else {
+        // the vocabulary is Lisp's: no popup in C files or makefiles
+        let Some(d) = self.docs.get(self.active).filter(|d| d.ed.is_lisp()) else {
             self.completion.active = false;
             return;
         };

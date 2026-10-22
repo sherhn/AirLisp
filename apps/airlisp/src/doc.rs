@@ -54,11 +54,13 @@ impl Doc {
         let bytes = std::fs::read(path)?;
         let text = String::from_utf8(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not valid UTF-8 text"))?;
         let dialect = Dialect::from_path(path).unwrap_or_default();
+        let mut ed = Editor::new(&text, dialect);
+        ed.set_other_lang(lisp_syntax::other::lang_of(path));
         Ok(Doc {
             id: next_id(),
             diff: None,
             path: Some(path.to_path_buf()),
-            ed: Editor::new(&text, dialect),
+            ed,
             view: ViewState::default(),
             disk_mtime: mtime(path),
             conflict: false,
@@ -108,8 +110,9 @@ impl Doc {
     pub fn defs(&mut self) -> &[lisp_syntax::outline::Definition] {
         let rev = self.ed.revision();
         if self.outline_cache.as_ref().is_none_or(|(r, _)| *r != rev) {
-            let p = self.ed.parsed();
-            self.outline_cache = Some((rev, lisp_syntax::outline::outline_parsed(self.ed.text(), &p)));
+            // the outline is made of Lisp definitions; other files have none
+            let defs = if self.ed.is_lisp() { lisp_syntax::outline::outline_parsed(self.ed.text(), &self.ed.parsed()) } else { vec![] };
+            self.outline_cache = Some((rev, defs));
         }
         &self.outline_cache.as_ref().expect("just filled").1
     }
@@ -138,6 +141,7 @@ impl Doc {
     pub fn save_as(&mut self, path: &Path) -> io::Result<()> {
         self.path = Some(path.to_path_buf());
         self.ed.set_dialect(Dialect::from_path(path).unwrap_or_default());
+        self.ed.set_other_lang(lisp_syntax::other::lang_of(path));
         self.save()
     }
 
@@ -169,12 +173,17 @@ impl Doc {
 
     /// Syntax problems of the current text plus the compiler's (while still fresh).
     pub fn markers(&self) -> Vec<Marker> {
-        let p = self.ed.parsed();
-        let mut v: Vec<Marker> = p
+        let mut v: Vec<Marker> = if !self.ed.is_lisp() {
+            // the Lisp reader has nothing to say about C or a makefile
+            vec![]
+        } else {
+            self.ed
+            .parsed()
             .diagnostics
             .iter()
             .map(|d| Marker { start: d.start, end: d.end, sev: if d.severity == Severity::Error { Sev::Error } else { Sev::Warning }, msg: d.message.clone() })
-            .collect();
+            .collect()
+        };
         if self.compiled_rev == self.ed.revision() {
             v.extend(self.compiler_markers.iter().cloned());
         }
