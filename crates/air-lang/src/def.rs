@@ -40,6 +40,9 @@ pub struct RuleDef {
     pub end: String,
     pub class: String,
     pub captures: BTreeMap<String, String>,
+    /// Scanning goes on right after this group instead of after the whole match (0: the whole match). A function
+    /// name followed by `(` is matched as a pattern with the name in group 1 and `consume` 1, so the bracket is left to the bracket rule.
+    pub consume: usize,
     pub ignore_case: bool,
 }
 
@@ -55,7 +58,7 @@ pub struct OutlineDef {
     pub name: usize,
     /// Headings: the group that gives the level (0: none). With `level_mode` `length` it is the number of characters
     /// of the group (`##` is level 2); with `first_seen` the order in which the group's characters first appear
-    /// (reStructuredText: the first kind of underline is level 1).
+    /// (reStructuredText: the first kind of underline is level 1); with `setext` `=` is level 1 and anything else 2.
     pub level: usize,
     pub level_mode: String,
 }

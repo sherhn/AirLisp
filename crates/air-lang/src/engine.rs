@@ -79,7 +79,7 @@ fn build(pattern: &str) -> Result<Regex, String> {
 }
 
 enum Kind {
-    Match { re: Regex, captures: Vec<(usize, Class)>, class: Option<Class> },
+    Match { re: Regex, captures: Vec<(usize, Class)>, class: Option<Class>, consume: usize },
     Region { begin: Regex, end: Option<Regex>, class: Class },
     Brackets { re: Regex },
 }
@@ -96,11 +96,13 @@ struct Hit {
 impl Kind {
     fn find(&self, text: &str, from: usize) -> Option<Hit> {
         match self {
-            Kind::Match { re, captures, .. } if !captures.is_empty() => {
+            Kind::Match { re, captures, consume, .. } if !captures.is_empty() || *consume > 0 => {
                 let c = re.captures_at(text, from)?;
                 let m = c.get(0)?;
                 let groups = captures.iter().filter_map(|(g, _)| c.get(*g).map(|x| (*g, x.start(), x.end()))).collect();
-                Some(Hit { start: m.start(), end: m.end(), groups })
+                // scanning resumes after the group asked for, never before the match has begun
+                let end = if *consume > 0 { c.get(*consume).map_or(m.end(), |g| g.end()).max(m.start() + 1) } else { m.end() };
+                Some(Hit { start: m.start(), end, groups })
             }
             Kind::Match { re, .. } | Kind::Brackets { re } => re.find_at(text, from).map(|m| Hit { start: m.start(), end: m.end(), groups: vec![] }),
             Kind::Region { begin, end, .. } => {
@@ -116,6 +118,7 @@ impl Kind {
 enum LevelMode {
     Length,
     FirstSeen,
+    Setext,
 }
 
 struct OutlineRule {
@@ -193,7 +196,7 @@ fn compile_rule(r: &RuleDef, i: usize) -> Result<Rule, String> {
         words.sort_by_key(|w| std::cmp::Reverse(w.len()));
         let alt = words.iter().map(|w| regex::escape(w)).collect::<Vec<_>>().join("|");
         let pattern = format!("{}\\b(?:{alt})\\b", if r.ignore_case { "(?i)" } else { "" });
-        Kind::Match { re: build(&pattern).map_err(at)?, captures: vec![], class: Some(class_of(&r.class, &format!("rule {}", i + 1))?) }
+        Kind::Match { re: build(&pattern).map_err(at)?, captures: vec![], class: Some(class_of(&r.class, &format!("rule {}", i + 1))?), consume: 0 }
     } else if !r.pattern.is_empty() {
         let re = build(&r.pattern).map_err(at)?;
         let mut captures = Vec::new();
@@ -209,7 +212,10 @@ fn compile_rule(r: &RuleDef, i: usize) -> Result<Rule, String> {
         if captures.is_empty() && class.is_none() {
             return Err(at("a `match` rule needs a class or captures".into()));
         }
-        Kind::Match { re, captures, class }
+        if r.consume >= re.captures_len() {
+            return Err(at(format!("the pattern has no group {} to consume up to", r.consume)));
+        }
+        Kind::Match { re, captures, class, consume: r.consume }
     } else {
         return Err(at("the rule has none of `match`, `words` or `begin`".into()));
     };
@@ -245,6 +251,7 @@ impl Language {
             let mode = match o.level_mode.as_str() {
                 "" | "length" => LevelMode::Length,
                 "first_seen" => LevelMode::FirstSeen,
+                "setext" => LevelMode::Setext,
                 other => return Err(format!("{}: unknown level mode {other:?}", def.id)),
             };
             outline.push(OutlineRule { re, kind, operator: o.kind.clone(), name: o.name, level: o.level, mode });
@@ -432,16 +439,29 @@ impl Language {
     pub fn outline(&self, text: &str) -> Vec<Definition> {
         let starts = line_starts(text);
         let mut out: Vec<Definition> = Vec::new();
+        if self.outline.is_empty() {
+            return out;
+        }
+        // a `def` in a docstring, a `# heading` in a code block or a comment are not entries
+        let dead: Vec<(usize, usize)> = self.highlight(text).iter().filter(|s| matches!(s.class, Class::Comment | Class::String | Class::Code)).map(|s| (s.start, s.end)).collect();
+        let is_dead = |at: usize| {
+            let i = dead.partition_point(|&(_, e)| e <= at);
+            dead.get(i).is_some_and(|&(s, _)| s <= at)
+        };
         for rule in &self.outline {
             let mut seen: Vec<String> = Vec::new();
             for c in rule.re.captures_iter(text) {
                 let (Some(whole), Some(name)) = (c.get(0), c.get(rule.name)) else { continue };
+                if is_dead(name.start()) {
+                    continue;
+                }
                 let mut operator = rule.operator.clone();
                 if rule.level > 0
                     && let Some(l) = c.get(rule.level)
                 {
                     let level = match rule.mode {
                         LevelMode::Length => l.as_str().chars().count(),
+                        LevelMode::Setext => if l.as_str().starts_with('=') { 1 } else { 2 },
                         LevelMode::FirstSeen => {
                             let key: String = l.as_str().chars().take(1).collect();
                             match seen.iter().position(|s| *s == key) {

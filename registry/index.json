@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "lisp",
+      "name": "Lisp",
+      "version": "1.0.0",
+      "category": "Languages",
+      "summary": "Common Lisp and Scheme: structural editing, a live REPL, compile and load, ASDF systems, symbol navigation and SBCL in Linux.",
+      "cover": "cover.png",
+      "path": "modules/lisp",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 1722,
+          "sha256": "4e920d9ccc198e796a67285bdf0038ec762d5c316ee5146fa795f1457c1890fd"
+        },
+        {
+          "name": "cover.png",
+          "size": 1486,
+          "sha256": "bfe62e23a8fdbde14494ac6911a7b89add88663f600560e81eb2867c7474f3d9"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "lisp",
+          "lsp",
+          "cl",
+          "asd",
+          "scm",
+          "ss",
+          "el",
+          "clj",
+          "cljs",
+          "edn"
+        ],
+        "files": []
+      }
+    },
+    {
+      "id": "c-cpp",
+      "name": "C and C++",
+      "version": "1.0.0",
+      "category": "Languages",
+      "summary": "Highlighting, brackets, folding and an outline for C, C++ and headers; compile and run a file; the compilers and debuggers in Linux.",
+      "cover": "cover.png",
+      "path": "modules/c-cpp",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 13315,
+          "sha256": "59ede56ef4a67350c0621832ec92b3bb1305aec2e5369e1c40b7658e1b53d84f"
+        },
+        {
+          "name": "cover.png",
+          "size": 1486,
+          "sha256": "bfe62e23a8fdbde14494ac6911a7b89add88663f600560e81eb2867c7474f3d9"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "c",
+          "h",
+          "cc",
+          "cpp",
+          "cxx",
+          "hpp",
+          "hh",
+          "hxx"
+        ],
+        "files": [
+          "CMakeLists.txt",
+          "meson.build"
+        ]
+      }
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "version": "1.0.0",
+      "category": "Languages",
+      "summary": "Highlighting, indentation, folding by blocks and an outline for Python; run a file; python3 and pip in Linux.",
+      "cover": "cover.png",
+      "path": "modules/python",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 7138,
+          "sha256": "7adf858553ff04686613a9c77e68394a59c9d530f310657378bf0e5b8bf0fb8a"
+        },
+        {
+          "name": "cover.png",
+          "size": 1486,
+          "sha256": "bfe62e23a8fdbde14494ac6911a7b89add88663f600560e81eb2867c7474f3d9"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "py",
+          "pyw"
+        ],
+        "files": [
+          "pyproject.toml",
+          "requirements.txt",
+          "setup.py",
+          "Pipfile"
+        ]
+      }
+    },
+    {
+      "id": "assembler",
+      "name": "Assembler",
+      "version": "1.0.0",
+      "category": "Languages",
+      "summary": "NASM and GNU assembler: instructions, registers, directives, labels and an outline of labels; nasm and QEMU in Linux.",
+      "cover": "cover.png",
+      "path": "modules/assembler",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 18020,
+          "sha256": "2714bbec6581cf42e0d1b10d6a73c39a4e8f951187a619b1324e6ad358b32a8b"
+        },
+        {
+          "name": "cover.png",
+          "size": 1486,
+          "sha256": "bfe62e23a8fdbde14494ac6911a7b89add88663f600560e81eb2867c7474f3d9"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "asm",
+          "nasm",
+          "s"
+        ],
+        "files": []
+      }
+    },
+    {
+      "id": "markdown",
+      "name": "Markdown",
+      "version": "1.0.0",
+      "category": "Documents",
+      "summary": "Headings, emphasis, code, links and lists; Enter continues a list; folding and an outline by headings.",
+      "cover": "cover.png",
+      "path": "modules/markdown",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 3792,
+          "sha256": "77cedfa820bcee4beb55e6dcd9ec947a9801f4e3195cf1fb7d9a2ebce80348d9"
+        },
+        {
+          "name": "cover.png",
+          "size": 1486,
+          "sha256": "bfe62e23a8fdbde14494ac6911a7b89add88663f600560e81eb2867c7474f3d9"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "md",
+          "markdown"
+        ],
+        "files": []
+      }
+    },
+    {
+      "id": "restructuredtext",
+      "name": "reStructuredText",
+      "version": "1.0.0",
+      "category": "Documents",
+      "summary": "Headings by underline, directives, roles, links and lists for .rst; folding and an outline by sections.",
+      "cover": "cover.png",
+      "path": "modules/restructuredtext",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 3754,
+          "sha256": "78087fabf4c8e8f2b4d7337a05b35d4ef0a7a1942641d50ba9f767be3742357b"
+        },
+        {
+          "name": "cover.png",
+          "size": 1486,
+          "sha256": "bfe62e23a8fdbde14494ac6911a7b89add88663f600560e81eb2867c7474f3d9"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "rst"
+        ],
+        "files": [
+          "conf.py"
+        ]
+      }
+    },
+    {
+      "id": "shell-make",
+      "name": "Shell and Make",
+      "version": "1.0.0",
+      "category": "Languages",
+      "summary": "Shell scripts, makefiles and the usual configuration files: highlighting, comments and an outline of functions and targets.",
+      "cover": "cover.png",
+      "path": "modules/shell-make",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 9076,
+          "sha256": "241c3e5dd4daf1b89a81c89a30bb600546c15b67f9454de7c92982263b347f8a"
+        },
+        {
+          "name": "cover.png",
+          "size": 1486,
+          "sha256": "bfe62e23a8fdbde14494ac6911a7b89add88663f600560e81eb2867c7474f3d9"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "sh",
+          "mk"
+        ],
+        "files": [
+          "Makefile",
+          "makefile",
+          "GNUmakefile",
+          "Dockerfile"
+        ]
+      }
+    }
+  ]
+}

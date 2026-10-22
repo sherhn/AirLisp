@@ -1,0 +1,20 @@
+from common import module
+
+MODULE = module(
+    id="lisp",
+    name="Lisp",
+    category="Languages",
+    summary="Common Lisp and Scheme: structural editing, a live REPL, compile and load, ASDF systems, symbol navigation and SBCL in Linux.",
+    description="The Lisp module switches on everything Air does for Lisp: the reader with matching brackets and rainbow depth, structural editing (slurp, barf, splice, raise), formatting, completion and documentation from the live image, the REPL, run and compile of files, ASDF systems, go to definition, find usages and refactorings. SBCL runs on Windows or in your Linux through WSL.",
+    builtin="lisp",
+    languages=[],
+    run=[],
+    tools=[],
+    detect=dict(extensions=["lisp", "lsp", "cl", "asd", "scm", "ss", "el", "clj", "cljs", "edn"], files=[]),
+    templates=[
+        dict(name="Hello", description="an ASDF system with a test",
+             files={"hello.asd": '(asdf:defsystem "hello"\n  :components ((:file "hello"))\n  :in-order-to ((test-op (test-op "hello/test"))))\n\n(asdf:defsystem "hello/test"\n  :depends-on ("hello")\n  :components ((:file "hello-test"))\n  :perform (test-op (o c) (uiop:symbol-call :hello-test :run)))\n',
+                    "hello.lisp": '(defpackage :hello\n  (:use :cl)\n  (:export #:greet))\n\n(in-package :hello)\n\n(defun greet (name)\n  (format nil "Hello, ~a" name))\n',
+                    "hello-test.lisp": '(defpackage :hello-test\n  (:use :cl)\n  (:export #:run))\n\n(in-package :hello-test)\n\n(defun run ()\n  (assert (string= (hello:greet "Air") "Hello, Air"))\n  (format t "ok~%"))\n'}),
+    ],
+)
