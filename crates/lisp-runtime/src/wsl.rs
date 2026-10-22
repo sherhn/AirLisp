@@ -591,10 +591,20 @@ pub fn marker_pattern(marker: &str) -> String {
     }
 }
 
+/// Shell script that ends the processes whose command line matches `$1` and everything started below them (`make`
+/// starts `qemu`, which starts a helper, ...): children first, with SIGTERM; what is still there a second later gets
+/// SIGKILL.
+const KILL_TREE_SCRIPT: &str = "tree() { for c in $(pgrep -P \"$1\" 2>/dev/null); do tree \"$c\"; done; echo \"$1\"; }
+all=$(for p in $(pgrep -f -- \"$1\"); do tree \"$p\"; done)
+for q in $all; do kill -TERM \"$q\" 2>/dev/null; done
+sleep 1
+for q in $all; do kill -0 \"$q\" 2>/dev/null && kill -KILL \"$q\" 2>/dev/null; done
+true";
+
 /// Stopping `wsl.exe` does not always stop the Linux process it started: end the processes tagged with `marker`
-/// (and their children) inside the distribution. Fire and forget.
+/// and everything they started inside the distribution. Fire and forget.
 pub fn kill_marked(t: &Target, marker: &str) {
-    let script = "for p in $(pgrep -f -- \"$1\"); do pkill -P \"$p\" 2>/dev/null; kill \"$p\" 2>/dev/null; done; true";
+    let script = KILL_TREE_SCRIPT;
     let mut c = exec(t, None, "sh", &["-c".into(), script.into(), "sh".into(), marker_pattern(marker)]);
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     let _ = c.spawn();
@@ -810,5 +820,41 @@ mod tests {
         let keep = "wsl: Failed to start the distribution\nmake: *** [all] Error 2\nno newline";
         assert_eq!(strip_notices(keep), keep);
         assert_eq!(strip_notices("localhost NAT but not from wsl\n"), "localhost NAT but not from wsl\n");
+    }
+
+    /// Needs a real WSL distribution (`AIRLISP_TEST_DISTRO`, default Ubuntu-24.04): run with
+    /// `cargo test -p lisp-runtime -- --ignored real_wsl`. Starts `sh -> sh -> sleep` the way the terminal starts a
+    /// command that starts a program (`make run` -> qemu), with the program immune to hangup, and checks that
+    /// `kill_marked` leaves nothing behind.
+    #[test]
+    #[ignore = "needs a real WSL distribution"]
+    fn real_wsl_kill_marked_ends_grandchildren() {
+        let distro = std::env::var("AIRLISP_TEST_DISTRO").unwrap_or_else(|_| "Ubuntu-24.04".into());
+        let t = Target::new(&distro, "");
+        let marker = new_marker();
+        // a number no other process of the machine runs `sleep` with
+        let secs = 4000 + std::process::id() % 1000;
+        // the inner shell ignores the hangup the kernel sends when the session ends, like nohup or a GUI program does
+        let cmd = shell(&t, Path::new("C:\\"), &format!("sh -c 'trap \"\" HUP; sleep {secs}; true'"), &[], &marker);
+        let handle = crate::runner::spawn_launch(crate::discover::Launch { cmd, cleanup: Some(Cleanup { target: t.clone(), marker: marker.clone() }) }).expect("start");
+        // `[s]leep`: the pgrep that looks for it does not find itself
+        let sleeping = || {
+            let c = exec(&t, None, "sh", &["-c".into(), format!("pgrep -f '[s]leep {secs}' | wc -l")]);
+            let out = capture(c, Duration::from_secs(30)).expect("pgrep").text;
+            out.lines().rev().find_map(|l| l.trim().parse::<u32>().ok()).unwrap_or(0)
+        };
+        for _ in 0..20 {
+            if sleeping() > 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        assert!(sleeping() >= 1, "the command did not start");
+        // the Windows side (wsl.exe) stays alive here: this is about what happens inside Linux
+        kill_marked(&t, &marker);
+        std::thread::sleep(Duration::from_secs(4));
+        let left = sleeping();
+        handle.kill();
+        assert_eq!(left, 0, "sleep outlived kill_marked");
     }
 }
