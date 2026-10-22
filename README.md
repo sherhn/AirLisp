@@ -2,14 +2,49 @@
 
 <img src="assets/icon/air-128.png" width="96" align="right" alt="Air icon">
 
-A JetBrains-style IDE for Lisp, written in Rust (egui) and built the PhotoCraft way:
+An IDE made of modules, written in Rust (egui) and built the PhotoCraft way:
 a UI-independent engine, one command registry that drives menus, palettes and key bindings,
 a headless CLI, and end-to-end tests that drive the real window.
 
-Runs on Windows, macOS and Linux. Common Lisp (SBCL) is the first-class target;
-Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation.
+The core is the editor, projects, git, the terminal, search and Linux through WSL. **Languages come as modules** that
+you download from inside the IDE (Modules tab, Ctrl+Alt+P): Lisp, Python, C and C++, Assembler, Markdown,
+reStructuredText, Shell and make. Runs on Windows, macOS and Linux. Common Lisp (SBCL) is the most complete module:
+REPL, compiler, structural editing; Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation.
+
+## Modules
+
+A module is a folder with a `module.json` and a cover picture. It can bring **languages** (a grammar written as data:
+highlighting, outline, folding, brackets, indentation, comments), **run commands** (`python3 "{file}"`, a compile and
+run line for C), **Linux tool groups** for the project's WSL distribution (`gcc`, `gdb`, `nasm`, QEMU...),
+**detection rules** (a project with `.py` files or a `Makefile` is offered the matching modules) and **project templates**.
+
+* **The Modules tab** (Ctrl+Alt+P, the puzzle piece in the left strip, or File > Modules) shows a cover card for every
+  module of the registry with *Install*, *Update*, *Remove* and an on/off switch, search and category chips.
+  The welcome screen offers it on a first start, and a banner offers what the open project looks like it needs.
+* **Choose modules when you create or import a project.** *New Project* and *Get from Version Control* have a
+  *Modules* section: ticked modules are downloaded if needed and connected to the project (`.air/project.json`);
+  a new project can start from a module's template (an ASDF system, a Python package with tests, a C project with a
+  makefile, an assembler boot sector...) and takes its language from it.
+* **The core stays the core.** Working in Linux while on Windows (WSL), git, the terminal and search do not depend on any
+  module; the modules only say which Linux tools a project wants. With the Lisp module off, the REPL, the ASDF
+  configurations and the Lisp commands go away.
+* **Run per language.** *Run Current File* (the *Current File* run configuration) runs a file with the run command of
+  the module of its language, in the project's Linux or on Windows; output and compiler messages land in Run and Problems.
+* **Safe downloads.** The registry's `index.json` lists the size and SHA-256 of every file; a module is checked before it is
+  put in place (atomically, in the settings folder under `modules/`). The list comes from
+  `https://raw.githubusercontent.com/sherhn/AirLisp/main/registry`, or from a web address or folder named in
+  Settings > Modules or in `AIR_REGISTRY`, with the copy shipped next to the program (`registry/`) as the fallback, so the
+  distribution works offline too. Downloads go through `curl`.
+* **Write your own.** Add `tools/registry_src/<name>.py` (see `python.py`), list it in `tools/build_registry.py` and run
+  `python tools/build_registry.py [--covers]`: it writes `registry/` (manifests, covers, the checksummed index). The
+  grammar rules (`match`, `words`, `region`, `captures`, outline patterns) are the `air-lang` crate's JSON format; the
+  tests of `crates/ide-core/tests/registry.rs` check every shipped module against real code samples.
+
+Covers and the icon are drawn by `tools/glass.py` and `tools/covers.py`.
 
 ## Features
+
+The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
 
 * **Editor** - own text engine: Lisp-aware indentation (SLIME/Emacs rules), auto-pairs and overtyping,
   smart Enter, rainbow brackets, matching-bracket highlight, undo/redo with coalescing, multi-line
@@ -43,8 +78,9 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
   pick a folder, optional branch / shallow clone, live progress; the repository is cloned and opened as a project.
 * **Works out of the box** - the distribution (`python tools/package.py`) bundles SBCL (public domain/BSD, license included),
   so the REPL and Run work without installing anything.
-* **Modern look** - borderless "glass" design: tonal greys over a soft gradient, floating rounded cards, translucent dialogs,
-  Lucide icons (ISC), a sidebar Settings dialog. Dark/light themes, custom window frame (no OS title bar), Inter + JetBrains Mono fonts.
+* **Modern look** - a black ground with soft green and blue glows, "liquid glass" cards and dialogs (translucent, with a light
+  rim and a sheen), a green in the spirit of Sber's as the accent and a blue as its partner. Lucide icons (ISC), a sidebar
+  Settings dialog, dark/light themes, custom window frame (no OS title bar), Inter + JetBrains Mono fonts.
 * **Keymap** - IntelliJ-style. All key bindings come from one registry (`crates/ide-core/src/commands.rs`); see Settings > Keymap.
 
 ## GitHub: your repositories in "Get from Version Control"
@@ -121,11 +157,13 @@ a word or path, triple click a line, **Ctrl+A** selects everything, **Ctrl+C** o
 
 | crate / app | role |
 |---|---|
-| `crates/lisp-syntax` | lexer, bracket matching, indentation, structural edits, outline, highlighting (no deps) |
-| `crates/ide-core` | editor model, command registry + keymap, project model, fuzzy/text search, symbol index, settings |
+| `crates/lisp-syntax` | the Lisp reader: lexer, bracket matching, indentation, structural edits, outline, highlighting (no deps) |
+| `crates/air-lang` | languages as data: the grammar engine behind the modules (highlighting, outline, folding, indentation) |
+| `crates/ide-core` | editor model, command registry + keymap, project model, fuzzy/text search, symbol index, settings, the module store and registry client |
 | `crates/lisp-runtime` | SBCL discovery, REPL protocol (`lisp/repl-server.lisp`), file runner, compiler diagnostics |
 | `apps/air` | the GUI (eframe/egui) incl. the JSON automation harness |
 | `apps/air-cli` | headless engine: `check`, `fmt`, `outline`, `eval`, `run`, `compile`, `exec`, `commands`, ... |
+| `registry/` | the modules: `index.json` and `modules/<id>/{module.json,cover.png}`, generated by `tools/build_registry.py` |
 
 ## Build & run
 
@@ -150,16 +188,27 @@ asserts on application state and takes screenshots *of the app window only*.
 
 ## Dependencies
 
-Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `png`. Bundled fonts: JetBrains Mono and Inter (SIL OFL 1.1, see `assets/fonts`); icons: Lucide (ISC, `assets/icons`). Every crate in
+Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `png`, `regex`. Bundled fonts: JetBrains Mono and Inter (SIL OFL 1.1, see `assets/fonts`); icons: Lucide (ISC, `assets/icons`). Every crate in
 `Cargo.lock` was checked against crates.io (publisher, downloads, yanked status, repository);
 `deny.toml` pins the policy (crates.io only, no git sources).
 
 ## Русский
 
-Air - IDE для Lisp в стиле JetBrains (PyCharm/WebStorm), написанная на Rust. Структурное
-редактирование, живой REPL на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация,
-рефакторинг (rename), тёмная и светлая темы и привычная раскладка клавиш IntelliJ.
-Сборка: `cargo run --release -p air`. Для REPL нужен SBCL в `PATH`.
+Air - IDE из модулей, написанная на Rust. Ядро: редактор, проекты, git, терминал, поиск и Linux через WSL. Языки
+подключаются модулями, которые скачиваются прямо из IDE (вкладка «Модули», Ctrl+Alt+P): Lisp, Python, C и C++,
+ассемблер, Markdown, reStructuredText, shell и make. Модуль Lisp самый полный: структурное редактирование, живой REPL
+на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация, рефакторинг (rename). Вид: чёрный фон с зелёным
+(в духе Сбера) и синим свечением и «жидкое стекло»; тёмная и светлая темы, раскладка клавиш IntelliJ.
+Сборка: `cargo run --release -p air`. Для REPL нужен SBCL в `PATH` (в сборке `tools/package.py` он уже есть).
+
+**Модули.** Модуль — папка с `module.json` и обложкой: языки (грамматика данными: подсветка, структура, сворачивание,
+скобки, отступы), команды запуска, группы Linux-инструментов для WSL, правила определения (проекту с `.py` или `Makefile`
+предложат нужные модули) и шаблоны проектов. Во вкладке «Модули» у каждого модуля обложка и кнопки «Установить»,
+«Обновить», «Удалить», выключатель; при создании проекта и в «Получить из системы контроля версий» модули можно отметить
+сразу, а новый проект — начать с шаблона модуля. Скачанное проверяется по SHA-256 из `index.json`; реестр берётся с
+GitHub (`registry/`), из адреса или папки в Настройки > Модули, либо из копии рядом с программой (работает без сети).
+«Запуск текущего файла» запускает файл командой его языка из модуля — в Linux проекта или в Windows. Если модуль Lisp
+выключен, REPL, ASDF и команды Lisp скрываются; WSL и остальное ядро от модулей не зависят.
 
 **Репозитории GitHub.** Во вкладке GitHub диалога «Получить из системы контроля версий» виден список ваших
 репозиториев (в том числе приватных): поиск, значки форков и архивов, язык, звёзды; клик выбирает, двойной клик

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build a self-contained Air distribution that works right after unpacking:
-the app, the CLI, a bundled SBCL (REPL, compiler, ASDF) and all licence notices.
+the app, the CLI, a bundled SBCL (REPL, compiler, ASDF), the registry of modules and all licence notices.
 
 Usage:
   python tools/package.py [--sbcl-dir DIR] [--no-zip] [--skip-build]
@@ -108,10 +108,18 @@ def main():
         shutil.copy2(f, dist / "licenses" / f.name)
     (dist / "THIRD_PARTY_NOTICES.md").write_text(notices(sbcl_ver), encoding="utf-8")
     shutil.copy2(ROOT / "README.md", dist / "README.md")
+    # the modules (languages, run commands, project templates, covers) that can be installed without a network
+    registry = ROOT / "registry"
+    if not (registry / "index.json").is_file():
+        sys.exit("no registry/index.json: run `python tools/build_registry.py --covers` first")
+    shutil.copytree(registry, dist / "registry")
     (dist / "START_HERE.txt").write_text(
-        "Air - an IDE for Lisp\n\n"
+        "Air - an IDE made of modules\n\n"
         f"Run {'air.exe' if os.name == 'nt' else './air'}. Nothing else has to be installed:\n"
-        "the REPL, compiler and ASDF come from the bundled SBCL in the 'lisp' folder.\n"
+        "the languages come as modules - open the Modules tab (Ctrl+Alt+P) and install what you work with\n"
+        "(Lisp, Python, C/C++, Assembler, Markdown, reStructuredText, Shell and make). The folder 'registry'\n"
+        "holds them, so this works offline too; the list is also read from the published registry.\n"
+        "The Lisp module's REPL, compiler and ASDF come from the bundled SBCL in the 'lisp' folder.\n"
         "Git features and 'Get from Version Control' use the git on your PATH (https://git-scm.com).\n\n"
         f"{sbcl_ver} is bundled; its licence is in licenses/SBCL-COPYING.txt.\n",
         encoding="utf-8",
