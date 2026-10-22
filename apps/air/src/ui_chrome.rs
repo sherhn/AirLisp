@@ -60,7 +60,7 @@ impl App {
                         }
                     }
                 });
-                self.menu_items(ui, ctx, &["-", "file.reload", "file.close_tab", "file.close_all", "-", "file.copy_path", "file.reveal", "-", "app.settings", "app.exit"]);
+                self.menu_items(ui, ctx, &["-", "file.reload", "file.close_tab", "file.close_all", "-", "file.copy_path", "file.reveal", "-", "app.modules", "app.settings", "app.exit"]);
             });
             ui.menu_button(tr("Edit"), |ui| {
                 self.menu_items(
@@ -321,6 +321,12 @@ impl App {
                     self.toggle_left(tool);
                 }
             }
+            // the modules: a page of its own, with a dot when the open project asks for some that are not on
+            let on_page = self.doc().is_some_and(|d| d.page.is_some());
+            let badge = (!self.needed_modules.is_empty()).then_some(self.pal.accent);
+            if self.strip_button(ui, Icon::Puzzle, on_page, tr("Modules (Ctrl+Alt+P)"), badge) {
+                self.open_modules_tab();
+            }
         });
         ui.with_layout(Layout::bottom_up(Align::Center), |ui| {
             ui.add_space(8.0);
@@ -375,7 +381,9 @@ impl App {
             let ir = Rect::from_min_size(Pos2::new(r.min.x + 14.0, r.center().y - 8.0), Vec2::splat(16.0));
             let is_diff = self.docs[i].diff.is_some();
             let is_lisp = !is_diff && self.docs[i].path.as_deref().is_none_or(lisp_syntax::dialect::is_lisp_file);
-            let (tab_icon, tab_icon_color) = if is_diff {
+            let (tab_icon, tab_icon_color) = if self.docs[i].page.is_some() {
+                (Icon::Puzzle, pal.accent)
+            } else if is_diff {
                 (Icon::FileDiff, pal.accent)
             } else if is_lisp {
                 (Icon::Lisp, pal.keyword_form)

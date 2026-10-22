@@ -376,6 +376,9 @@ pub struct CloneState {
     pub linux_dir: String,
     /// Cloning into a Windows folder: build the project in Linux (Linux line endings, Linux environment).
     pub build_in_linux: bool,
+    /// Modules to connect to the project once it is here (downloaded first if they are not installed).
+    pub modules: Vec<String>,
+    pub show_modules: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -422,7 +425,9 @@ pub enum Popup {
     GotoLine { input: String, just_opened: bool },
     Rename { old: String, input: String, just_opened: bool },
     NewFile { dir: PathBuf, input: String, is_dir: bool, just_opened: bool },
-    NewProject { parent: String, name: String, just_opened: bool },
+    /// `modules`: the ones to connect; `template`: `module/Template` or empty for none (`@auto`: the first one);
+    /// `creating`: waiting for the modules to be downloaded before making the project.
+    NewProject { parent: String, name: String, just_opened: bool, modules: Vec<String>, template: String, creating: bool },
     FindInFiles { query: String, replace: String, case_sensitive: bool, whole_word: bool, just_opened: bool, replace_mode: bool },
     Settings { lisp_path: String, detected: String, filter: String, page: usize },
     Clone(Box<CloneState>),

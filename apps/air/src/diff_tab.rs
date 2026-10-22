@@ -91,7 +91,7 @@ fn mtime(p: &Path) -> Option<SystemTime> {
 impl App {
     /// Index of the diff tab, if one is open.
     pub fn diff_doc_index(&self) -> Option<usize> {
-        self.docs.iter().position(|d| d.diff.is_some())
+        self.docs.iter().position(|d| d.diff.is_some() && d.page.is_none())
     }
 
     /// The diff tab of the active document, if it is one.

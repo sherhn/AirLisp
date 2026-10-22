@@ -163,7 +163,7 @@ impl App {
                     if needs_editor(cmd.id) && !editor_on {
                         continue;
                     }
-                    if self.popup.is_open() && !matches!(cmd.id, "nav.search_everywhere" | "nav.find_action" | "nav.goto_file" | "nav.goto_symbol" | "nav.recent_files" | "app.settings" | "file.save" | "app.exit") {
+                    if self.popup.is_open() && !matches!(cmd.id, "nav.search_everywhere" | "nav.find_action" | "nav.goto_file" | "nav.goto_symbol" | "nav.recent_files" | "app.settings" | "app.modules" | "file.save" | "app.exit") {
                         continue;
                     }
                     // Plain printable keys with only shift are text, never commands, unless bound (e.g. Shift+F10).
@@ -277,7 +277,12 @@ impl App {
             }
             "file.new_project" => {
                 let parent = dirs_home().to_string_lossy().into_owned();
-                self.popup = Popup::NewProject { parent, name: "my-project".into(), just_opened: true };
+                // the modules that are on are ticked; the dialog asks for the registry's list
+                let modules = self.mods.installed.iter().filter(|m| m.enabled).map(|m| m.manifest.id.clone()).collect();
+                if self.mods.index.is_none() {
+                    self.modules_fetch_index();
+                }
+                self.popup = Popup::NewProject { parent, name: "my-project".into(), just_opened: true, modules, template: "@auto".into(), creating: false };
             }
             "file.clone" => self.open_clone_dialog(),
             "file.open_project" => {
@@ -368,6 +373,7 @@ impl App {
                     self.toast(tr("Path copied"), Sev::Weak);
                 }
             }
+            "app.modules" => self.open_modules_tab(),
             "app.settings" => {
                 self.popup = Popup::Settings { lisp_path: self.settings.lisp_path.clone(), detected: self.lisp.as_ref().map(|l| l.describe()).unwrap_or_default(), filter: String::new(), page: 0 };
             }

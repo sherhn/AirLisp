@@ -43,6 +43,7 @@ dependencies = [
 name = "air"
 version = "0.2.0"
 dependencies = [
+ "air-lang",
  "eframe",
  "embed-resource",
  "ide-core",
@@ -1062,6 +1063,7 @@ checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 name = "ide-core"
 version = "0.2.0"
 dependencies = [
+ "air-lang",
  "dirs",
  "ignore",
  "lisp-syntax",

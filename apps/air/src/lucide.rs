@@ -83,3 +83,4 @@ pub const KEY_ROUND: char = '\u{e4a3}';
 pub const USER: char = '\u{e19f}';
 pub const LOCK: char = '\u{e10b}';
 pub const BOOK_MARKED: char = '\u{e3f1}';
+pub const PUZZLE: char = '\u{e29c}';

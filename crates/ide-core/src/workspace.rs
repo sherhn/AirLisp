@@ -127,6 +127,51 @@ pub fn create_lisp_project(parent: &Path, name: &str) -> io::Result<PathBuf> {
     Ok(root)
 }
 
+/// A name safe to use as a folder and in `{{ident}}`: lower case letters and digits separated by single dashes.
+pub fn identifier(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.chars() {
+        if c.is_alphanumeric() {
+            out.extend(c.to_lowercase());
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    let out = out.trim_end_matches('-').to_string();
+    if out.is_empty() { "project".into() } else { out }
+}
+
+/// Create the folder `name` in `parent` and write `files` (relative path -> content, see
+/// [`Template`](crate::modules::Template) for `{{name}}` and `{{ident}}`) into it; nothing in it may exist yet. Paths
+/// that would leave the project are refused. Returns the project's folder.
+pub fn create_project(parent: &Path, name: &str, files: &std::collections::BTreeMap<String, String>) -> io::Result<PathBuf> {
+    let name = sanitize_project_name(name);
+    let ident = identifier(&name);
+    let root = parent.join(&name);
+    if root.exists() && fs::read_dir(&root)?.next().is_some() {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{} is not empty", root.display())));
+    }
+    let subst = |s: &str| s.replace("{{name}}", &name).replace("{{ident}}", &ident);
+    // check every path before writing anything
+    let mut targets = Vec::new();
+    for (rel, content) in files {
+        let rel = subst(rel);
+        let p = Path::new(&rel);
+        if rel.is_empty() || p.is_absolute() || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{rel}: not a path inside the project")));
+        }
+        targets.push((root.join(p), subst(content)));
+    }
+    fs::create_dir_all(&root)?;
+    for (path, content) in targets {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        fs::write(path, content)?;
+    }
+    Ok(root)
+}
+
 /// The folder an older version kept a project's own files in (local commits, settings) was `.airlisp`; it is `.air`
 /// now. Moves the old one over once. Returns true when it did.
 pub fn migrate_project_dir(root: &Path) -> bool {
@@ -349,5 +394,28 @@ mod ignore_tests {
         fs::create_dir_all(d.path().join(".airlisp")).unwrap();
         assert!(!migrate_project_dir(d.path()));
         assert!(d.path().join(".airlisp").exists());
+    }
+
+    #[test]
+    fn projects_are_made_from_template_files() {
+        let d = TempDir::new("create-project");
+        let mut files = std::collections::BTreeMap::new();
+        files.insert("{{ident}}.asd".to_string(), "(defsystem \"{{ident}}\")".to_string());
+        files.insert("src/main.lisp".to_string(), "; {{name}}\n".to_string());
+        let root = create_project(d.path(), "My Project!", &files).unwrap();
+        assert_eq!(root.file_name().unwrap(), "my-project");
+        assert_eq!(fs::read_to_string(root.join("my-project.asd")).unwrap(), "(defsystem \"my-project\")");
+        assert_eq!(fs::read_to_string(root.join("src/main.lisp")).unwrap(), "; my-project\n");
+        // not into a folder that has things in it
+        assert!(create_project(d.path(), "My Project!", &files).is_err());
+        // and never outside the project
+        for bad in ["../x", "/abs", "a/../../b", ""] {
+            let mut f = std::collections::BTreeMap::new();
+            f.insert(bad.to_string(), "x".to_string());
+            assert!(create_project(d.path(), "safe", &f).is_err(), "{bad}");
+            assert!(!d.path().join("safe").exists(), "nothing is created before the paths are checked");
+        }
+        assert_eq!(identifier("Hello, World 2"), "hello-world-2");
+        assert_eq!(identifier("---"), "project");
     }
 }

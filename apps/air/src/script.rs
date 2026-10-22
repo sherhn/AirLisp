@@ -83,6 +83,9 @@ impl App {
             // real time has passed (`sleep`): things that go by the clock, like scrolling while dragging, need it
             "after" => self.now >= cond["until"].as_f64().unwrap_or(0.0),
             "wsl_idle" => !self.wsl.busy(),
+            // the registry has answered (with a list or an error)
+            "modules_index" => self.mods.index.is_some() || self.mods.index_error.is_some(),
+            "modules_idle" => self.mods.busy.is_empty() && !self.mods.loading_index && !self.mods.loading_covers,
             // the running setup step has got at least this far (0.0..1.0)
             "wsl_progress" => {
                 let min = cond["value"].as_f64().unwrap_or(0.0) as f32;
@@ -203,6 +206,10 @@ impl App {
                     }
                     if let Some(b) = step["linux"].as_bool() {
                         c.linux = b;
+                    }
+                    if let Some(v) = step["modules"].as_array() {
+                        c.modules = v.iter().filter_map(|x| x.as_str().map(String::from)).collect();
+                        c.show_modules = true;
                     }
                 } else {
                     self.fail("clone_set: the clone dialog is not open".to_string());
@@ -351,6 +358,63 @@ impl App {
                 let out = std::process::Command::new("tasklist").args(["/FI", &format!("IMAGENAME eq {sval}"), "/NH"]).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
                 if out.to_lowercase().contains(&sval.to_lowercase()) {
                     self.fail(format!("assert_process_gone: {sval} is still running: {}", out.trim()));
+                }
+            }
+            // fill in the New Project dialog: `name`, `parent`, `modules` (ids to tick) and `template` (`module/Name`)
+            "new_project_set" => {
+                if let Popup::NewProject { parent, name, modules, template, .. } = &mut self.popup {
+                    if let Some(v) = step["parent"].as_str() {
+                        *parent = v.to_string();
+                    }
+                    if let Some(v) = step["name"].as_str() {
+                        *name = v.to_string();
+                    }
+                    if let Some(v) = step["modules"].as_array() {
+                        *modules = v.iter().filter_map(|x| x.as_str().map(String::from)).collect();
+                    }
+                    if let Some(v) = step["template"].as_str() {
+                        *template = v.to_string();
+                    }
+                } else {
+                    self.fail("new_project_set: the New Project dialog is not open".to_string());
+                }
+            }
+            "module_install" => self.module_install(&sval),
+            "module_remove" => self.module_remove(&sval),
+            "module_enable" => self.module_set_enabled(&sval, step["on"].as_bool().unwrap_or(true)),
+            "modules_tab" => self.open_modules_tab(),
+            // the language of the active document: its id (`lisp` for Lisp)
+            "assert_language" => {
+                let got = self.active_language_id().unwrap_or_else(|| "lisp".to_string());
+                if got != sval {
+                    self.fail(format!("assert_language: expected {sval}, got {got}"));
+                }
+            }
+            // `installed`, `enabled` and `needed` list module ids (any order); `tab`: the Modules tab is open
+            "assert_modules" => {
+                let ids = |key: &str| -> Option<Vec<String>> { step[key].as_array().map(|a| { let mut v: Vec<String> = a.iter().filter_map(|x| x.as_str().map(String::from)).collect(); v.sort(); v }) };
+                let mut errors = vec![];
+                let mut got_installed: Vec<String> = self.mods.installed.iter().map(|m| m.manifest.id.clone()).collect();
+                got_installed.sort();
+                let mut got_enabled: Vec<String> = self.mods.installed.iter().filter(|m| m.enabled).map(|m| m.manifest.id.clone()).collect();
+                got_enabled.sort();
+                let mut got_needed = self.needed_modules.clone();
+                got_needed.sort();
+                for (key, got) in [("installed", got_installed), ("enabled", got_enabled), ("needed", got_needed)] {
+                    if let Some(want) = ids(key)
+                        && want != got
+                    {
+                        errors.push(format!("{key}: expected {want:?}, got {got:?}"));
+                    }
+                }
+                if let Some(b) = step["tab"].as_bool() {
+                    let open = self.docs.iter().any(|d| d.page.is_some());
+                    if open != b {
+                        errors.push(format!("tab: expected {b}, got {open}"));
+                    }
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_modules: {}", errors.join("; ")));
                 }
             }
             "assert_log" => {

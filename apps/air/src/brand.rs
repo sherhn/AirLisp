@@ -7,16 +7,25 @@ use eframe::egui::{self, Color32, Rect, TextureHandle, TextureOptions, pos2};
 const ICON_256: &[u8] = include_bytes!("../../../assets/icon/air-256.png");
 const LOGO_128: &[u8] = include_bytes!("../../../assets/icon/air-128.png");
 
-/// Decode an RGBA8 PNG.
+/// Decode a PNG of any common kind (palette, grey, RGB, with or without alpha, 8 or 16 bits) to RGBA8.
 pub fn decode_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-    let mut reader = png::Decoder::new(Cursor::new(bytes)).read_info().ok()?;
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().ok()?;
     let mut buf = vec![0; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
-    if info.color_type != png::ColorType::Rgba || info.bit_depth != png::BitDepth::Eight {
+    if info.bit_depth != png::BitDepth::Eight {
         return None;
     }
     buf.truncate(info.buffer_size());
-    Some((info.width, info.height, buf))
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => buf,
+        png::ColorType::Rgb => buf.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::GrayscaleAlpha => buf.chunks_exact(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::Grayscale => buf.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::Indexed => return None,
+    };
+    Some((info.width, info.height, rgba))
 }
 
 pub fn window_icon() -> Option<egui::IconData> {
@@ -67,5 +76,21 @@ mod tests {
     #[test]
     fn rejects_garbage() {
         assert!(decode_png(b"not a png").is_none());
+    }
+
+    #[test]
+    fn covers_of_any_png_kind_decode() {
+        fn encode(color: png::ColorType, data: &[u8]) -> Vec<u8> {
+            let mut out = Vec::new();
+            let mut enc = png::Encoder::new(&mut out, 2, 1);
+            enc.set_color(color);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header().unwrap().write_image_data(data).unwrap();
+            out
+        }
+        assert_eq!(decode_png(&encode(png::ColorType::Rgb, &[1, 2, 3, 4, 5, 6])).unwrap().2, [1, 2, 3, 255, 4, 5, 6, 255]);
+        assert_eq!(decode_png(&encode(png::ColorType::Rgba, &[1, 2, 3, 4, 5, 6, 7, 8])).unwrap().2, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(decode_png(&encode(png::ColorType::Grayscale, &[9, 8])).unwrap().2, [9, 9, 9, 255, 8, 8, 8, 255]);
+        assert_eq!(decode_png(&encode(png::ColorType::GrayscaleAlpha, &[9, 1, 8, 2])).unwrap().2, [9, 9, 9, 1, 8, 8, 8, 2]);
     }
 }

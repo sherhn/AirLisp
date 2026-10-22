@@ -85,6 +85,20 @@ def run_one(script_path):
                 (proj / rel).write_bytes(content.encode("utf-8"))
             subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
             subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "kernel"], cwd=proj, capture_output=True, check=True)
+        if "@polyglot" in text:
+            # files of several languages, for the modules that bring them
+            files = {
+                "tools/demo.py": "def greet(name):\n    return f\"hi {name}\"  # greet\n",
+                "docs/notes.md": "# Notes\n\nSome **bold** text.\n",
+                "docs/index.rst": "Title\n=====\n\nText.\n",
+                "native/main.c": "#include <stdio.h>\nint main(void) { return 0; }\n",
+                "native/boot.asm": "section .text\n_start:\n    mov eax, 1\n",
+            }
+            for rel, content in files.items():
+                (proj / rel).parent.mkdir(parents=True, exist_ok=True)
+                (proj / rel).write_bytes(content.encode("utf-8"))
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "polyglot"], cwd=proj, capture_output=True, check=True)
         if "@linux_distro" in text:
             (tmp / "fake-wsl.json").write_text(json.dumps({"installed": True, "distros": {"Ubuntu-24.04": {"sbcl": False}}, "default": "Ubuntu-24.04"}), encoding="utf-8")
         if "@long_file" in text:

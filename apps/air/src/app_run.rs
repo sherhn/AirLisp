@@ -69,7 +69,7 @@ pub fn message_path(run: &MakeRun, dir: &str, file: &str) -> PathBuf {
 impl App {
     pub fn run_config_label(&self) -> String {
         match &self.run_config {
-            RunConfig::CurrentFile => self.doc().map_or(tr("Current File").to_string(), |d| d.name()),
+            RunConfig::CurrentFile => self.doc().filter(|d| d.diff.is_none()).map_or(tr("Current File").to_string(), |d| d.name()),
             RunConfig::Load(s) => i18n::fmt("Load {}", &[&s]),
             RunConfig::Test(s) => i18n::fmt("Test {}", &[&s]),
             RunConfig::Make(t) => format!("make {t}"),

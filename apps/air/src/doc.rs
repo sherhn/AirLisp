@@ -19,10 +19,26 @@ fn next_id() -> u64 {
     NEXT_DOC_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+/// A virtual tab that is a page of the IDE, not a file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    Modules,
+}
+
+impl Page {
+    pub fn title(self) -> &'static str {
+        match self {
+            Page::Modules => "Modules",
+        }
+    }
+}
+
 pub struct Doc {
     pub id: u64,
     /// Set for the diff tab: a virtual document that shows changes instead of text.
     pub diff: Option<Box<DiffTab>>,
+    /// Set for the tabs that are pages (they also carry an empty `diff`, which keeps the editor commands off them).
+    pub page: Option<Page>,
     pub path: Option<PathBuf>,
     pub ed: Editor,
     pub view: ViewState,
@@ -62,6 +78,7 @@ impl Doc {
         Ok(Doc {
             id: next_id(),
             diff: None,
+            page: None,
             path: Some(path.to_path_buf()),
             ed,
             view: ViewState::default(),
@@ -84,6 +101,7 @@ impl Doc {
         Doc {
             id: next_id(),
             diff: None,
+            page: None,
             path: None,
             ed: Editor::new("", Dialect::CommonLisp),
             view: ViewState::default(),
@@ -100,6 +118,13 @@ impl Doc {
             folds: Default::default(),
             outline_cache: None,
         }
+    }
+
+    /// The Modules tab.
+    pub fn modules_tab() -> Doc {
+        let mut d = Doc::diff_tab();
+        d.page = Some(Page::Modules);
+        d
     }
 
     /// The diff tab: a document without text or file whose view shows a file's changes.
@@ -124,6 +149,9 @@ impl Doc {
     }
 
     pub fn name(&self) -> String {
+        if let Some(p) = self.page {
+            return tr(p.title()).to_string();
+        }
         if let Some(t) = &self.diff {
             return format!("{} ({})", t.title(), tr("diff"));
         }

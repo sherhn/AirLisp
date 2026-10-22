@@ -36,6 +36,8 @@ enum Event {
     Index(Result<(Index, Source), String>),
     /// A cover picture is in the cache.
     Cover,
+    /// All the covers have been fetched.
+    CoversDone,
     Progress { id: String, done: usize, total: usize, file: String },
     Finished { id: String, removed: bool, result: Result<Manifest, String> },
 }
@@ -51,10 +53,14 @@ pub struct ModulesState {
     pub index_source: Option<Source>,
     pub index_error: Option<String>,
     pub loading_index: bool,
+    /// The cover pictures are still being fetched.
+    pub loading_covers: bool,
     pub busy: HashMap<String, Busy>,
     /// Pictures already turned into textures.
     pub covers: HashMap<String, TextureHandle>,
     pub filter: String,
+    /// The filter chip: `None` all, `@installed`, or a category.
+    pub category: Option<String>,
     tx: Sender<Event>,
     rx: Receiver<Event>,
 }
@@ -62,7 +68,7 @@ pub struct ModulesState {
 impl Default for ModulesState {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
-        ModulesState { store: None, installed: vec![], broken: vec![], langs: LanguageSet::new(), lisp: false, index: None, index_source: None, index_error: None, loading_index: false, busy: HashMap::new(), covers: HashMap::new(), filter: String::new(), tx, rx }
+        ModulesState { store: None, installed: vec![], broken: vec![], langs: LanguageSet::new(), lisp: false, index: None, index_source: None, index_error: None, loading_index: false, loading_covers: false, busy: HashMap::new(), covers: HashMap::new(), filter: String::new(), category: None, tx, rx }
     }
 }
 
@@ -281,6 +287,7 @@ impl App {
             return;
         }
         self.mods.loading_index = true;
+        self.mods.loading_covers = true;
         self.mods.index_error = None;
         let sources = self.registry_sources();
         let tx = self.mods.tx.clone();
@@ -290,8 +297,10 @@ impl App {
             if let Ok((index, source)) = &result {
                 let _ = tx.send(Event::Index(Ok((index.clone(), source.clone()))));
                 fetch_covers(index, source, cache.as_deref(), &tx);
+                let _ = tx.send(Event::CoversDone);
             } else if let Err(e) = result {
                 let _ = tx.send(Event::Index(Err(e)));
+                let _ = tx.send(Event::CoversDone);
             }
         });
     }
@@ -360,7 +369,11 @@ impl App {
                     self.mods.loading_index = false;
                 }
                 // a picture that arrived is loaded when the tab next draws it
-                Event::Cover => {}
+                Event::Cover => ctx.request_repaint(),
+                Event::CoversDone => {
+                    self.mods.loading_covers = false;
+                    ctx.request_repaint();
+                }
                 Event::Progress { id, done, total, file } => {
                     if let Some(b) = self.mods.busy.get_mut(&id) {
                         b.done = done;
@@ -384,7 +397,7 @@ impl App {
         if reload {
             self.modules_reload();
         }
-        if !self.mods.busy.is_empty() || self.mods.loading_index {
+        if !self.mods.busy.is_empty() || self.mods.loading_index || self.mods.loading_covers {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
     }

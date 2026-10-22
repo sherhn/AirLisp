@@ -73,6 +73,7 @@ cmds! {
     "file.reveal", "Reveal in File Manager", File, [];
     "file.copy_path", "Copy Path", File, ["Ctrl+Shift+C"];
     "app.settings", "Settings...", File, ["Ctrl+Alt+S"];
+    "app.modules", "Modules...", File, ["Ctrl+Alt+P"];
     "app.exit", "Exit", File, ["Alt+F4"];
     // ---- Edit
     "edit.undo", "Undo", Edit, ["Ctrl+Z"];

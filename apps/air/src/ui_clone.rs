@@ -5,14 +5,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 
-use eframe::egui::{self, Align2, Key, Margin, RichText, Vec2};
+use eframe::egui::{self, Align2, Key, Margin, RichText, Sense, Vec2};
 use ide_core::clone;
 
 use crate::app::App;
 use crate::editor_view::Sev;
 use crate::fonts;
 use crate::i18n::{self, tr};
-use crate::icons::Icon;
+use crate::icons::{self, Icon};
 use crate::input::dirs_home;
 use crate::state::*;
 use crate::widgets::{self, TextField};
@@ -37,6 +37,8 @@ impl App {
             linux_distro,
             linux_dir: "~/projects".into(),
             build_in_linux: false,
+            modules: vec![],
+            show_modules: false,
         }));
         // which Linux distributions there are, for "Clone into Linux"
         if cfg!(windows) && self.wsl.probe.is_none() && !self.wsl.probing() {
@@ -114,6 +116,7 @@ impl App {
         let pal = self.pal;
         let esc = ctx.input(|i| i.key_pressed(Key::Escape));
         let enter = ctx.input(|i| i.key_pressed(Key::Enter));
+        let picker = if st.show_modules { Some(self.picker_data(ctx)) } else { None };
 
         // progress from the background thread
         let mut finished: Option<Result<(), String>> = None;
@@ -268,6 +271,20 @@ impl App {
                     });
                 });
 
+                // the modules the project is to work with: collapsed until asked for
+                ui.add_space(16.0);
+                let (hr, hresp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::click());
+                let label = if st.modules.is_empty() { tr("Modules").to_uppercase() } else { format!("{}  ({})", tr("Modules").to_uppercase(), st.modules.len()) };
+                ui.painter().text(hr.left_center(), egui::Align2::LEFT_CENTER, label, fonts::semibold(11.5), pal.text_dim);
+                icons::paint(ui.painter(), egui::Rect::from_center_size(egui::pos2(hr.right() - 10.0, hr.center().y), Vec2::splat(14.0)), if st.show_modules { Icon::ChevronUp } else { Icon::ChevronDown }, pal.text_dim);
+                if hresp.clicked() && !running {
+                    st.show_modules = !st.show_modules;
+                }
+                if let Some(data) = &picker {
+                    ui.add_space(6.0);
+                    crate::ui_modules::module_picker(ui, &pal, data, &mut st.modules);
+                }
+
                 if let Some(run) = st.run.as_ref() {
                     ui.add_space(18.0);
                     widgets::progress_bar(ui, &pal, run.progress, ui.available_width());
@@ -314,11 +331,23 @@ impl App {
             return;
         }
         if let Some(dest) = open_dest {
-            if st.build_in_linux && !st.linux && !st.linux_distro.is_empty() {
-                // the project opens in Linux right away
-                let cfg = crate::app_env::ProjectConfig { linux: Some(st.linux_distro.clone()), decided: true, modules: vec![] };
+            // the project's own settings: where it is built and which modules it works with
+            let linux_choice = st.build_in_linux && !st.linux && !st.linux_distro.is_empty();
+            if linux_choice || !st.modules.is_empty() {
+                let mut cfg = crate::app_env::load_config(&dest);
+                if linux_choice {
+                    // the project opens in Linux right away
+                    cfg.linux = Some(st.linux_distro.clone());
+                    cfg.decided = true;
+                }
+                cfg.modules = st.modules.clone();
                 if let Err(e) = crate::app_env::save_config(&dest, &cfg) {
                     self.toast(i18n::fmt("Cannot save the project settings: {}", &[&e]), Sev::Error);
+                }
+            }
+            for id in st.modules.clone() {
+                if !self.mods.installed.iter().any(|m| m.manifest.id == id) {
+                    self.module_install(&id);
                 }
             }
             if !st.linux {

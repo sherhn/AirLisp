@@ -1,0 +1,18 @@
+[
+  {"op": "log", "value": "@no_modules: importing a repository, the modules it works with are chosen and downloaded"},
+  {"op": "command", "value": "file.clone"},
+  {"op": "assert_popup", "value": "clone"},
+  {"op": "clone_set", "value": "${PROJ}", "dir": "${PROJ}_clones", "modules": ["markdown", "lisp"]},
+  {"op": "wait", "what": "modules_index", "timeout": 30},
+  {"op": "wait", "what": "modules_idle", "timeout": 30},
+  {"op": "frames", "value": 6},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_dialog.png"},
+  {"op": "key", "value": "Enter"},
+  {"op": "wait", "what": "no_popup", "timeout": 60},
+  {"op": "wait", "what": "index"},
+  {"op": "wait", "what": "modules_idle", "timeout": 60},
+  {"op": "frames", "value": 6},
+  {"op": "assert_modules", "installed": ["lisp", "markdown"], "enabled": ["lisp", "markdown"], "needed": []},
+  {"op": "assert_file_contains", "path": "${PROJ}_clones/demo/.air/project.json", "value": "markdown"},
+  {"op": "quit"}
+]

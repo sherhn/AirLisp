@@ -41,12 +41,16 @@ pub struct Detect {
     pub files: Vec<String>,
 }
 
-/// A starting point for a new project: files to create.
+/// A starting point for a new project: files to create. `{{name}}` in a path or in a file becomes the project's
+/// name (as typed, made safe for a folder) and `{{ident}}` the same in lower case with `-` for everything that is not
+/// a letter or a digit.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Template {
     pub name: String,
     pub description: String,
+    /// The file to open first (a relative path; empty: the first one).
+    pub open: String,
     /// Relative path -> content.
     pub files: BTreeMap<String, String>,
 }

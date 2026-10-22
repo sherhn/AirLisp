@@ -426,18 +426,34 @@ impl App {
                     self.popup = Popup::NewBranch { input, just_opened };
                 }
             }
-            Popup::NewProject { mut parent, mut name, mut just_opened } => {
-                let (mut ok, mut cancel) = (enter, esc);
-                self.dialog_card(ctx, "new_project", tr("New Common Lisp Project"), 520.0, |ui| {
-                    widgets::caption(ui, &self.pal, &tr("Name").to_uppercase());
+            Popup::NewProject { mut parent, mut name, mut just_opened, mut modules, mut template, mut creating } => {
+                let (mut ok, mut cancel) = (enter && !creating, esc);
+                let data = self.picker_data(ctx);
+                let installed_ids: Vec<String> = self.mods.installed.iter().map(|m| m.manifest.id.clone()).collect();
+                let missing: Vec<String> = modules.iter().filter(|id| !installed_ids.contains(id)).cloned().collect();
+                // templates of the ticked modules that are installed
+                let options: Vec<(String, String)> = self
+                    .mods
+                    .installed
+                    .iter()
+                    .filter(|m| modules.contains(&m.manifest.id))
+                    .flat_map(|m| m.manifest.templates.iter().map(move |t| (format!("{}/{}", m.manifest.id, t.name), format!("{} - {}", m.manifest.name, t.name))))
+                    .collect();
+                let chosen = if template == "@auto" { options.first().map(|o| o.0.clone()).unwrap_or_default() } else { template.clone() };
+                let chosen = if options.iter().any(|o| o.0 == chosen) { chosen } else { String::new() };
+                // modules that are still to be downloaded have their templates only afterwards: the first one is used then
+                let not_yet = template == "@auto" && options.is_empty() && !modules.is_empty();
+                let chosen_label = options.iter().find(|o| o.0 == chosen).map_or(tr(if not_yet { "The first template of the chosen modules" } else { "Empty project" }).to_string(), |o| o.1.clone());
+                let pal = self.pal;
+                self.dialog_card(ctx, "new_project", tr("New Project"), 640.0, |ui| {
+                    widgets::caption(ui, &pal, &tr("Name").to_uppercase());
                     ui.add_space(6.0);
                     let r = self.text_field(ui, &mut name, tr("project name"));
                     widgets::focus_once(ui, &r, &mut just_opened);
                     ui.add_space(14.0);
-                    widgets::caption(ui, &self.pal, &tr("Location").to_uppercase());
+                    widgets::caption(ui, &pal, &tr("Location").to_uppercase());
                     ui.add_space(6.0);
                     widgets::right_row(ui, widgets::FIELD_H, |ui| {
-                        let pal = self.pal;
                         if widgets::secondary_button(ui, &pal, tr("Browse...")).clicked()
                             && let Some(d) = rfd::FileDialog::new().pick_folder()
                         {
@@ -445,27 +461,94 @@ impl App {
                         }
                         TextField::new(&mut parent).show(ui, &pal);
                     });
+                    ui.add_space(14.0);
+                    widgets::caption(ui, &pal, &tr("Modules").to_uppercase());
+                    ui.add_space(6.0);
+                    crate::ui_modules::module_picker(ui, &pal, &data, &mut modules);
+                    ui.add_space(14.0);
+                    widgets::caption(ui, &pal, &tr("Start from").to_uppercase());
+                    ui.add_space(6.0);
+                    let resp = widgets::Pill::new(&chosen_label).icon(Icon::File, pal.text_dim).chevron().bordered().height(widgets::FIELD_H).show(ui, &pal);
+                    egui::Popup::menu(&resp).width(340.0).show(|ui| {
+                        if ui.selectable_label(chosen.is_empty(), tr("Empty project")).clicked() {
+                            template = String::new();
+                            ui.close();
+                        }
+                        for (key, label) in &options {
+                            if ui.selectable_label(&chosen == key, label).clicked() {
+                                template = key.clone();
+                                ui.close();
+                            }
+                        }
+                    });
+                    if options.is_empty() && modules.is_empty() {
+                        ui.add_space(4.0);
+                        ui.label(RichText::new(tr("Tick a module to start from one of its templates.")).color(pal.text_dim).size(12.0));
+                    }
                     ui.add_space(10.0);
-                    ui.label(RichText::new(tr("Creates an ASDF system with src/, test/ and a README.")).color(self.pal.text_dim).size(12.0));
+                    if creating {
+                        ui.label(RichText::new(tr("Downloading the modules...")).color(pal.accent).size(12.5));
+                    } else if !missing.is_empty() {
+                        ui.label(RichText::new(i18n::fmt("{} module(s) will be downloaded first.", &[&missing.len()])).color(pal.text_dim).size(12.0));
+                    }
                     let (o, c) = self.ok_cancel(ui, tr("Create"));
-                    ok |= o;
+                    ok |= o && !creating;
                     cancel |= c;
                 });
+                'done: {
                 if cancel {
-                } else if ok {
-                    match ide_core::workspace::create_lisp_project(std::path::Path::new(&parent), &name) {
+                    break 'done;
+                }
+                if ok && !missing.is_empty() {
+                    // the templates are in the modules: get them first, the project is made when they are here
+                    for id in &missing {
+                        self.module_install(id);
+                    }
+                    creating = true;
+                    ok = false;
+                }
+                if creating {
+                    if missing.iter().any(|id| self.mods.busy.contains_key(id)) {
+                        // still downloading
+                    } else if missing.is_empty() {
+                        creating = false;
+                        ok = true;
+                    } else {
+                        creating = false;
+                        self.toast(tr("The modules could not be downloaded"), Sev::Error);
+                    }
+                }
+                if ok {
+                    let files: std::collections::BTreeMap<String, String> = self
+                        .mods
+                        .installed
+                        .iter()
+                        .filter_map(|m| m.manifest.templates.iter().find(|t| format!("{}/{}", m.manifest.id, t.name) == chosen))
+                        .flat_map(|t| t.files.clone())
+                        .collect();
+                    let open = self.mods.installed.iter().filter_map(|m| m.manifest.templates.iter().find(|t| format!("{}/{}", m.manifest.id, t.name) == chosen)).map(|t| t.open.clone()).next().unwrap_or_default();
+                    match ide_core::workspace::create_project(std::path::Path::new(&parent), &name, &files) {
                         Ok(root) => {
+                            // the project remembers its modules: opened elsewhere, it offers the ones that are missing
+                            let cfg = crate::app_env::ProjectConfig { modules: modules.clone(), ..Default::default() };
+                            if let Err(e) = crate::app_env::save_config(&root, &cfg) {
+                                self.toast(i18n::fmt("Cannot save the project settings: {}", &[&e]), Sev::Error);
+                            }
                             self.request_open_project(&root);
-                            let main = root.join("src").join("main.lisp");
-                            self.open_file(&main);
+                            let first = if open.is_empty() { files.keys().next().cloned().unwrap_or_default() } else { open };
+                            let first = first.replace("{{name}}", &ide_core::workspace::sanitize_project_name(&name)).replace("{{ident}}", &ide_core::workspace::identifier(&name));
+                            if !first.is_empty() {
+                                self.open_file(&root.join(first));
+                            }
                         }
                         Err(e) => {
                             self.toast(format!("Cannot create project: {e}"), Sev::Error);
-                            self.popup = Popup::NewProject { parent, name, just_opened: false };
+                            self.popup = Popup::NewProject { parent, name, just_opened: false, modules, template, creating: false };
                         }
                     }
                 } else {
-                    self.popup = Popup::NewProject { parent, name, just_opened };
+                    self.popup = Popup::NewProject { parent, name, just_opened, modules, template, creating };
+                }
                 }
             }
             Popup::FindInFiles { mut query, mut replace, mut case_sensitive, mut whole_word, mut just_opened, replace_mode } => {
@@ -627,11 +710,11 @@ impl App {
                                 _ => tr("Yes"),
                             };
                             let danger = matches!(kind, ConfirmKind::Delete(_) | ConfirmKind::Rollback(_) | ConfirmKind::RestoreLocal(_) | ConfirmKind::RestoreLocalFile(..) | ConfirmKind::DeleteLocal(_));
-                            let galley = ui.painter().layout_no_wrap(main_label.to_string(), fonts::semibold(13.5), Color32::WHITE);
+                            let galley = ui.painter().layout_no_wrap(main_label.to_string(), fonts::semibold(13.5), pal.text_on_accent);
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(galley.size().x + 32.0, 34.0), Sense::click());
                             let fill = if danger { pal.error } else { pal.accent };
                             ui.painter().rect_filled(r, widgets::radius(), if resp.hovered() { fill.gamma_multiply(1.15) } else { fill });
-                            ui.painter().text(r.center(), Align2::CENTER_CENTER, main_label, fonts::semibold(13.5), Color32::WHITE);
+                            ui.painter().text(r.center(), Align2::CENTER_CENTER, main_label, fonts::semibold(13.5), pal.text_on_accent);
                             if resp.clicked() {
                                 result = Some(true);
                                 save_first = matches!(kind, ConfirmKind::CloseDoc(_));
@@ -883,7 +966,7 @@ impl App {
                 ui.vertical(|ui| {
                     ui.add_space(6.0);
                     ui.label(RichText::new("Air").font(fonts::semibold(26.0)));
-                    ui.label(RichText::new(tr("The IDE for Lisp")).color(pal.text_dim));
+                    ui.label(RichText::new(tr("An IDE made of modules")).color(pal.text_dim));
                 });
             });
             ui.add_space(28.0);
@@ -896,6 +979,9 @@ impl App {
                 }
                 if widgets::secondary_button(ui, &pal, tr("Get from VCS")).clicked() {
                     self.run_command(ctx, "file.clone");
+                }
+                if widgets::secondary_button(ui, &pal, tr("Modules")).clicked() {
+                    self.run_command(ctx, "app.modules");
                 }
             });
             ui.add_space(28.0);

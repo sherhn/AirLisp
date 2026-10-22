@@ -116,6 +116,7 @@ impl App {
     fn draw_central(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.draw_env_banner(ui);
         self.draw_tools_banner(ui);
+        self.draw_modules_banner(ui);
         if self.docs.is_empty() {
             self.split = None;
             self.draw_welcome(ui, ctx);
@@ -148,7 +149,10 @@ impl App {
                 self.gutter_rect = None;
                 self.caret_screen = None;
             }
-            self.draw_diff_view(ui, idx);
+            match self.docs[idx].page {
+                Some(crate::doc::Page::Modules) => self.draw_modules_page(ui, ctx),
+                None => self.draw_diff_view(ui, idx),
+            }
             return false;
         }
         // conflict banner
