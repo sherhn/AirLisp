@@ -209,6 +209,8 @@ impl App {
         }
         self.mods.installed = installed;
         self.mods.broken = broken;
+        // the tools to look for in Linux depend on the modules that are on
+        self.wsl.tools.clear();
         self.mods.langs = langs;
         self.mods.lisp = lisp;
         self.apply_languages();
@@ -250,6 +252,20 @@ impl App {
             self.assign_language(d);
         }
         self.docs = docs;
+    }
+
+    /// The developer tools wanted in Linux: what everyone wants, and the groups of the modules that are on.
+    pub fn tool_groups(&self) -> Vec<lisp_runtime::wsl::ToolGroup> {
+        use lisp_runtime::wsl::{ToolGroup, essential_groups};
+        let mut groups = essential_groups();
+        for m in self.mods.installed.iter().filter(|m| m.enabled) {
+            for t in &m.manifest.tools {
+                if !groups.iter().any(|g| g.name == t.name) {
+                    groups.push(ToolGroup { name: t.name.clone(), programs: t.programs.clone(), packages: t.apt.clone() });
+                }
+            }
+        }
+        groups
     }
 
     /// The id of the language of the active document (for run commands).

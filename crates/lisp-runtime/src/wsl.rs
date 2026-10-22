@@ -424,79 +424,92 @@ pub fn install_sbcl_command(distro: &str) -> Command {
 pub const BUILD_TOOLS: [&str; 8] = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"];
 
 /// A group of the developer tools put into a distribution: its name, the programs that show it is there and the
-/// Debian/Ubuntu packages that bring them. Debian and Ubuntu get all groups; the other package managers only the
-/// core set of [`INSTALL_TOOLS_SCRIPT`]'s other branches (C toolchain, nasm, gdb, git, QEMU).
+/// Debian/Ubuntu packages that bring them. The groups come from the modules that are on (C and C++, Python, ...) and
+/// from [`essential_groups`]; Debian and Ubuntu get all of them, the other package managers only the core set of
+/// [`install_tools_script`]'s other branches (C toolchain, nasm, gdb, git, QEMU).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ToolGroup {
-    pub name: &'static str,
-    pub programs: &'static [&'static str],
-    pub packages: &'static str,
+    pub name: String,
+    pub programs: Vec<String>,
+    pub packages: String,
 }
 
-pub const TOOL_GROUPS: [ToolGroup; 8] = [
-    ToolGroup { name: "C and C++", programs: &["make", "gcc", "g++", "ld", "gdb", "cmake", "ninja", "pkg-config"], packages: "build-essential gdb cmake ninja-build pkg-config autoconf automake libtool ccache bear gcc-multilib g++-multilib" },
-    ToolGroup { name: "Clang and LLVM", programs: &["clang", "clangd", "lldb", "clang-format"], packages: "clang clangd lldb clang-format clang-tidy" },
-    ToolGroup { name: "Debugging and analysis", programs: &["valgrind", "strace", "ltrace", "gdb-multiarch", "xxd"], packages: "valgrind strace ltrace gdb-multiarch xxd" },
-    ToolGroup { name: "Git and network", programs: &["git", "curl", "wget", "ssh", "rsync"], packages: "git curl wget openssh-client rsync ca-certificates" },
-    ToolGroup { name: "Files and text", programs: &["zip", "unzip", "xz", "jq", "rg", "fdfind", "tree", "vim", "nano", "htop"], packages: "zip unzip xz-utils jq ripgrep fd-find tree less vim nano htop" },
-    ToolGroup { name: "Documentation", programs: &["man", "doxygen"], packages: "man-db manpages-dev doxygen" },
-    ToolGroup { name: "Python", programs: &["python3", "pip3"], packages: "python3 python3-pip python3-venv" },
-    ToolGroup { name: "OS development", programs: &["nasm", "qemu-system-i386", "qemu-system-x86_64", "qemu-img", "xorriso", "grub-mkrescue"], packages: "nasm qemu-system-x86 qemu-utils xorriso mtools grub-pc-bin" },
-];
+impl ToolGroup {
+    pub fn new(name: &str, programs: &[&str], packages: &str) -> ToolGroup {
+        ToolGroup { name: name.to_string(), programs: programs.iter().map(|p| p.to_string()).collect(), packages: packages.to_string() }
+    }
+}
 
-/// Every program of every group, once, in the order the groups list them.
-pub fn all_programs() -> Vec<&'static str> {
-    let mut v: Vec<&'static str> = Vec::new();
-    for g in &TOOL_GROUPS {
-        for p in g.programs {
+/// What every developer wants whatever the language: git and network tools, text and archive tools, documentation.
+pub fn essential_groups() -> Vec<ToolGroup> {
+    vec![
+        ToolGroup::new("Git and network", &["git", "curl", "wget", "ssh", "rsync"], "git curl wget openssh-client rsync ca-certificates"),
+        ToolGroup::new("Files and text", &["zip", "unzip", "xz", "jq", "rg", "fdfind", "tree", "vim", "nano", "htop"], "zip unzip xz-utils jq ripgrep fd-find tree less vim nano htop"),
+        ToolGroup::new("Documentation", &["man", "doxygen"], "man-db manpages-dev doxygen"),
+    ]
+}
+
+/// Every program of `groups`, once, in the order the groups list them.
+pub fn all_programs(groups: &[ToolGroup]) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for g in groups {
+        for p in &g.programs {
             if !v.contains(p) {
-                v.push(p);
+                v.push(p.clone());
             }
         }
     }
     v
 }
 
-/// The [`BUILD_TOOLS`] a check found missing.
+/// The [`BUILD_TOOLS`] a check found missing (only those the checked groups cover: a tool no module asks for is not
+/// missed).
 pub fn missing_core(found: &[(String, bool)]) -> Vec<String> {
     found.iter().filter(|(n, ok)| !*ok && BUILD_TOOLS.contains(&n.as_str())).map(|(n, _)| n.clone()).collect()
 }
 
 /// Script that prints `TOOL=<path>` for every program of the groups (an empty path: missing). A login shell, so tools
 /// on the user's PATH count too.
-pub fn tools_check_script() -> String {
-    all_programs().iter().map(|t| format!("echo \"{t}=$(command -v {t} 2>/dev/null)\"")).collect::<Vec<_>>().join("; ")
+pub fn tools_check_script(groups: &[ToolGroup]) -> String {
+    all_programs(groups).iter().map(|t| format!("echo \"{t}=$(command -v {t} 2>/dev/null)\"")).collect::<Vec<_>>().join("; ")
 }
 
-/// Which programs the check found (`true`) or missed.
-pub fn parse_tools(text: &str) -> Vec<(String, bool)> {
-    all_programs()
-        .iter()
+/// Which programs of `groups` the check found (`true`) or missed.
+pub fn parse_tools(text: &str, groups: &[ToolGroup]) -> Vec<(String, bool)> {
+    all_programs(groups)
+        .into_iter()
         .map(|t| {
             let found = text.lines().any(|l| l.trim().strip_prefix(&format!("{t}=")).is_some_and(|v| !v.trim().is_empty()));
-            (t.to_string(), found)
+            (t, found)
         })
         .collect()
 }
 
 /// Look for the developer tools inside `distro`.
-pub fn check_tools(distro: &str) -> Result<Vec<(String, bool)>, String> {
+pub fn check_tools(distro: &str, groups: &[ToolGroup]) -> Result<Vec<(String, bool)>, String> {
     let mut c = wsl_command();
-    c.args(["-d", distro, "-e", "sh", "-lc", &tools_check_script()]);
+    c.args(["-d", distro, "-e", "sh", "-lc", &tools_check_script(groups)]);
     let out = capture(c, Duration::from_secs(90)).map_err(|e| e.to_string())?;
     if out.timed_out {
         return Err("the distribution did not answer in time".into());
     }
-    if !out.text.contains("make=") {
+    let first = all_programs(groups).into_iter().next().unwrap_or_default();
+    if !out.text.contains(&format!("{first}=")) {
         return Err(out.text.trim().to_string());
     }
-    Ok(parse_tools(&out.text))
+    Ok(parse_tools(&out.text, groups))
 }
 
-/// Shell script installing the developer tools (run as root): on Debian and Ubuntu every group of [`TOOL_GROUPS`]
+/// Shell script installing the developer tools (run as root): on Debian and Ubuntu every group of `groups`
 /// (packages this release of the distribution does not have are skipped, not fatal); with the other package managers
 /// a C toolchain with 32-bit support, nasm, a debugger, git and QEMU.
-pub fn install_tools_script() -> String {
-    let packages: Vec<&str> = TOOL_GROUPS.iter().flat_map(|g| g.packages.split_whitespace()).collect::<Vec<_>>();
+pub fn install_tools_script(groups: &[ToolGroup]) -> String {
+    let mut packages: Vec<&str> = Vec::new();
+    for p in groups.iter().flat_map(|g| g.packages.split_whitespace()) {
+        if !packages.contains(&p) {
+            packages.push(p);
+        }
+    }
     let apt = packages.join(" ");
     format!(
         "set -e
@@ -533,9 +546,9 @@ gcc --version | head -n 1"
 }
 
 /// Install the developer tools inside `distro` as root (`wsl -u root` needs no password).
-pub fn install_tools_command(distro: &str) -> Command {
+pub fn install_tools_command(distro: &str, groups: &[ToolGroup]) -> Command {
     let mut c = wsl_command();
-    c.args(["-d", distro, "-u", "root", "-e", "sh", "-c", &install_tools_script()]);
+    c.args(["-d", distro, "-u", "root", "-e", "sh", "-c", &install_tools_script(groups)]);
     c
 }
 
@@ -702,41 +715,57 @@ mod tests {
         c.get_args().map(|a| a.to_string_lossy().into_owned()).collect()
     }
 
+    /// What the C and C++ and Python modules bring, as the app turns their manifests into groups.
+    fn module_groups() -> Vec<ToolGroup> {
+        let mut g = essential_groups();
+        g.push(ToolGroup::new("C and C++", &["make", "gcc", "g++", "ld", "gdb", "cmake"], "build-essential gdb cmake gcc-multilib"));
+        g.push(ToolGroup::new("Python", &["python3", "pip3"], "python3 python3-pip python3-venv"));
+        g.push(ToolGroup::new("OS development", &["nasm", "qemu-system-i386", "qemu-system-x86_64"], "nasm qemu-system-x86"));
+        g.push(ToolGroup::new("Debugging", &["gdb", "valgrind"], "gdb valgrind"));
+        g
+    }
+
     #[test]
     fn developer_tools_are_reported_by_group() {
-        let all = all_programs();
-        assert!(all.len() > 30 && BUILD_TOOLS.iter().all(|t| all.contains(t)), "every core tool is checked: {all:?}");
-        assert_eq!(all.iter().filter(|p| **p == "gdb").count(), 1, "a program in two groups is checked once");
+        let groups = module_groups();
+        let all = all_programs(&groups);
+        assert!(BUILD_TOOLS.iter().all(|t| all.iter().any(|a| a == t)), "every core tool is checked: {all:?}");
+        assert_eq!(all.iter().filter(|p| *p == "gdb").count(), 1, "a program in two groups is checked once");
         let text = "make=/usr/bin/make\ngcc=/usr/bin/gcc\nld=/usr/bin/ld\nnasm=\ngdb=\ngit=/usr/bin/git\nqemu-system-i386=\nqemu-system-x86_64=\ncmake=/usr/bin/cmake\n";
-        let tools = parse_tools(text);
+        let tools = parse_tools(text, &groups);
         assert_eq!(tools.len(), all.len());
         assert!(tools.contains(&("make".to_string(), true)));
         assert!(tools.contains(&("cmake".to_string(), true)));
         assert!(tools.contains(&("gdb".to_string(), false)));
-        assert!(tools.contains(&("clangd".to_string(), false)), "not printed means not found");
+        assert!(tools.contains(&("valgrind".to_string(), false)), "not printed means not found");
         assert_eq!(missing_core(&tools), ["gdb", "nasm", "qemu-system-i386", "qemu-system-x86_64"], "only the core tools matter for the banner");
-        assert!(tools_check_script().contains("command -v qemu-system-i386") && tools_check_script().contains("command -v valgrind"));
+        assert!(tools_check_script(&groups).contains("command -v qemu-system-i386") && tools_check_script(&groups).contains("command -v valgrind"));
+        // without the modules that bring them the tools are not looked for (nor missed)
+        let only_essentials = parse_tools(text, &essential_groups());
+        assert!(!only_essentials.iter().any(|(n, _)| n == "make") && missing_core(&only_essentials).is_empty());
     }
 
     #[test]
     fn the_install_script_brings_every_group() {
-        let script = install_tools_script();
-        for g in &TOOL_GROUPS {
+        let groups = module_groups();
+        let script = install_tools_script(&groups);
+        for g in &groups {
             assert!(!g.name.is_empty() && !g.programs.is_empty());
             for pkg in g.packages.split_whitespace() {
                 assert!(script.contains(pkg), "{pkg} of {}", g.name);
             }
         }
-        // what a developer expects to find
-        for pkg in ["build-essential", "cmake", "ninja-build", "clang", "clangd", "valgrind", "python3-pip", "curl", "gcc-multilib", "nasm", "qemu-system-x86"] {
-            assert!(script.contains(pkg), "{pkg}");
-        }
+        let list = &script[script.find("for p in ").unwrap()..script.find("; do").unwrap()];
+        assert_eq!(list.split_whitespace().filter(|p| *p == "gdb").count(), 1, "a package of two groups is installed once: {list}");
         // a package this release does not have is skipped, not fatal
         assert!(script.contains("apt-cache show"));
-        let c = install_tools_command("Ubuntu");
+        let c = install_tools_command("Ubuntu", &groups);
         let a = args(&c);
         assert!(a.windows(2).any(|w| w == ["-u", "root"]));
         assert_eq!(a.last().unwrap(), &script);
+        // only the essentials: no compilers
+        let light = install_tools_script(&essential_groups());
+        assert!(light.contains("curl") && !light.contains("build-essential"));
     }
 
     #[test]
@@ -867,7 +896,7 @@ mod tests {
     #[test]
     fn install_scripts_announce_their_phases() {
         use crate::setup_progress::MARKER;
-        let tools = install_tools_script();
+        let tools = install_tools_script(&module_groups());
         for script in [INSTALL_SBCL_SCRIPT, tools.as_str()] {
             let marker = |name: &str| format!("echo '{MARKER}{name}'");
             // the lists phase comes first, the check last, and every package manager announces its install phase
@@ -953,7 +982,7 @@ PATH=$d:$PATH
 export PATH
 "#;
         let mut c = wsl_command();
-        c.args(["-d", &distro, "-u", "root", "-e", "sh", "-c", &format!("{shim}{}", install_tools_script())]);
+        c.args(["-d", &distro, "-u", "root", "-e", "sh", "-c", &format!("{shim}{}", install_tools_script(&module_groups()))]);
         let out = capture(c, Duration::from_secs(600)).expect("run");
         assert!(out.ok(), "the script failed: {}", out.text);
         assert!(!out.text.contains("Skipped"), "a package of the list does not exist in {distro}: {}", out.text.lines().filter(|l| l.contains("Skipped")).collect::<Vec<_>>().join("

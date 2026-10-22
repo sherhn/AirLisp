@@ -127,6 +127,7 @@ impl App {
         // how far the running step has got, and how long it has been going
         let task_progress: Option<(Progress, u64)> = self.wsl.task.as_ref().map(|t| (t.tracker.progress(), t.started.elapsed().as_secs()));
         // the setup overview counts the tools a project needs to be built; the page lists the rest
+        let tool_groups = self.tool_groups();
         let tools_ready = matches!(self.wsl.tools.get(&selected), Some(Ok(v)) if lisp_runtime::wsl::missing_core(v).is_empty());
 
         // ---------------------------------------------------------------- intro
@@ -428,9 +429,9 @@ impl App {
                 });
                 // what is in it, and what is already there
                 if !found.is_empty() {
-                    for g in &lisp_runtime::wsl::TOOL_GROUPS {
-                        let absent: Vec<&str> = g.programs.iter().copied().filter(|p| !is_there(p)).collect();
-                        rows.row(ui, &pal, tr(g.name), &g.programs.join(", "), 120.0, |ui| {
+                    for g in &tool_groups {
+                        let absent: Vec<&str> = g.programs.iter().map(String::as_str).filter(|p| !is_there(p)).collect();
+                        rows.row(ui, &pal, &i18n::tr_dyn(&g.name), &g.programs.join(", "), 120.0, |ui| {
                             if absent.is_empty() {
                                 status_ok(ui, &pal, tr("Ready"));
                             } else {

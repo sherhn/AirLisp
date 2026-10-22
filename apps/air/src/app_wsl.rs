@@ -312,8 +312,9 @@ impl App {
         let (tx, rx) = mpsc::channel();
         self.wsl.tools_rx = Some(rx);
         let d = distro.to_string();
+        let groups = self.tool_groups();
         std::thread::spawn(move || {
-            let r = wsl::check_tools(&d);
+            let r = wsl::check_tools(&d, &groups);
             let _ = tx.send((d, r));
         });
     }
@@ -325,7 +326,8 @@ impl App {
     /// Install the developer tools (compilers, debuggers, everyday tools) inside `distro`.
     pub fn wsl_install_tools(&mut self, distro: &str) {
         let title = i18n::fmt("Installing developer tools in {}...", &[&distro]);
-        self.wsl_start(SetupTask::InstallTools(distro.to_string()), wsl::install_tools_command(distro), title);
+        let groups = self.tool_groups();
+        self.wsl_start(SetupTask::InstallTools(distro.to_string()), wsl::install_tools_command(distro, &groups), title);
     }
 
     /// Give git in `distro` the name and e-mail of Windows git and its credential manager (GitHub logins).
