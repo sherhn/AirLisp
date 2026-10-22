@@ -35,6 +35,10 @@
 
   {"op": "log", "value": "step 3: install SBCL inside it"},
   {"op": "wsl_action", "value": "install_sbcl", "arg": "Ubuntu-24.04"},
+  {"op": "wait", "what": "wsl_progress", "value": 0.5, "timeout": 30},
+  {"op": "assert_wsl_progress", "stage": "Install", "min": 0.5, "max": 0.97},
+  {"op": "frames", "value": 3},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_4b_installing_sbcl.png"},
   {"op": "wait", "what": "wsl_idle", "timeout": 60},
   {"op": "frames", "value": 4},
   {"op": "assert_wsl", "sbcl": "found", "outcome_contains": "SBCL"},

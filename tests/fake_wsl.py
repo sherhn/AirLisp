@@ -56,6 +56,30 @@ def no_distro(name):
     return 255
 
 
+def fake_apt(packages, version_lines):
+    """What the setup scripts print on Ubuntu: the markers of the script, then apt's own lines (slowly enough for the
+    progress bar of the UI to be seen)."""
+    out("@@airlisp stage prepare\n")
+    for n in range(1, 7):
+        out(f"Get:{n} http://archive.ubuntu.com/ubuntu noble InRelease [126 kB]\n")
+        time.sleep(0.06)
+    out("Reading package lists... Done\n@@airlisp stage install\n")
+    out("Reading package lists...\nThe following NEW packages will be installed:\n  " + " ".join(packages) + "\n")
+    out(f"0 upgraded, {len(packages)} newly installed, 0 to remove and 4 not upgraded.\nNeed to get 31.4 MB of archives.\n")
+    for i, p in enumerate(packages, 1):
+        out(f"Get:{i} http://archive.ubuntu.com/ubuntu noble/main amd64 {p} amd64 1.0 [1,204 kB]\n")
+        time.sleep(0.08)
+    for p in packages:
+        out(f"Selecting previously unselected package {p}.\nUnpacking {p} (1.0) ...\n")
+        time.sleep(0.08)
+    for p in packages:
+        out(f"Setting up {p} (1.0) ...\n")
+        time.sleep(0.08)
+    out("@@airlisp stage verify\n")
+    for line in version_lines:
+        out(line + "\n")
+
+
 TOOLS = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"]
 
 
@@ -95,9 +119,7 @@ def run_inside(s, name, cwd, prog, args):
     if prog == "sh" and args[:1] == ["-c"]:
         script = args[1] if len(args) > 1 else ""
         if "gcc-multilib" in script:
-            for line in ["Reading package lists... Done", "Setting up build-essential (12.10ubuntu1) ...", "Setting up qemu-system-x86 (1:8.2.2) ...", "GNU Make 4.3", "gcc (Ubuntu 13.2.0) 13.2.0"]:
-                out(line + "\n")
-                time.sleep(0.05)
+            fake_apt(["build-essential", "gcc-multilib", "nasm", "gdb", "git", "qemu-system-x86", "qemu-system-common", "libvirglrenderer1", "seabios", "ipxe-qemu"], ["GNU Make 4.3", "gcc (Ubuntu 13.2.0) 13.2.0"])
             d["tools"] = True
             save(s)
             return 0
@@ -105,9 +127,7 @@ def run_inside(s, name, cwd, prog, args):
             out("/home/user\n")
             return 0
         if "apt-get install -y sbcl" in script:
-            for line in ["Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease", "Reading package lists... Done", "Setting up sbcl (2:2.2.9-1) ...", "SBCL 2.2.9.debian"]:
-                out(line + "\n")
-                time.sleep(0.05)
+            fake_apt(["libzstd1", "libffi8", "sbcl"], ["SBCL 2.2.9.debian"])
             d["sbcl"] = True
             save(s)
             return 0

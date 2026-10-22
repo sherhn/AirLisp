@@ -81,6 +81,11 @@ impl App {
                 self.docs.iter().filter_map(|d| d.diff.as_deref()).any(|d| d.new.contains(t))
             }
             "wsl_idle" => !self.wsl.busy(),
+            // the running setup step has got at least this far (0.0..1.0)
+            "wsl_progress" => {
+                let min = cond["value"].as_f64().unwrap_or(0.0) as f32;
+                self.wsl.task.as_ref().is_some_and(|t| t.tracker.progress().fraction.is_some_and(|f| f >= min))
+            }
             "github_idle" => !self.github.busy(),
             "popup" => !matches!(self.popup, Popup::None),
             "all_saved" => self.docs.iter().all(|d| !d.ed.is_modified() || d.path.is_none()),
@@ -810,6 +815,37 @@ impl App {
                     "install_tools" => self.wsl_install_tools(&arg),
                     "git_setup" => self.wsl_git_setup(&arg),
                     other => self.fail(format!("wsl_action: unknown action {other}")),
+                }
+            }
+            "assert_wsl_progress" => {
+                // the running step: its stage, how far it is, and that the markers of the scripts are not in the log
+                let Some(t) = self.wsl.task.as_ref() else {
+                    self.fail("assert_wsl_progress: no setup step is running".to_string());
+                    return;
+                };
+                let p = t.tracker.progress();
+                let mut errors = vec![];
+                if let Some(s) = step["stage"].as_str()
+                    && format!("{:?}", p.stage) != s
+                {
+                    errors.push(format!("stage {:?}, expected {s}", p.stage));
+                }
+                let f = p.fraction;
+                if let Some(min) = step["min"].as_f64()
+                    && !f.is_some_and(|f| f as f64 >= min)
+                {
+                    errors.push(format!("fraction {f:?}, expected >= {min}"));
+                }
+                if let Some(max) = step["max"].as_f64()
+                    && !f.is_some_and(|f| f as f64 <= max)
+                {
+                    errors.push(format!("fraction {f:?}, expected <= {max}"));
+                }
+                if self.wsl.log.iter().any(|l| l.contains("@@airlisp")) {
+                    errors.push("the log shows the progress markers".to_string());
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_wsl_progress: {}", errors.join("; ")));
                 }
             }
             "assert_wsl" => {
