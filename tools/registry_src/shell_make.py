@@ -71,6 +71,6 @@ MODULE = module(
     tools=[],
     detect=dict(extensions=["sh", "mk"], files=["Makefile", "makefile", "GNUmakefile", "Dockerfile"]),
     templates=[
-        dict(name="Script", description="run.sh", files={"run.sh": '#!/bin/sh\nset -e\n\necho "Hello, Air"\n'}),
+        dict(name="Script", description="run.sh", open="run.sh", files={"run.sh": '#!/bin/sh\nset -e\n\necho "Hello, Air"\n'}),
     ],
 )

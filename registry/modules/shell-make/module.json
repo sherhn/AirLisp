@@ -399,6 +399,7 @@
     {
       "name": "Script",
       "description": "run.sh",
+      "open": "run.sh",
       "files": {
         "run.sh": "#!/bin/sh\nset -e\n\necho \"Hello, Air\"\n"
       }

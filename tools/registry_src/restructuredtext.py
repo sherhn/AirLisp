@@ -40,7 +40,7 @@ MODULE = module(
     tools=[],
     detect=dict(extensions=["rst"], files=["conf.py"]),
     templates=[
-        dict(name="Document", description="index.rst",
+        dict(name="Document", description="index.rst", open="index.rst",
              files={"index.rst": "Title\n=====\n\nIntroduction\n------------\n\nSome *emphasis*, some **strong** text and ``literal`` code.\n\n.. note::\n\n   A directive.\n\n- first\n- second\n"}),
     ],
 )

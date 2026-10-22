@@ -12,9 +12,16 @@ MODULE = module(
     tools=[],
     detect=dict(extensions=["lisp", "lsp", "cl", "asd", "scm", "ss", "el", "clj", "cljs", "edn"], files=[]),
     templates=[
-        dict(name="Hello", description="an ASDF system with a test",
-             files={"hello.asd": '(asdf:defsystem "hello"\n  :components ((:file "hello"))\n  :in-order-to ((test-op (test-op "hello/test"))))\n\n(asdf:defsystem "hello/test"\n  :depends-on ("hello")\n  :components ((:file "hello-test"))\n  :perform (test-op (o c) (uiop:symbol-call :hello-test :run)))\n',
-                    "hello.lisp": '(defpackage :hello\n  (:use :cl)\n  (:export #:greet))\n\n(in-package :hello)\n\n(defun greet (name)\n  (format nil "Hello, ~a" name))\n',
-                    "hello-test.lisp": '(defpackage :hello-test\n  (:use :cl)\n  (:export #:run))\n\n(in-package :hello-test)\n\n(defun run ()\n  (assert (string= (hello:greet "Air") "Hello, Air"))\n  (format t "ok~%"))\n'}),
+        dict(
+            name="ASDF system", description="an ASDF system with src/, test/ and a README", open="src/main.lisp",
+            files={
+                "{{name}}.asd": '(asdf:defsystem "{{name}}"\n  :description "{{name}}"\n  :version "0.1.0"\n  :depends-on ()\n  :serial t\n  :components ((:module "src"\n                :components ((:file "package")\n                             (:file "main"))))\n  :in-order-to ((test-op (test-op "{{name}}/test"))))\n\n(asdf:defsystem "{{name}}/test"\n  :depends-on ("{{name}}")\n  :components ((:module "test"\n                :components ((:file "tests"))))\n  :perform (test-op (o c) (uiop:symbol-call :{{name}}/test :run)))\n',
+                "src/package.lisp": "(defpackage :{{name}}\n  (:use :cl)\n  (:export #:main #:greet))\n",
+                "src/main.lisp": '(in-package :{{name}})\n\n(defun greet (name)\n  "Return a greeting for NAME."\n  (format nil "Hello, ~a!" name))\n\n(defun main ()\n  (format t "~a~%" (greet "world")))\n',
+                "test/tests.lisp": '(defpackage :{{name}}/test\n  (:use :cl)\n  (:export #:run))\n(in-package :{{name}}/test)\n\n(defun run ()\n  (assert (string= (funcall (intern "GREET" :{{name}}) "Lisp") "Hello, Lisp!"))\n  (format t "All tests passed.~%"))\n',
+                "README.md": "# {{name}}\n\nA Common Lisp project created with Air.\n",
+                ".gitignore": "*.fasl\n",
+            },
+        ),
     ],
 )

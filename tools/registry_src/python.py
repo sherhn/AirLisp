@@ -45,9 +45,9 @@ MODULE = module(
     tools=[dict(name="Python", programs=["python3", "pip3"], apt="python3 python3-pip python3-venv")],
     detect=dict(extensions=["py", "pyw"], files=["pyproject.toml", "requirements.txt", "setup.py", "Pipfile"]),
     templates=[
-        dict(name="Script", description="main.py",
+        dict(name="Script", description="main.py", open="main.py",
              files={"main.py": 'def main():\n    print("Hello, Air")\n\n\nif __name__ == "__main__":\n    main()\n'}),
-        dict(name="Package with tests", description="a package, a test and requirements",
+        dict(name="Package with tests", description="a package, a test and requirements", open="app/core.py",
              files={"pyproject.toml": '[project]\nname = "app"\nversion = "0.1.0"\n',
                     "requirements.txt": "pytest\n",
                     "app/__init__.py": '"""A small package."""\n',

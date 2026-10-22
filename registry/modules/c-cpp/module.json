@@ -525,6 +525,7 @@
     {
       "name": "C program",
       "description": "main.c and a makefile",
+      "open": "main.c",
       "files": {
         "main.c": "#include <stdio.h>\n\nint main(void) {\n    printf(\"Hello, Air\\n\");\n    return 0;\n}\n",
         "makefile": "CFLAGS = -g -Wall -Wextra\n\nall: main\n\nmain: main.c\n\t$(CC) $(CFLAGS) main.c -o main\n\nrun: main\n\t./main\n\nclean:\n\trm -f main\n\n.PHONY: all run clean\n"
@@ -533,6 +534,7 @@
     {
       "name": "C++ program",
       "description": "main.cpp and a CMake project",
+      "open": "main.cpp",
       "files": {
         "main.cpp": "#include <iostream>\n\nint main() {\n    std::cout << \"Hello, Air\\n\";\n}\n",
         "CMakeLists.txt": "cmake_minimum_required(VERSION 3.16)\nproject(hello CXX)\nset(CMAKE_CXX_STANDARD 17)\nadd_executable(hello main.cpp)\n"

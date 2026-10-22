@@ -37,7 +37,7 @@ MODULE = module(
     tools=[],
     detect=dict(extensions=["md", "markdown"], files=[]),
     templates=[
-        dict(name="README", description="README.md",
+        dict(name="README", description="README.md", open="README.md",
              files={"README.md": "# Project\n\nWhat it is, in a sentence.\n\n## Getting started\n\n1. Clone it\n2. Build it\n3. Run it\n\n## Notes\n\n- one\n- two\n"}),
     ],
 )

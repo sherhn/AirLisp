@@ -74,7 +74,7 @@ MODULE = module(
                 apt="nasm qemu-system-x86 qemu-utils xorriso mtools grub-pc-bin")],
     detect=dict(extensions=["asm", "nasm", "s"], files=[]),
     templates=[
-        dict(name="Boot sector", description="a 512-byte sector for QEMU",
+        dict(name="Boot sector", description="a 512-byte sector for QEMU", open="boot.asm",
              files={"boot.asm": "; nasm -f bin boot.asm -o boot.bin && qemu-system-i386 -drive format=raw,file=boot.bin\n[org 0x7c00]\nbits 16\n\nstart:\n    mov si, message\n.next:\n    lodsb\n    or al, al\n    jz .done\n    mov ah, 0x0e\n    int 0x10\n    jmp .next\n.done:\n    hlt\n    jmp .done\n\nmessage db \"Hello, Air\", 13, 10, 0\n\ntimes 510 - ($ - $$) db 0\ndw 0xaa55\n"}),
     ],
 )
