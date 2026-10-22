@@ -7,6 +7,7 @@ pub mod oem;
 pub mod protocol;
 pub mod repl;
 pub mod runner;
+pub mod setup_progress;
 pub mod wsl;
 
 pub use discover::{Arg, Implementation, Launch};

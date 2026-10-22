@@ -384,24 +384,32 @@ pub fn install_file_command(file: &Path, name: &str, location: &Path) -> Result<
     Ok(c)
 }
 
-/// Shell script installing SBCL with the distribution's package manager (run as root).
+/// Shell script installing SBCL with the distribution's package manager (run as root). The `@@airlisp stage` lines
+/// tell the setup page which phase it is in (see [`crate::setup_progress`]).
 pub const INSTALL_SBCL_SCRIPT: &str = "set -e
+echo '@@airlisp stage prepare'
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
+  echo '@@airlisp stage install'
   apt-get install -y sbcl
 elif command -v dnf >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   dnf install -y sbcl
 elif command -v zypper >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   zypper --non-interactive install sbcl
 elif command -v pacman >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   pacman -Sy --noconfirm sbcl
 elif command -v apk >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   apk add sbcl
 else
   echo 'No supported package manager (apt, dnf, zypper, pacman, apk) found.' >&2
   exit 2
 fi
+echo '@@airlisp stage verify'
 sbcl --version";
 
 /// Install SBCL inside `distro` as root (`wsl -u root` needs no password).
@@ -447,22 +455,29 @@ pub fn check_tools(distro: &str) -> Result<Vec<(String, bool)>, String> {
 
 /// Shell script installing a C toolchain with 32-bit support, a debugger, git and QEMU (run as root).
 pub const INSTALL_TOOLS_SCRIPT: &str = "set -e
+echo '@@airlisp stage prepare'
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
+  echo '@@airlisp stage install'
   apt-get install -y build-essential gcc-multilib nasm gdb git qemu-system-x86
 elif command -v dnf >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   dnf install -y make gcc glibc-devel.i686 libgcc.i686 nasm gdb git qemu-system-x86
 elif command -v zypper >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   zypper --non-interactive install make gcc gcc-32bit nasm gdb git qemu-x86
 elif command -v pacman >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   pacman -Sy --noconfirm base-devel lib32-gcc-libs nasm gdb git qemu-system-x86
 elif command -v apk >/dev/null 2>&1; then
+  echo '@@airlisp stage install'
   apk add build-base nasm gdb git qemu-system-i386 qemu-system-x86_64
 else
   echo 'No supported package manager (apt, dnf, zypper, pacman, apk) found.' >&2
   exit 2
 fi
+echo '@@airlisp stage verify'
 make --version | head -n 1
 gcc --version | head -n 1";
 
@@ -748,5 +763,23 @@ mod tests {
         let p = marker_pattern("airlisp-12-3x");
         assert_eq!(p, "[a]irlisp-12-3x");
         assert!(!p.contains("airlisp-12-3x"), "the cleanup's own command line must not match");
+    }
+
+    #[test]
+    fn install_scripts_announce_their_phases() {
+        use crate::setup_progress::MARKER;
+        for script in [INSTALL_SBCL_SCRIPT, INSTALL_TOOLS_SCRIPT] {
+            let marker = |name: &str| format!("echo '{MARKER}{name}'");
+            // the lists phase comes first, the check last, and every package manager announces its install phase
+            let prepare = script.find(&marker("prepare")).expect("prepare");
+            let verify = script.find(&marker("verify")).expect("verify");
+            assert!(prepare < script.find("if command -v apt-get").unwrap());
+            assert!(verify > script.rfind("apk add").unwrap());
+            for manager in ["apt-get install", "dnf install", "zypper --non-interactive install", "pacman -Sy", "apk add"] {
+                let at = script.find(manager).unwrap_or_else(|| panic!("{manager}"));
+                let announced = script[..at].rfind(&marker("install")).expect("install marker");
+                assert!(at - announced < 60, "{manager}: the install marker is right before the command");
+            }
+        }
     }
 }
