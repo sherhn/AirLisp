@@ -333,6 +333,8 @@ pub enum ConfirmKind {
 /// Messages from the background clone thread.
 pub enum CloneMsg {
     Line(String),
+    /// Where the clone goes, once known (a Linux home folder is looked up first).
+    Dest(PathBuf),
     Done(Result<(), String>),
 }
 
@@ -367,6 +369,13 @@ pub struct CloneState {
     pub error: Option<String>,
     pub just_opened: bool,
     pub run: Option<CloneRun>,
+    /// Clone into a folder of a WSL distribution (git of the distribution, Linux file system).
+    pub linux: bool,
+    pub linux_distro: String,
+    /// Parent folder inside the distribution (`~/projects`).
+    pub linux_dir: String,
+    /// Cloning into a Windows folder: build the project in Linux (Linux line endings, Linux environment).
+    pub build_in_linux: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

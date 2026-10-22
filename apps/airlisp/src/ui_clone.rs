@@ -20,7 +20,28 @@ use crate::widgets::{self, TextField};
 impl App {
     pub fn open_clone_dialog(&mut self) {
         let parent = if self.settings.clone_dir.trim().is_empty() { dirs_home().join("AirLispProjects").to_string_lossy().into_owned() } else { self.settings.clone_dir.clone() };
-        self.popup = Popup::Clone(Box::new(CloneState { tab: CloneTab::Url, gh_selected: None, url: String::new(), dir: String::new(), dir_touched: false, parent, branch: String::new(), shallow: false, error: None, just_opened: true, run: None }));
+        let linux_distro = self.suggested_distro().unwrap_or_default();
+        self.popup = Popup::Clone(Box::new(CloneState {
+            tab: CloneTab::Url,
+            gh_selected: None,
+            url: String::new(),
+            dir: String::new(),
+            dir_touched: false,
+            parent,
+            branch: String::new(),
+            shallow: false,
+            error: None,
+            just_opened: true,
+            run: None,
+            linux: false,
+            linux_distro,
+            linux_dir: "~/projects".into(),
+            build_in_linux: false,
+        }));
+        // which Linux distributions there are, for "Clone into Linux"
+        if cfg!(windows) && self.wsl.probe.is_none() && !self.wsl.probing() {
+            self.wsl_probe();
+        }
         // a login the CLI or Git keeps for us is picked up again on its own
         if self.settings.github_autologin && !self.github.signed_in() && !self.github.signing_in {
             self.github_sign_in_saved();
@@ -35,21 +56,49 @@ impl App {
                 return;
             }
         };
-        if st.parent.trim().is_empty() {
+        let linux = st.linux && !st.linux_distro.is_empty();
+        if !linux && st.parent.trim().is_empty() {
             st.error = Some(tr("Choose a directory to clone into").into());
             return;
         }
-        let dest = PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&url));
+        if linux && st.linux_dir.trim().is_empty() {
+            st.error = Some(tr("Choose a folder in Linux to clone into").into());
+            return;
+        }
+        let name = clone::default_dir_name(&url);
+        let dest = PathBuf::from(st.parent.trim()).join(&name);
         // signed in to GitHub: private repositories clone too (the token reaches git for github.com only)
         let env = self.github.token.as_deref().map(|t| ide_core::github::git_auth_env(&url, t)).unwrap_or_default();
-        let opts = clone::CloneOptions { shallow: st.shallow, branch: Some(st.branch.clone()).filter(|b| !b.trim().is_empty()), env, lf: false };
+        let opts = clone::CloneOptions { shallow: st.shallow, branch: Some(st.branch.clone()).filter(|b| !b.trim().is_empty()), env, lf: st.build_in_linux && !linux };
         let (tx, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let (c2, d2) = (cancel.clone(), dest.clone());
         st.error = None;
+        let (distro, linux_dir) = (st.linux_distro.clone(), st.linux_dir.trim().to_string());
         std::thread::spawn(move || {
             let tx2 = tx.clone();
-            let r = clone::clone_repo(&url, &d2, &opts, &c2, &mut |l| {
+            let mut dest = d2;
+            if linux {
+                // the folder inside the distribution: `~` is the Linux user's home; make sure the parent exists
+                let home = if linux_dir.starts_with('~') {
+                    let _ = tx.send(CloneMsg::Line(format!("Starting {distro}...")));
+                    match lisp_runtime::wsl::home_dir(&distro) {
+                        Ok(h) => h,
+                        Err(e) => {
+                            let _ = tx.send(CloneMsg::Done(Err(format!("{distro}: {e}"))));
+                            return;
+                        }
+                    }
+                } else {
+                    String::new()
+                };
+                let parent = linux_parent(&linux_dir, &home);
+                let mk = lisp_runtime::wsl::exec(&lisp_runtime::wsl::Target::new(&distro, ""), None, "mkdir", &["-p".to_string(), parent.clone()]);
+                let _ = lisp_runtime::wsl::capture(mk, std::time::Duration::from_secs(60));
+                dest = ide_core::wsl::windows_path(&distro, &format!("{}/{name}", parent.trim_end_matches('/')));
+                let _ = tx.send(CloneMsg::Dest(dest.clone()));
+            }
+            let r = clone::clone_repo(&url, &dest, &opts, &c2, &mut |l| {
                 let _ = tx2.send(CloneMsg::Line(l.to_string()));
             });
             let _ = tx.send(CloneMsg::Done(r));
@@ -77,6 +126,7 @@ impl App {
                         }
                         run.status = l;
                     }
+                    CloneMsg::Dest(d) => run.dest = d,
                     CloneMsg::Done(r) => finished = Some(r),
                 }
             }
@@ -128,24 +178,70 @@ impl App {
                 }
                 ui.add_space(16.0);
 
-                widgets::caption(ui, &pal, &tr("Parent directory").to_uppercase());
-                ui.add_space(6.0);
-                widgets::right_row(ui, widgets::FIELD_H, |ui| {
-                    if !running && widgets::secondary_button(ui, &pal, tr("Browse...")).clicked()
-                        && let Some(d) = rfd::FileDialog::new().set_title(tr("Clone into")).pick_folder()
-                    {
-                        st.parent = d.to_string_lossy().into_owned();
-                        st.dir_touched = true;
+                let distros: Vec<String> = self.wsl.distros();
+                if !distros.is_empty() {
+                    widgets::caption(ui, &pal, &tr("Clone into").to_uppercase());
+                    ui.add_space(6.0);
+                    if st.linux_distro.is_empty() || !distros.contains(&st.linux_distro) {
+                        st.linux_distro = self.suggested_distro().unwrap_or_else(|| distros[0].clone());
                     }
-                    TextField::new(&mut st.parent).icon(Icon::Folder).enabled(!running).show(ui, &pal);
-                });
+                    if !running && let Some(i) = widgets::segmented(ui, &pal, &[tr("Windows folder"), &i18n::fmt("Linux: {}", &[&st.linux_distro])], usize::from(st.linux)) {
+                        st.linux = i == 1;
+                    }
+                    ui.add_space(12.0);
+                } else {
+                    st.linux = false;
+                }
+                if st.linux {
+                    widgets::caption(ui, &pal, &tr("Folder in Linux").to_uppercase());
+                    ui.add_space(6.0);
+                    widgets::right_row(ui, widgets::FIELD_H, |ui| {
+                        if distros.len() > 1 {
+                            let resp = widgets::Pill::new(&st.linux_distro).icon(Icon::Linux, pal.text_dim).chevron().bordered().height(widgets::FIELD_H).show(ui, &pal);
+                            egui::Popup::menu(&resp).width(220.0).show(|ui| {
+                                for d in &distros {
+                                    if ui.button(d).clicked() {
+                                        st.linux_distro = d.clone();
+                                        ui.close();
+                                    }
+                                }
+                            });
+                        }
+                        TextField::new(&mut st.linux_dir).hint("~/projects").icon(Icon::Linux).enabled(!running).show(ui, &pal);
+                    });
+                } else {
+                    widgets::caption(ui, &pal, &tr("Parent directory").to_uppercase());
+                    ui.add_space(6.0);
+                    widgets::right_row(ui, widgets::FIELD_H, |ui| {
+                        if !running && widgets::secondary_button(ui, &pal, tr("Browse...")).clicked()
+                            && let Some(d) = rfd::FileDialog::new().set_title(tr("Clone into")).pick_folder()
+                        {
+                            st.parent = d.to_string_lossy().into_owned();
+                            st.dir_touched = true;
+                        }
+                        TextField::new(&mut st.parent).icon(Icon::Folder).enabled(!running).show(ui, &pal);
+                    });
+                    if !distros.is_empty() {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if !running {
+                                widgets::toggle(ui, &pal, &mut st.build_in_linux);
+                            }
+                            ui.label(RichText::new(i18n::fmt("Build and run it in Linux ({}): keeps Linux line endings", &[&st.linux_distro])).color(pal.text_dim).size(12.5));
+                        });
+                    }
+                }
                 if st.tab == CloneTab::GitHub && st.gh_selected.is_none() {
                     ui.add_space(8.0);
                     ui.label(RichText::new(tr("Pick a repository from the list")).color(pal.text_dim).size(12.0));
                 } else if let Ok(u) = clone::normalize_url(&st.url) {
-                    let dest = PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&u));
+                    let target = if st.linux {
+                        i18n::fmt("{0}/{1}  in {2}", &[&st.linux_dir.trim().trim_end_matches('/'), &clone::default_dir_name(&u), &st.linux_distro])
+                    } else {
+                        PathBuf::from(st.parent.trim()).join(clone::default_dir_name(&u)).display().to_string()
+                    };
                     ui.add_space(8.0);
-                    ui.label(RichText::new(i18n::fmt("Will be cloned into  {}", &[&dest.display()])).color(pal.text_dim).size(12.0));
+                    ui.label(RichText::new(i18n::fmt("Will be cloned into  {}", &[&target])).color(pal.text_dim).size(12.0));
                 }
                 ui.add_space(16.0);
 
@@ -218,7 +314,16 @@ impl App {
             return;
         }
         if let Some(dest) = open_dest {
-            self.settings.clone_dir = st.parent.trim().to_string();
+            if st.build_in_linux && !st.linux && !st.linux_distro.is_empty() {
+                // the project opens in Linux right away
+                let cfg = crate::app_env::ProjectConfig { linux: Some(st.linux_distro.clone()), decided: true };
+                if let Err(e) = crate::app_env::save_config(&dest, &cfg) {
+                    self.toast(i18n::fmt("Cannot save the project settings: {}", &[&e]), Sev::Error);
+                }
+            }
+            if !st.linux {
+                self.settings.clone_dir = st.parent.trim().to_string();
+            }
             self.save_settings();
             self.toast(i18n::fmt("Cloned into {}", &[&dest.display()]), Sev::Weak);
             self.request_open_project(&dest);
@@ -226,5 +331,32 @@ impl App {
             return;
         }
         self.popup = Popup::Clone(st);
+    }
+}
+
+/// The Linux folder `dir` with `~` replaced by `home` (`~/projects` -> `/home/me/projects`).
+pub fn linux_parent(dir: &str, home: &str) -> String {
+    let dir = dir.trim();
+    let p = if dir == "~" {
+        home.to_string()
+    } else if let Some(rest) = dir.strip_prefix("~/") {
+        format!("{}/{rest}", home.trim_end_matches('/'))
+    } else {
+        dir.to_string()
+    };
+    let p = p.trim_end_matches('/').to_string();
+    if p.is_empty() { "/".into() } else { p }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_folders() {
+        assert_eq!(linux_parent("~/projects", "/home/me"), "/home/me/projects");
+        assert_eq!(linux_parent("~", "/home/me/"), "/home/me");
+        assert_eq!(linux_parent("/srv/code/", ""), "/srv/code");
+        assert_eq!(linux_parent("  ~/a/b/ ", "/root"), "/root/a/b");
     }
 }

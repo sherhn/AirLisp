@@ -191,6 +191,12 @@ impl App {
                     if let Some(b) = step["branch"].as_str() {
                         c.branch = b.to_string();
                     }
+                    if let Some(b) = step["build_in_linux"].as_bool() {
+                        c.build_in_linux = b;
+                    }
+                    if let Some(b) = step["linux"].as_bool() {
+                        c.linux = b;
+                    }
                 } else {
                     self.fail("clone_set: the clone dialog is not open".to_string());
                 }
