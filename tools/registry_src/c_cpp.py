@@ -71,7 +71,7 @@ MODULE = module(
         dict(name="Clang and LLVM", programs=["clang", "clangd", "lldb", "clang-format"], apt="clang clangd lldb clang-format clang-tidy"),
         dict(name="Debugging and analysis", programs=["valgrind", "strace", "ltrace", "gdb-multiarch", "xxd"], apt="valgrind strace ltrace gdb-multiarch xxd"),
     ],
-    detect=dict(extensions=["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "hxx"], files=["CMakeLists.txt", "meson.build"]),
+    detect=dict(extensions=["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "hxx"], files=["CMakeLists.txt", "meson.build", "Makefile", "makefile", "GNUmakefile"]),
     templates=[
         dict(name="C program", description="main.c and a makefile", open="main.c",
              files={"main.c": '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Air\\n");\n    return 0;\n}\n',

@@ -48,8 +48,8 @@
       "files": [
         {
           "name": "module.json",
-          "size": 13365,
-          "sha256": "1a5bee0ef47b91f8971024e68e94a19afa8c92217600c1b5c48af9f816331a29"
+          "size": 13422,
+          "sha256": "573c5de1e72f66d30f9e042bd9e4d48df8481e88d2307b12215e3c2d477507af"
         },
         {
           "name": "cover.png",
@@ -70,7 +70,10 @@
         ],
         "files": [
           "CMakeLists.txt",
-          "meson.build"
+          "meson.build",
+          "Makefile",
+          "makefile",
+          "GNUmakefile"
         ]
       }
     },

@@ -518,7 +518,10 @@
     ],
     "files": [
       "CMakeLists.txt",
-      "meson.build"
+      "meson.build",
+      "Makefile",
+      "makefile",
+      "GNUmakefile"
     ]
   },
   "templates": [
