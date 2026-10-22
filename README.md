@@ -83,6 +83,26 @@ Your project stays where it is: Windows paths are translated (`C:\x` -> `/mnt/c/
 in Linux are tagged so Stop really ends them. AirLisp never removes or changes an installed distribution.
 For the UI tests `AIRLISP_FAKE_WSL` (see `tests/fake_wsl.py`) replaces `wsl.exe`, so they never touch the real WSL.
 
+### Linux projects (C, assembly, make - e.g. an operating system like os-pi)
+
+A project can be *built and run in Linux* while you work on Windows:
+
+* **Choose it per project.** Opening a project with a makefile (or shell scripts) offers "Use Linux"; the status
+  bar shows `Windows` / `Linux: <distro>` and switches with a click. The choice is kept in `.airlisp/project.json`,
+  which git never sees. The terminal, the make targets, Lisp and the REPL of that project then run in the distribution.
+* **Or keep the project in Linux.** Get from Version Control > *Linux: <distro>* clones with the distribution's own git
+  into `~/projects/<name>` and opens it as `\\wsl.localhost\<distro>\home\...`; git for such a project always runs
+  inside Linux (Linux file modes, symlinks and line endings, no "dubious ownership"). Cloning into a Windows folder
+  with *Build and run it in Linux* keeps Linux line endings (`core.autocrlf=false`) so scripts and makefiles work.
+* **make targets are run configurations** (`make all`, `make run`, `make debug`, `make clean`, test targets...).
+  The output goes to the Run tool window; gcc, ld and nasm errors land in Problems and in the editor, with
+  `make -C` sub-directories resolved. `make run` starts QEMU in its own window (WSLg).
+* **Build tools in one click.** Settings > Linux (WSL) > *Linux projects* checks make, gcc (with 32-bit support),
+  nasm, gdb, git and QEMU and installs what is missing; *Set up git* gives Linux git your name, e-mail and the
+  Windows credential manager (GitHub logins).
+* **C, assembly, shell and makefiles are not Lisp**: they get their own highlighting, bracket matching, brace
+  indentation, folding and comment markers, and never show false Lisp errors.
+
 ## Layout
 
 | crate / app | role |
@@ -136,3 +156,12 @@ Credential Manager), пароль AirLisp не видит. Есть также �
 по умолчанию, или из файла `.wsl` / `.tar`) и SBCL внутри него, а затем одной кнопкой перевести SBCL, REPL, запуск,
 компиляцию и терминал в Linux. Файлы проекта остаются на месте: пути переводятся автоматически. Образ Ubuntu Desktop
 `.iso` для WSL не подходит: это установщик для ПК или виртуальной машины.
+
+**Linux-проекты (C, ассемблер, make — например, ОС вроде os-pi).** Проект можно собирать и запускать в Linux, работая в
+Windows: при открытии проекта с makefile AirLisp предложит «Использовать Linux», а в строке состояния можно
+переключить «Windows / Linux: <дистрибутив>» (выбор хранится в `.airlisp/project.json`, git его не видит). Терминал,
+цели make, Lisp и REPL проекта работают в дистрибутиве; цели make (`all`, `run`, `debug`, `clean`, тесты) — это
+конфигурации запуска, ошибки gcc/ld/nasm попадают в Problems и в редактор. Клонировать можно прямо в Linux
+(`~/projects`, git дистрибутива) или в папку Windows с окончаниями строк Linux. На странице Linux (WSL) одной кнопкой
+ставятся make, gcc с 32-битной поддержкой, nasm, gdb, git и QEMU, а git в Linux настраивается на ваши имя, почту и вход
+в GitHub из Windows. Файлы C, ассемблера, shell и makefile подсвечиваются по-своему и не дают ложных Lisp-ошибок.
