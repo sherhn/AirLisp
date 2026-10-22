@@ -34,6 +34,10 @@ pub struct LogGeometry {
     pub char_w: f32,
     /// The text of the rows on screen, as shown.
     pub rows: Vec<String>,
+    /// How far the log is scrolled, how far it can be, and how tall the visible part is.
+    pub offset_y: f32,
+    pub max_offset: f32,
+    pub view_h: f32,
 }
 
 /// Id of the egui data holding the last [`LogGeometry`] and the last text a console copied.
@@ -521,7 +525,7 @@ impl App {
         let col_at = |g: &egui::Galley, p: Vec2, max: usize| -> usize { usize::from(g.cursor_from_pos(p).index).min(max) };
         // what the menu asked for
         let mut menu: Option<LogMenu> = None;
-        egui::ScrollArea::both().id_salt(id).auto_shrink([false, false]).stick_to_bottom(stick).show_rows(ui, row_h, lines.len(), |ui, range| {
+        let area = egui::ScrollArea::both().id_salt(id).auto_shrink([false, false]).stick_to_bottom(stick).show_rows(ui, row_h, lines.len(), |ui, range| {
             ui.spacing_mut().item_spacing.y = 0.0;
             // the rows on screen: where they are and how their text is laid out, for finding the character under the mouse
             let mut rows: Vec<(usize, Rect, Pos2, std::sync::Arc<egui::Galley>, usize, egui::Response)> = Vec::new();
@@ -593,11 +597,17 @@ impl App {
             {
                 let char_w = ui.fonts_mut(|f| f.glyph_width(&font, 'M'));
                 let shown = range.clone().map(|i| Self::log_row_text(&lines[i], prompt)).collect();
-                ui.data_mut(|d| d.insert_temp(egui::Id::new(LOG_GEOMETRY_ID), LogGeometry { left: first.1.left(), top: first.1.top(), row_h, char_w, rows: shown }));
+                ui.data_mut(|d| d.insert_temp(egui::Id::new(LOG_GEOMETRY_ID), LogGeometry { left: first.1.left(), top: first.1.top(), row_h, char_w, rows: shown, ..Default::default() }));
             }
-            let pointer = ui.input(|i| i.pointer.latest_pos());
-            let primary = egui::PointerButton::Primary;
-            if rows.iter().any(|r| r.5.hovered() && ui.input(|i| i.pointer.primary_pressed())) {
+            // A selection is dragged while the button is down - not while the row it started on is on screen: scrolling
+            // takes that row away (only the rows on screen exist), and the drag must go on.
+            let drag_id = sel_id.with("dragging");
+            let pos_id = sel_id.with("last_pos");
+            let mut dragging = ui.data(|d| d.get_temp::<bool>(drag_id)).unwrap_or(false) && ui.input(|i| i.pointer.primary_down());
+            // Dragged out of the window the mouse keeps its button but egui forgets where it is: the last place it was
+            // (at the edge of the window) stands in, so the scrolling goes on.
+            let pointer = ui.input(|i| i.pointer.latest_pos()).or_else(|| if dragging { ui.data(|d| d.get_temp::<Pos2>(pos_id)) } else { None });
+            if rows.iter().any(|r| r.5.hovered()) && ui.input(|i| i.pointer.primary_pressed()) {
                 // the keys must reach the log, not a text field somewhere else
                 out.pressed = true;
                 ui.ctx().memory_mut(|m| {
@@ -605,26 +615,39 @@ impl App {
                         m.surrender_focus(f);
                     }
                 });
+                if let Some(p) = pointer.and_then(at) {
+                    sel = Some(Selection::new(p, p));
+                    dragging = true;
+                }
             }
-            if rows.iter().any(|r| r.5.drag_started_by(primary))
-                && let Some(p) = ui.input(|i| i.pointer.press_origin()).and_then(at)
-            {
-                sel = Some(Selection::new(p, p));
-            }
-            if rows.iter().any(|r| r.5.dragged_by(primary)) {
+            if dragging {
                 if let (Some(s), Some(p)) = (sel.as_mut(), pointer.and_then(at)) {
                     s.head = p;
                 }
-                // dragging past the edge scrolls
+                // dragging past the top or bottom scrolls, faster the further the mouse is (points per second, so the speed
+                // does not depend on the frame rate; no animation: each frame moves the view straight away)
                 if let Some(p) = pointer {
                     let clip = ui.clip_rect();
                     let past = if p.y < clip.top() { clip.top() - p.y } else if p.y > clip.bottom() { clip.bottom() - p.y } else { 0.0 };
                     if past != 0.0 {
-                        ui.scroll_with_delta(Vec2::new(0.0, past.signum() * (past.abs() * 0.3 + 3.0).min(40.0)));
+                        let dt = ui.input(|i| i.stable_dt).min(0.05);
+                        let speed = (past.abs() * 8.0 + 200.0).min(2500.0);
+                        ui.scroll_with_delta_animation(Vec2::new(0.0, past.signum() * speed * dt), egui::style::ScrollAnimation::none());
                     }
                 }
                 ui.ctx().request_repaint();
             }
+            ui.data_mut(|d| {
+                d.insert_temp(drag_id, dragging);
+                match pointer {
+                    Some(p) if dragging => {
+                        d.insert_temp(pos_id, p);
+                    }
+                    _ => {
+                        d.remove::<Pos2>(pos_id);
+                    }
+                }
+            });
             let clicked_row = |f: fn(&egui::Response) -> bool| rows.iter().find(|r| f(&r.5));
             if let Some(r) = clicked_row(egui::Response::triple_clicked) {
                 sel = Some(Selection::new(Pos { line: r.0, col: 0 }, Pos { line: r.0, col: r.4 }));
@@ -661,6 +684,17 @@ impl App {
                 }
             }
         });
+        if self.script.is_some() {
+            // where the log is scrolled to, for the UI tests
+            ui.data_mut(|d| {
+                if let Some(mut g) = d.get_temp::<LogGeometry>(egui::Id::new(LOG_GEOMETRY_ID)) {
+                    g.offset_y = area.state.offset().y;
+                    g.view_h = area.inner_rect.height();
+                    g.max_offset = (area.content_size.y - area.inner_rect.height()).max(0.0);
+                    d.insert_temp(egui::Id::new(LOG_GEOMETRY_ID), g);
+                }
+            });
+        }
         match menu {
             Some(LogMenu::Copy) => {
                 if let Some(s) = sel.filter(|s| !s.is_empty()) {

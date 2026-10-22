@@ -80,6 +80,8 @@ impl App {
                 let t = cond["value"].as_str().unwrap_or("");
                 self.docs.iter().filter_map(|d| d.diff.as_deref()).any(|d| d.new.contains(t))
             }
+            // real time has passed (`sleep`): things that go by the clock, like scrolling while dragging, need it
+            "after" => self.now >= cond["until"].as_f64().unwrap_or(0.0),
             "wsl_idle" => !self.wsl.busy(),
             // the running setup step has got at least this far (0.0..1.0)
             "wsl_progress" => {
@@ -235,6 +237,10 @@ impl App {
                 s.pending.push(Event::Paste(sval.clone()));
             }
             "command" => self.run_command(ctx, &sval),
+            "sleep" => {
+                let until = now + step["value"].as_f64().unwrap_or(1.0);
+                self.script.as_mut().unwrap().wait_cond = Some((serde_json::json!({"what": "after", "until": until}), until + 10.0));
+            }
             "frames" => {
                 self.script.as_mut().unwrap().wait_frames = step["value"].as_u64().unwrap_or(1) as u32;
             }
@@ -276,7 +282,13 @@ impl App {
                     self.fail("log_mouse: no console log has been drawn".to_string());
                     return;
                 };
-                let want = step["line"].as_str().unwrap_or("");
+                let want = match step["line"].as_str().unwrap_or("") {
+                    // the first row may be cut off at the top: the one below it is whole
+                    "@first" => g.rows.get(1).or(g.rows.first()).cloned().unwrap_or_default(),
+                    "@last" => g.rows.last().cloned().unwrap_or_default(),
+                    other => other.to_string(),
+                };
+                let want = want.as_str();
                 let Some(row) = g.rows.iter().position(|r| r == want) else {
                     self.fail(format!("log_mouse: no row {want:?} on screen; rows: {:?}", g.rows));
                     return;
@@ -287,7 +299,14 @@ impl App {
                     v => v.as_u64().unwrap_or(0) as usize,
                 };
                 // the row's text starts 14 points in; a column boundary is where the pointer goes
-                let pos = Pos2::new(g.left + 14.0 + col as f32 * g.char_w, g.top + (row as f32 + 0.5) * g.row_h);
+                let mut pos = Pos2::new(g.left + 14.0 + col as f32 * g.char_w, g.top + (row as f32 + 0.5) * g.row_h);
+                // `y`: above the top or below the bottom of the log by `px` points (dragging there scrolls)
+                let px = step["px"].as_f64().unwrap_or(60.0) as f32;
+                match step["y"].as_str() {
+                    Some("above") => pos.y = g.top - px,
+                    Some("below") => pos.y = g.top + g.view_h + px,
+                    _ => {}
+                }
                 let button = |pressed| Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
                 let s = self.script.as_mut().unwrap();
                 s.pending.push(Event::PointerMoved(pos));
@@ -307,11 +326,45 @@ impl App {
                 let s = self.script.as_mut().unwrap();
                 s.pending.push(Event::Copy);
             }
+            // the mouse left the window (with a button down it keeps its capture, but egui forgets where it is)
+            "pointer_gone" => {
+                let s = self.script.as_mut().unwrap();
+                s.pending.push(Event::PointerGone);
+            }
+            // fill the terminal log with `value` numbered lines, to have something to scroll
+            "term_fill" => {
+                self.terminal_start_dir();
+                for i in 1..=step["value"].as_u64().unwrap_or(100) {
+                    self.term.log.push(LogLine { kind: LogKind::Output, text: format!("line {i}\n") });
+                }
+                self.bottom_tool = Some(BottomTool::Terminal);
+            }
             // a program of that name is not running any more (Windows `tasklist`)
             "assert_process_gone" => {
                 let out = std::process::Command::new("tasklist").args(["/FI", &format!("IMAGENAME eq {sval}"), "/NH"]).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
                 if out.to_lowercase().contains(&sval.to_lowercase()) {
                     self.fail(format!("assert_process_gone: {sval} is still running: {}", out.trim()));
+                }
+            }
+            "assert_log" => {
+                let Some(g) = ctx.data(|d| d.get_temp::<crate::ui_panels::LogGeometry>(egui::Id::new(crate::ui_panels::LOG_GEOMETRY_ID))) else {
+                    self.fail("assert_log: no console log has been drawn".to_string());
+                    return;
+                };
+                let up = g.max_offset - g.offset_y;
+                let mut errors = vec![];
+                if let Some(b) = step["at_bottom"].as_bool()
+                    && b != (up < 2.0)
+                {
+                    errors.push(format!("at_bottom expected {b}: scrolled {up:.0} points up from the bottom"));
+                }
+                if let Some(n) = step["scrolled_up_at_least"].as_f64()
+                    && (up as f64) < n
+                {
+                    errors.push(format!("expected to be scrolled up by at least {n}, got {up:.0}"));
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_log: {}", errors.join("; ")));
                 }
             }
             "assert_copied" => {
@@ -335,6 +388,11 @@ impl App {
                     && !got.contains(t)
                 {
                     errors.push(format!("expected it to contain {t:?}"));
+                }
+                if let Some(n) = step["min_lines"].as_u64()
+                    && (got.lines().count() as u64) < n
+                {
+                    errors.push(format!("expected at least {n} lines, got {}", got.lines().count()));
                 }
                 if !errors.is_empty() {
                     self.fail(format!("assert_copied: {}; got {got:?}", errors.join("; ")));
