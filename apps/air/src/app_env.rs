@@ -347,7 +347,7 @@ mod tests {
         assert!(!looks_like_linux_project(&d));
         std::fs::write(d.join("makefile"), "all:\n").unwrap();
         assert!(looks_like_linux_project(&d));
-        let cfg = ProjectConfig { linux: Some("Ubuntu-24.04".into()), decided: true };
+        let cfg = ProjectConfig { linux: Some("Ubuntu-24.04".into()), decided: true, modules: vec!["python".into()] };
         save_config(&d, &cfg).unwrap();
         assert_eq!(load_config(&d), cfg);
         assert!(usable_distro("Ubuntu") && !usable_distro("docker-desktop") && !usable_distro("docker-desktop-data"));
