@@ -1,0 +1,41 @@
+[
+  {"op": "log", "value": "@os_project @linux_distro: a C/make project is offered to Linux, built there, its gcc errors land in Problems"},
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+  {"op": "wait", "what": "wsl_idle", "timeout": 30},
+  {"op": "frames", "value": 4},
+  {"op": "assert_env", "value": "windows", "banner": true, "run_config": "make all"},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_banner.png"},
+
+  {"op": "log", "value": "C and assembly are not read as Lisp: no false errors"},
+  {"op": "open", "path": "${PROJ}/portable/eval.c"},
+  {"op": "open", "path": "${PROJ}/x86/boot.asm"},
+  {"op": "open", "path": "${PROJ}/makefile"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_max_problems", "value": 0},
+
+  {"op": "log", "value": "use Linux for this project: the choice is remembered in .airlisp/project.json"},
+  {"op": "project_env", "value": "Ubuntu-24.04"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_env", "value": "linux:Ubuntu-24.04", "banner": false, "run_config": "make all"},
+  {"op": "assert_file_contains", "path": "${PROJ}/.airlisp/project.json", "value": "Ubuntu-24.04"},
+
+  {"op": "log", "value": "make all runs in the distribution; the compiler error points into portable/eval.c"},
+  {"op": "command", "value": "run.run_file"},
+  {"op": "wait", "what": "run_done", "timeout": 60},
+  {"op": "assert_run_contains", "value": "Entering directory"},
+  {"op": "assert_make_problem", "file": "portable/eval.c", "line": 3},
+  {"op": "open", "path": "${PROJ}/portable/eval.c"},
+  {"op": "frames", "value": 4},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_error.png"},
+
+  {"op": "log", "value": "the project is reopened in Linux without asking again"},
+  {"op": "close_project"},
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_env", "value": "linux:Ubuntu-24.04", "banner": false},
+  {"op": "project_env", "value": "windows"},
+  {"op": "assert_env", "value": "windows", "banner": false},
+  {"op": "quit"}
+]

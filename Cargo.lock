@@ -50,6 +50,7 @@ dependencies = [
  "lisp-syntax",
  "png",
  "rfd",
+ "serde",
  "serde_json",
 ]
 

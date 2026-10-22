@@ -72,6 +72,20 @@ def run_one(script_path):
         script = tmp / "script.json"
         script.write_text(text, encoding="utf-8")
         json.loads(text)  # validate
+        if "@os_project" in text:
+            # a small kernel-like project: a makefile, C and assembly, built in Linux
+            files = {
+                "makefile": "SUBDIRS = portable\nall: bin/kernel\nbin/kernel: $(SUBDIRS)\n\tld -m elf_i386 -o bin/kernel portable/*.o\n$(SUBDIRS):\n\t$(MAKE) -C $@\nrun: bin/kernel\n\tqemu-system-i386 -kernel bin/kernel\nclean:\n\trm -f bin/kernel portable/*.o\n",
+                "portable/eval.c": "#include <stdio.h>\nint eval(int a) { // a comment; with a semicolon (and a paren\n    return x + a;\n}\n",
+                "x86/boot.asm": "section .text ; entry\nglobal start\nstart:\n    mov eax, 0x10\n",
+            }
+            for rel, content in files.items():
+                (proj / rel).parent.mkdir(parents=True, exist_ok=True)
+                (proj / rel).write_bytes(content.encode("utf-8"))
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "kernel"], cwd=proj, capture_output=True, check=True)
+        if "@linux_distro" in text:
+            (tmp / "fake-wsl.json").write_text(json.dumps({"installed": True, "distros": {"Ubuntu-24.04": {"sbcl": False}}, "default": "Ubuntu-24.04"}), encoding="utf-8")
         if "@long_file" in text:
             # a long committed file, so the gutter, the overview and the scrollbar have something to show
             forms = [f"(defun fn-{i} (x)\n  \"Step {i}.\"\n  (let ((y (* x {i})))\n    (format t \"~a~%\" (+ y {i}))))\n" for i in range(1, 121)]

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """A stand-in for wsl.exe used by the UI tests (AIRLISP_FAKE_WSL points at this file).
 
-It never touches the real WSL. Its state (is WSL "installed", which distributions exist, which have SBCL) lives in
+It never touches the real WSL. `make TARGET` "inside" a distribution prints what a kernel build with one compiler
+error looks like (and exits 2); the build tools of a distribution can be "installed" like SBCL. Its state (is WSL "installed", which distributions exist, which have SBCL) lives in
 the JSON file named by AIRLISP_FAKE_WSL_STATE; AIRLISP_FAKE_WSL_START=absent starts without WSL. Programs "inside"
 a distribution run on Windows: /mnt/<drive>/... paths are mapped back, `sbcl` is the Windows SBCL
 (AIRLISP_FAKE_WSL_SBCL or PATH) and `sh -lc LINE` becomes `cmd /c LINE`.
@@ -55,10 +56,31 @@ def no_distro(name):
     return 255
 
 
+TOOLS = ["make", "gcc", "ld", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"]
+
+
+def fake_make(lcwd, target, merged):
+    """A kernel build: the portable/ subdirectory fails on an undeclared variable. `merged`: 2>&1 was asked for."""
+    err = sys.stdout if merged else sys.stderr
+    if target == "clean":
+        out("rm -f bin/kernel portable/*.o\n")
+        return 0
+    out("make -C portable\n")
+    out(f"make[1]: Entering directory '{lcwd}/portable'\n")
+    out("gcc -g -m32 -c eval.c\n")
+    err.write("eval.c:3:12: error: 'x' undeclared (first use in this function)\n")
+    err.flush()
+    out(f"make[1]: Leaving directory '{lcwd}/portable'\n")
+    err.write("make: *** [makefile:4: portable] Error 2\n")
+    err.flush()
+    return 2
+
+
 def run_inside(s, name, cwd, prog, args):
     d = s["distros"].get(name)
     if d is None:
         return no_distro(name)
+    lcwd = cwd
     cwd = to_windows(cwd) if cwd else None
     if prog == "wslpath":
         out("/mnt/c/\n")
@@ -72,6 +94,16 @@ def run_inside(s, name, cwd, prog, args):
         return 0
     if prog == "sh" and args[:1] == ["-c"]:
         script = args[1] if len(args) > 1 else ""
+        if "gcc-multilib" in script:
+            for line in ["Reading package lists... Done", "Setting up build-essential (12.10ubuntu1) ...", "Setting up qemu-system-x86 (1:8.2.2) ...", "GNU Make 4.3", "gcc (Ubuntu 13.2.0) 13.2.0"]:
+                out(line + "\n")
+                time.sleep(0.05)
+            d["tools"] = True
+            save(s)
+            return 0
+        if "cd ~ && pwd" in script:
+            out("/home/user\n")
+            return 0
         if "apt-get install -y sbcl" in script:
             for line in ["Hit:1 http://archive.ubuntu.com/ubuntu noble InRelease", "Reading package lists... Done", "Setting up sbcl (2:2.2.9-1) ...", "SBCL 2.2.9.debian"]:
                 out(line + "\n")
@@ -81,6 +113,13 @@ def run_inside(s, name, cwd, prog, args):
             return 0
         out("fake wsl: unsupported script\n")
         return 1
+    if prog == "sh" and args[:1] == ["-lc"] and "command -v make" in (args[1] if len(args) > 1 else ""):
+        for t in TOOLS:
+            out(f"{t}=" + (f"/usr/bin/{t}" if d.get("tools") or t in ("ld",) else "") + "\n")
+        return 0
+    if prog == "sh" and args[:1] == ["-lc"] and "git config --global" in (args[1] if len(args) > 1 else ""):
+        out("name: E2E\nemail: e2e@example.com\ncredentials: !'/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe'\n")
+        return 0
     if prog == "sh" and args[:1] == ["-lc"] and "AIRLISP_SBCL=" in (args[1] if len(args) > 1 else ""):
         out("AIRLISP_SBCL=" + ("/usr/bin/sbcl" if d.get("sbcl") else "") + "\n")
         if d.get("sbcl"):
@@ -96,6 +135,9 @@ def run_inside(s, name, cwd, prog, args):
     if prog == "sh" and args[:1] == ["-lc"]:
         line = args[1] if len(args) > 1 else ""
         marker = args[2] if len(args) > 2 else ""
+        if line.startswith("make "):
+            target = line[5:].split()[0].strip("'") if line[5:].split() else "all"
+            return fake_make(lcwd or "/", target, "2>&1" in line)
         return subprocess.call(f"cmd /d /c {line} & rem {marker}", cwd=cwd, env=env)
     if prog.endswith("sbcl"):
         if not d.get("sbcl"):

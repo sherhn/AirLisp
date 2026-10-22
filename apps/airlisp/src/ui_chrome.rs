@@ -249,13 +249,28 @@ impl App {
                     self.run_command(ctx, "run.run_file");
                 }
                 let label = self.run_config_label();
-                let resp = Pill::new(&label).icon(Icon::Lisp, pal.keyword_form).chevron().bordered().height(34.0).show(ui, &pal);
+                let icon = if matches!(self.run_config, RunConfig::Make(_)) { (Icon::Hammer, pal.accent) } else { (Icon::Lisp, pal.keyword_form) };
+                let resp = Pill::new(&label).icon(icon.0, icon.1).chevron().bordered().height(34.0).show(ui, &pal);
                 let systems = self.asd_systems();
+                let targets = self.make_targets.clone();
                 let mut chosen: Option<RunConfig> = None;
                 egui::Popup::menu(&resp).width(240.0).show(|ui| {
                     if ui.button(tr("Current File")).clicked() {
                         chosen = Some(RunConfig::CurrentFile);
                         ui.close();
+                    }
+                    if !targets.is_empty() {
+                        ui.separator();
+                        ui.label(RichText::new(if self.wsl_target().is_some() { tr("make (in Linux)") } else { tr("make") }).color(pal.text_dim).size(11.5));
+                        for t in &targets {
+                            if ui.button(format!("make {t}")).clicked() {
+                                chosen = Some(RunConfig::Make(t.clone()));
+                                ui.close();
+                            }
+                        }
+                        if !systems.is_empty() {
+                            ui.separator();
+                        }
                     }
                     for s in &systems {
                         if ui.button(i18n::fmt("Load system '{}'", &[&s])).clicked() {
@@ -558,16 +573,8 @@ impl App {
                 if resp.clicked() {
                     self.run_command(ctx, "view.repl");
                 }
-                // Lisp runs inside WSL: say where, one click away from its settings
-                if let Some(t) = self.wsl_target() {
-                    let text = RichText::new(i18n::fmt("Linux: {}", &[&t.distro])).color(pal.accent).font(fonts::ui(12.0));
-                    let resp = ui.add(egui::Label::new(text).sense(Sense::click())).on_hover_text(tr("Lisp, the REPL and the terminal run in WSL - click for the settings"));
-                    let (r, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
-                    icons::paint(ui.painter(), r, Icon::Linux, pal.accent);
-                    if resp.clicked() {
-                        self.open_settings_page(crate::ui_settings::WSL_PAGE);
-                    }
-                }
+                // where the project is built and run, with a menu to switch it
+                self.draw_env_chip(ui);
             });
         });
     }

@@ -77,7 +77,8 @@ impl WslState {
     }
 
     pub fn distros(&self) -> Vec<String> {
-        self.probe.as_ref().map(|p| p.distros.iter().map(|d| d.name.clone()).collect()).unwrap_or_default()
+        // Docker Desktop's own distributions are not for working in
+        self.probe.as_ref().map(|p| p.distros.iter().map(|d| d.name.clone()).filter(|n| crate::app_env::usable_distro(n)).collect()).unwrap_or_default()
     }
 
     /// SBCL path in `distro`, when the last check found one.
@@ -202,11 +203,27 @@ pub fn wsl_target(settings: &Settings) -> Option<Target> {
 impl App {
     /// The Lisp the settings ask for: SBCL inside the chosen WSL distribution, or SBCL for Windows.
     pub fn resolve_lisp(&self) -> Option<Implementation> {
-        resolve_lisp(&self.settings)
+        match self.wsl_target() {
+            Some(t) => {
+                // the SBCL found by the setup belongs to the distribution it was found in
+                let sbcl = if t.distro == self.settings.wsl_distro { self.settings.wsl_sbcl.clone() } else { String::new() };
+                Some(Implementation::in_wsl(t, &sbcl))
+            }
+            None if self.project.is_some() => lisp_runtime::discover::find_sbcl(&self.settings.lisp_path),
+            None => resolve_lisp(&self.settings),
+        }
     }
 
     /// The distribution Lisp and the terminal run in, when the WSL mode is on.
     pub fn wsl_target(&self) -> Option<Target> {
+        // the project decides first: where it lives, or what was chosen for it
+        if let Some(d) = self.project_distro() {
+            let mount = if d == self.settings.wsl_distro { self.settings.wsl_mount_root.as_str() } else { "" };
+            return Some(Target::new(d, mount));
+        }
+        if self.project_on_windows() {
+            return None;
+        }
         wsl_target(&self.settings)
     }
 
@@ -380,7 +397,7 @@ impl App {
     }
 
     /// The Lisp changed: pick it up, and start the next REPL there.
-    fn lisp_environment_changed(&mut self) {
+    pub fn lisp_environment_changed(&mut self) {
         self.lisp = self.resolve_lisp();
         if let Some(s) = self.repl.session.take() {
             s.kill();

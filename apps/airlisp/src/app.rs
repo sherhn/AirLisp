@@ -78,6 +78,14 @@ pub struct App {
     /// The GitHub session of the "Get from Version Control" dialog.
     pub github: crate::app_github::GithubState,
     pub run_config: crate::app_run::RunConfig,
+    /// Where the open project is built and run (`.airlisp/project.json`).
+    pub project_cfg: crate::app_env::ProjectConfig,
+    /// Ask whether the open (Unix-style) project should be built in Linux.
+    pub env_banner: bool,
+    /// Targets of the project's makefile, offered as run configurations.
+    pub make_targets: Vec<String>,
+    /// The running/last make: where it ran, to find the files of its compiler messages.
+    pub make_run: Option<crate::app_run::MakeRun>,
     pub script: Option<crate::script::Script>,
     /// Longest frame seen so far (ms) and the worst offender's frame number, for freeze diagnostics.
     pub max_frame_ms: f32,
@@ -142,6 +150,10 @@ impl App {
             wsl: Default::default(),
             github: Default::default(),
             run_config: Default::default(),
+            project_cfg: Default::default(),
+            env_banner: false,
+            make_targets: vec![],
+            make_run: None,
             script: None,
             max_frame_ms: 0.0,
             find_rx: None,
@@ -229,7 +241,8 @@ impl App {
         self.left_tool = Some(LeftTool::Project);
         self.compiler_problems.clear();
         self.git_attach();
-        // restart the REPL in the new working directory on next use
+        self.load_project_env();
+        // restart the REPL in the new working directory (and environment) on next use
         if self.repl.session.is_some() {
             self.repl_restart();
         }
@@ -238,6 +251,7 @@ impl App {
 
     pub fn close_project(&mut self) {
         self.project = None;
+        self.load_project_env();
         self.docs.clear();
         self.active = 0;
         self.compiler_problems.clear();
@@ -452,6 +466,9 @@ impl App {
             proj.tree_ver += 1;
         }
         self.git.last_refresh = -100.0;
+        if path.as_ref().and_then(|p| p.file_name()).is_some_and(|n| { let n = n.to_string_lossy().to_ascii_lowercase(); n == "makefile" || n == "gnumakefile" || n.ends_with(".mk") }) {
+            self.refresh_make_targets();
+        }
         true
     }
 
@@ -826,6 +843,13 @@ impl App {
 
     pub fn run_current_file(&mut self) {
         let Some(d) = self.doc() else { return };
+        if !d.ed.is_lisp() && d.diff.is_none() {
+            match self.make_targets.first().cloned() {
+                Some(t) => self.run_make(&t),
+                None => self.toast(tr("This is not a Lisp file, and the project has no makefile to run"), Sev::Weak),
+            }
+            return;
+        }
         if d.path.is_none() {
             let a = self.active;
             if !self.save_doc(a) {
@@ -892,6 +916,7 @@ impl App {
             let msg = i18n::fmt("Process finished with exit code {}", &[&code.map_or("?".to_string(), |c| c.to_string())]);
             self.run.log.push(LogLine { kind: if code == Some(0) { LogKind::Info } else { LogKind::Error }, text: msg });
             self.run.handle = None;
+            self.make_finished(code);
         }
     }
 

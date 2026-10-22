@@ -173,6 +173,7 @@ impl App {
                 }
             }
             "close_project" => self.close_project(),
+            "project_env" => self.set_project_env(if sval == "windows" { None } else { Some(sval.clone()) }),
             "ask_open_project" => {
                 if let Some(p) = path {
                     self.request_open_project(&p);
@@ -394,6 +395,47 @@ impl App {
                 let got = self.doc().is_some_and(|d| d.ed.is_modified());
                 if got != want {
                     self.fail(format!("assert_modified: expected {want}, got {got}"));
+                }
+            }
+            "assert_env" => {
+                let got = match self.wsl_target() {
+                    Some(t) => format!("linux:{}", t.distro),
+                    None => "windows".to_string(),
+                };
+                if !sval.is_empty() && got != sval {
+                    self.fail(format!("assert_env: expected {sval}, got {got}"));
+                }
+                if let Some(b) = step["banner"].as_bool()
+                    && b != self.env_banner
+                {
+                    self.fail(format!("assert_env: banner expected {b}, got {}", self.env_banner));
+                }
+                if let Some(rc) = step["run_config"].as_str() {
+                    let label = self.run_config_label();
+                    if label != rc {
+                        self.fail(format!("assert_env: run configuration expected {rc:?}, got {label:?}"));
+                    }
+                }
+            }
+            "assert_make_problem" => {
+                let file = step["file"].as_str().unwrap_or("").replace('/', "\\");
+                let line = step["line"].as_u64().unwrap_or(1) as usize;
+                let found = self.compiler_problems.iter().any(|p| {
+                    p.source == "make"
+                        && p.path.as_ref().is_some_and(|f| f.to_string_lossy().replace('/', "\\").ends_with(&file) && f.exists())
+                        && p.path.as_ref().and_then(|f| std::fs::read_to_string(f).ok()).is_some_and(|t| t[..p.start.min(t.len())].matches('\n').count() + 1 == line)
+                });
+                if !found {
+                    let rows: Vec<String> = self.compiler_problems.iter().map(|p| format!("{:?} @{} {}", p.path, p.start, p.message)).collect();
+                    self.fail(format!("assert_make_problem: no make problem in {file} line {line}; have {rows:?}"));
+                }
+            }
+            "assert_max_problems" => {
+                let max = step["value"].as_u64().unwrap_or(0) as usize;
+                let all = self.all_problems();
+                if all.len() > max {
+                    let rows: Vec<String> = all.iter().map(|p| format!("{:?}: {}", p.path, p.message)).collect();
+                    self.fail(format!("assert_max_problems: expected <= {max}, got {rows:?}"));
                 }
             }
             "assert_problems" => {
