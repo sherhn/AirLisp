@@ -108,7 +108,7 @@ pub fn spawn_streaming(mut cmd: Command) -> io::Result<RunHandle> {
                             Err(_) => tail.len(),
                         };
                         let rest = tail.split_off(valid);
-                        let text = decode_chunk(&tail);
+                        let text = crate::wsl::strip_notices(&decode_chunk(&tail));
                         tail = rest;
                         if !text.is_empty() {
                             let _ = tx.send(RunEvent::Output { text, is_err });
@@ -117,7 +117,10 @@ pub fn spawn_streaming(mut cmd: Command) -> io::Result<RunHandle> {
                 }
             }
             if !tail.is_empty() {
-                let _ = tx.send(RunEvent::Output { text: decode_chunk(&tail), is_err });
+                let text = crate::wsl::strip_notices(&decode_chunk(&tail));
+                if !text.is_empty() {
+                    let _ = tx.send(RunEvent::Output { text, is_err });
+                }
             }
         }));
     }

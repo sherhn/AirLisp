@@ -600,6 +600,22 @@ pub fn kill_marked(t: &Target, marker: &str) {
     let _ = c.spawn();
 }
 
+/// `wsl.exe` prints this on every start when Windows has a proxy on localhost, which NAT-mode WSL cannot use: "wsl: A
+/// localhost proxy configuration was detected but not mirrored into WSL. WSL in NAT mode does not support localhost
+/// proxies." It is about the machine, not the command, so it only clutters terminals and build logs.
+fn is_notice(line: &str) -> bool {
+    let l = line.trim_start();
+    l.len() >= 4 && l[..4].eq_ignore_ascii_case("wsl:") && l.contains("localhost") && l.contains("NAT")
+}
+
+/// `text` without the lines `wsl.exe` prints about the host (see [`is_notice`]); other text is returned as it came.
+pub fn strip_notices(text: &str) -> String {
+    if !text.contains("wsl:") && !text.contains("WSL:") {
+        return text.to_string();
+    }
+    text.split_inclusive('\n').filter(|l| !is_notice(l)).collect()
+}
+
 /// Ends the tagged processes of a [`Launch`](crate::discover::Launch) inside the distribution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cleanup {
@@ -781,5 +797,18 @@ mod tests {
                 assert!(at - announced < 60, "{manager}: the install marker is right before the command");
             }
         }
+    }
+
+    #[test]
+    fn the_localhost_proxy_notice_is_dropped() {
+        let ru = "wsl: Конфигурация прокси-сервера localhost обнаружена, но не отражена в WSL. WSL в режиме NAT не поддерживает прокси-серверы localhost.\n";
+        let en = "wsl: A localhost proxy configuration was detected but not mirrored into WSL. WSL in NAT mode does not support localhost proxies.\r\n";
+        assert_eq!(strip_notices(&format!("{ru}Doxyfile\nREADME.md\n")), "Doxyfile\nREADME.md\n");
+        assert_eq!(strip_notices(&format!("a\n{en}b\n")), "a\nb\n");
+        assert_eq!(strip_notices(ru), "");
+        // everything else stays, including other messages of wsl.exe and a partial line
+        let keep = "wsl: Failed to start the distribution\nmake: *** [all] Error 2\nno newline";
+        assert_eq!(strip_notices(keep), keep);
+        assert_eq!(strip_notices("localhost NAT but not from wsl\n"), "localhost NAT but not from wsl\n");
     }
 }
