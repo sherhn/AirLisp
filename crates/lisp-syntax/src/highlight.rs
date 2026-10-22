@@ -30,6 +30,23 @@ pub enum Class {
     /// A bracket. Carries rainbow depth via `Span::depth`.
     Bracket,
     Error,
+    // ---- classes of the languages that modules bring (see the `air-lang` crate)
+    /// A type or class name.
+    Type,
+    /// `#include`, `#define`, assembler directives.
+    Preproc,
+    /// A heading of a document.
+    Heading,
+    /// Strong emphasis (`**bold**`).
+    Strong,
+    /// Emphasis (`*italic*`).
+    Emphasis,
+    /// Inline code and code blocks of a document.
+    Code,
+    /// A link or a reference.
+    Link,
+    /// A quotation.
+    Quote,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

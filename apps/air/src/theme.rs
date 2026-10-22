@@ -59,6 +59,14 @@ pub struct Palette {
     pub constant: Color32,
     pub special_var: Color32,
     pub prefix: Color32,
+    pub type_name: Color32,
+    pub preproc: Color32,
+    pub heading: Color32,
+    pub strong: Color32,
+    pub emphasis: Color32,
+    pub code: Color32,
+    pub link: Color32,
+    pub quote: Color32,
     pub rainbow: [Color32; 6],
 }
 
@@ -117,6 +125,14 @@ impl Palette {
             constant: c(0xCF8E6D),
             special_var: c(0xC77DBB),
             prefix: c(0xCF8E6D),
+            type_name: c(0x4EC9B0),
+            preproc: c(0xB5A33C),
+            heading: c(0x5FD38A),
+            strong: c(0xF2F4F8),
+            emphasis: c(0x9CC3FF),
+            code: c(0x6FD3C0),
+            link: c(0x5A9BFF),
+            quote: c(0x8D92A0),
             rainbow: [c(0xE8BA36), c(0xC77DBB), c(0x56A8F5), c(0x6AAB73), c(0xCF8E6D), c(0x2AACB8)],
         }
     }
@@ -171,6 +187,14 @@ impl Palette {
             constant: c(0x0033B3),
             special_var: c(0x871094),
             prefix: c(0x0033B3),
+            type_name: c(0x00756A),
+            preproc: c(0x8A6D00),
+            heading: c(0x12823F),
+            strong: c(0x0B0D10),
+            emphasis: c(0x1F57B8),
+            code: c(0x0B7A6B),
+            link: c(0x1750EB),
+            quote: c(0x6B707C),
             rainbow: [c(0xB8860B), c(0x9B2D9B), c(0x1F6FBF), c(0x2E8B3D), c(0xC25E00), c(0x00808A)],
         }
     }
@@ -203,6 +227,14 @@ impl Palette {
                 }
             }
             Class::Error => self.error,
+            Class::Type => self.type_name,
+            Class::Preproc => self.preproc,
+            Class::Heading => self.heading,
+            Class::Strong => self.strong,
+            Class::Emphasis => self.emphasis,
+            Class::Code => self.code,
+            Class::Link => self.link,
+            Class::Quote => self.quote,
         }
     }
 
