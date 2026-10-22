@@ -48,7 +48,9 @@ run line for C), **Linux tool groups** for the project's WSL distribution (`gcc`
   `python tools/build_registry.py [--covers]`: it writes `registry/` (manifests, covers, the checksummed index). The
   grammar rules (`match`, `words`, `region`, `captures`, outline patterns) are the `air-lang` crate's JSON format; the
   tests of `crates/ide-core/tests/registry.rs` check every shipped module against real code samples. A language with `"preview": "markdown"` or `"rst"` gives its
-  files the preview.
+  files the preview; `"check": ["brackets"]` asks for the bracket
+  check, and `check` entries of the module (a command with the same placeholders as a run command and a `pattern` with the groups
+  `line`, `msg` and optionally `col`, `sev`) are its syntax checks.
 
 Covers and the icon are drawn by `tools/glass.py` and `tools/covers.py`.
 
@@ -76,6 +78,15 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
   words of the language - keywords, built-in functions, types - which are the ones its grammar lists. No server and no
   model: the vocabulary is data of the module. Not in comments and strings. (Lisp keeps its own: the project, the
   file and the running image.)
+* **Errors in every language** - a language can ask the editor to flag brackets that do not pair up, and a module can name a
+  syntax check (`check` in its manifest: a command and a pattern for its output) that runs on the file when it is saved, in the
+  project's Linux or on Windows, and marks what it finds in the code and in Problems. Python is compiled without being run
+  (so `def f(:` and bad indentation are reported by the interpreter itself), shell scripts go through `sh -n`.
+* **Marker comments** - `TODO`, `INFO`, `NOTE` and `FIXME`, `ALERT`, `HACK`, `BUG`, `WARNING` in a comment, in any language, are
+  coloured and slanted from the marker to the end of the line (blue for what is to do or to know, orange for what is wrong).
+* **Run scenarios** - next to the files, make targets and ASDF systems in the run list: named lists of console commands that run
+  one after another in the project folder (in its Linux or on Windows), stopping at the first one that fails if you wish;
+  `{file}`, `{dir}`, `{name}` and `{stem}` stand for the open file. Run > Edit Run Scenarios...; they are kept in `.air/project.json`.
 * **Navigation** - Search Everywhere (Double Shift), Go to File/Symbol/Line, Recent Files,
   File Structure, Go to Declaration (Ctrl+B / Ctrl+click), Back/Forward, Find Usages, Find in Files.
 * **Refactoring** - Rename symbol across the project (token based: strings and comments untouched).
@@ -94,7 +105,8 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
 * **No manual saving** - files are saved automatically a second after the last edit, when the window loses focus, before running, when a tab is closed and on exit (Ctrl+S still works). New files without a project are scratch files kept in the settings folder.
 * **Branch graph** - the Git log draws all branches as coloured lanes with merges and branch/tag labels.
 * **Code overview** - a minimap next to the scrollbar shows the whole file with changed lines, problems and search hits; click or drag to scroll.
-* **Projects** - opening a project while another is open asks: this window or a new window.
+* **Projects** - opening a project while another is open asks: this window or a new window; in this window nothing of the old
+  project stays (its tabs, search results, history, problems, terminal).
 * **Get from Version Control** - File > Get from Version Control (or the welcome screen): paste a GitHub URL or `owner/repo`,
   pick a folder, optional branch / shallow clone, live progress; the repository is cloned and opened as a project.
 * **Works out of the box** - the distribution (`python tools/package.py`) bundles SBCL (public domain/BSD, license included),
@@ -142,7 +154,9 @@ For the UI tests `AIR_FAKE_WSL` (see `tests/fake_wsl.py`) replaces `wsl.exe`, so
 
 ### Linux projects (C, assembly, make - e.g. an operating system like os-pi)
 
-A project can be *built and run in Linux* while you work on Windows:
+A project can be *built and run in Linux* while you work on Windows, whatever its language: the run list (and the status bar)
+has *Run in: On Windows / In Linux*, and a project in Python, C or assembly is offered it too (and the tools its language needs
+there - `python3`, `gcc`, `nasm` - when they are missing), not only one with a makefile:
 
 * **Choose it per project.** Opening a project with a makefile (or shell scripts) offers "Use Linux"; the status
   bar shows `Windows` / `Linux: <distro>` and switches with a click. The choice is kept in `.air/project.json`,
@@ -272,6 +286,23 @@ Windows: при открытии проекта с makefile Air предложи
 в GitHub из Windows. Файлы C, ассемблера, shell и makefile подсвечиваются по-своему и не дают ложных Lisp-ошибок.
 Если в дистрибутиве нет этих инструментов, сверху появляется плашка «Установить инструменты сборки», а `make` в терминале
 или в Run объясняет причину (`make: Permission denied`, код 127 значит «не установлен»), с полосой прогресса установки.
+
+**Ошибки в любых языках.** Язык может попросить редактор отмечать непарные скобки, а модуль — задать проверку синтаксиса
+(`check` в манифесте: команда и шаблон разбора вывода). Проверка запускается на сохранённом файле, в Linux проекта или в
+Windows, и отмечает находки в коде и в Problems. Python компилируется без запуска (ошибки вроде `def f(:` и неверных
+отступов называет сам интерпретатор), скрипты shell проходят через `sh -n`.
+
+**Комментарии-маркеры.** `TODO`, `INFO`, `NOTE` и `FIXME`, `ALERT`, `HACK`, `BUG`, `WARNING` в комментарии на любом языке
+выделяются цветом и наклоном от маркера до конца строки (синий — что сделать или знать, оранжевый — что не так).
+
+**Сценарии запуска.** В списке запуска рядом с файлами, целями make и системами ASDF: именованные списки консольных команд,
+которые выполняются одна за другой в папке проекта (в его Linux или в Windows) и при желании останавливаются на первой
+неудачной; `{file}`, `{dir}`, `{name}`, `{stem}` — открытый файл. Run > «Сценарии запуска...»; хранятся в `.air/project.json`.
+
+**Linux для любого языка.** Где проект собирается и запускается — в списке запуска (пункты «Запускать в: Windows / Linux»)
+и в строке состояния; Linux предлагается и проектам на Python, C, ассемблере (вместе с нужными инструментами — `python3`,
+`gcc`, `nasm`), а не только проектам с makefile. Если открыть другой проект в том же окне, от старого не остаётся ничего:
+вкладки, результаты поиска, история, проблемы, терминал.
 
 **Копирование из консолей.** Текст в терминале, REPL и окне Run можно выделять мышью (протяжка за край прокручивает),
 двойной клик — слово или путь, тройной — строка, Ctrl+A — всё, Ctrl+C или правая кнопка > «Копировать» копирует,
