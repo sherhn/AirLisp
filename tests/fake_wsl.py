@@ -81,6 +81,8 @@ def fake_apt(packages, version_lines):
 
 
 TOOLS = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"]
+# every program the developer tools check looks for (see TOOL_GROUPS in crates/lisp-runtime/src/wsl.rs)
+ALL_PROGRAMS = TOOLS + ["g++", "cmake", "ninja", "pkg-config", "clang", "clangd", "lldb", "clang-format", "valgrind", "strace", "ltrace", "gdb-multiarch", "xxd", "curl", "wget", "ssh", "rsync", "zip", "unzip", "xz", "jq", "rg", "fdfind", "tree", "vim", "nano", "htop", "man", "doxygen", "python3", "pip3", "qemu-img", "xorriso", "grub-mkrescue"]
 
 
 def fake_make(lcwd, target, merged):
@@ -109,7 +111,7 @@ def run_inside(s, name, cwd, prog, args):
     if prog == "wslpath":
         out("/mnt/c/\n")
         return 0
-    if prog == "sh" and args[:1] == ["-c"] and "pgrep" in (args[1] if len(args) > 1 else ""):
+    if prog == "sh" and args[:1] == ["-c"] and "pgrep -" in (args[1] if len(args) > 1 else ""):  # not "ripgrep"
         # the cleanup of a tagged process: end the Windows programs carrying the marker
         marker = (args[3] if len(args) > 3 else "").replace("[", "").replace("]", "")
         if marker:
@@ -134,7 +136,7 @@ def run_inside(s, name, cwd, prog, args):
         out("fake wsl: unsupported script\n")
         return 1
     if prog == "sh" and args[:1] == ["-lc"] and "command -v make" in (args[1] if len(args) > 1 else ""):
-        for t in TOOLS:
+        for t in ALL_PROGRAMS:
             out(f"{t}=" + (f"/usr/bin/{t}" if d.get("tools") or t in ("ld",) else "") + "\n")
         return 0
     if prog == "sh" and args[:1] == ["-lc"] and "git config --global" in (args[1] if len(args) > 1 else ""):

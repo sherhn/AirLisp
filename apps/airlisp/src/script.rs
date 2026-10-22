@@ -326,6 +326,13 @@ impl App {
                 let s = self.script.as_mut().unwrap();
                 s.pending.push(Event::Copy);
             }
+            // the mouse wheel over (x, y): `dy` points, negative scrolls down
+            "wheel" => {
+                let pos = Pos2::new(step["x"].as_f64().unwrap_or(0.0) as f32, step["y"].as_f64().unwrap_or(0.0) as f32);
+                let s = self.script.as_mut().unwrap();
+                s.pending.push(Event::PointerMoved(pos));
+                s.pending.push(Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::Vec2::new(0.0, step["dy"].as_f64().unwrap_or(0.0) as f32), phase: egui::TouchPhase::Move, source: egui::MouseWheelSource::Wheel, modifiers: egui::Modifiers::NONE });
+            }
             // the mouse left the window (with a button down it keeps its capture, but egui forgets where it is)
             "pointer_gone" => {
                 let s = self.script.as_mut().unwrap();
@@ -562,7 +569,7 @@ impl App {
                     }
                 }
             }
-            // the "Install build tools" button of the banner
+            // the "Install developer tools" button of the banner
             "banner_install_tools" => match self.missing_build_tools() {
                 Some((d, _)) if self.tools_banner_visible() => self.install_build_tools_here(&d),
                 other => self.fail(format!("banner_install_tools: no banner ({other:?})")),

@@ -20,7 +20,7 @@
   {"op": "assert_env", "value": "linux:Ubuntu-24.04", "banner": false, "run_config": "make all"},
   {"op": "assert_file_contains", "path": "${PROJ}/.airlisp/project.json", "value": "Ubuntu-24.04"},
 
-  {"op": "log", "value": "the distribution has no build tools yet: the project offers to install them"},
+  {"op": "log", "value": "the distribution has no developer tools yet: the project offers to install them"},
   {"op": "wait", "what": "wsl_idle", "timeout": 30},
   {"op": "frames", "value": 4},
   {"op": "wait", "what": "wsl_idle", "timeout": 30},
@@ -43,7 +43,7 @@
   {"op": "frames", "value": 4},
   {"op": "screenshot", "path": "${SHOTS}/${NAME}_make_missing.png"},
 
-  {"op": "log", "value": "Install build tools in the banner: the progress is shown, then the banner is gone"},
+  {"op": "log", "value": "Install developer tools in the banner: the progress is shown, then the banner is gone"},
   {"op": "wait", "what": "wsl_idle", "timeout": 30},
   {"op": "assert_env", "tools_banner": true},
   {"op": "banner_install_tools"},
@@ -54,7 +54,7 @@
   {"op": "wait", "what": "wsl_idle", "timeout": 60},
   {"op": "frames", "value": 3},
   {"op": "wait", "what": "wsl_idle", "timeout": 30},
-  {"op": "assert_wsl", "selected": "Ubuntu-24.04", "tools": "ready", "outcome_contains": "build tools are installed"},
+  {"op": "assert_wsl", "selected": "Ubuntu-24.04", "tools": "ready", "outcome_contains": "developer tools are installed"},
   {"op": "key", "value": "Escape"},
   {"op": "frames", "value": 3},
   {"op": "assert_env", "tools_banner": false},
@@ -77,6 +77,9 @@
   {"op": "assert_wsl", "outcome_contains": "uses your name"},
   {"op": "frames", "value": 3},
   {"op": "screenshot", "path": "${SHOTS}/${NAME}_setup.png"},
+  {"op": "wheel", "x": 740, "y": 500, "dy": -1500},
+  {"op": "frames", "value": 6},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_developer_tools.png"},
   {"op": "key", "value": "Escape"},
 
   {"op": "log", "value": "the project is reopened in Linux without asking again"},
