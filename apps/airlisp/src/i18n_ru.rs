@@ -790,4 +790,7 @@ pub const RU: &[(&str, &str)] = &[
     ("Downloading and installing packages", "Скачивание и установка пакетов"),
     ("Checking the result", "Проверка результата"),
     ("Configuring", "Настройка"),
+    // console copy
+    ("Select all", "Выделить всё"),
+    ("Copy all", "Копировать всё"),
 ];
