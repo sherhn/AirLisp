@@ -9,6 +9,7 @@ cut tr diff patch gzip gunzip zip unzip which whoami uname date sleep touch base
 MAKE_DIRECTIVES = r"^[ \t]*(?:-?include|sinclude|ifeq|ifneq|ifdef|ifndef|else|endif|define|endef|export|unexport|override|private|vpath|undefine)\b"
 
 MODULE = module(
+    version="1.1.0",
     id="shell-make",
     name="Shell and Make",
     category="Languages",
@@ -68,6 +69,8 @@ MODULE = module(
         ),
     ],
     run=[dict(language="shell", name="Run script", command='sh "{file}"')],
+    # `sh -n` reads the script without running it: "x.sh: line 4: syntax error: unexpected end of file"
+    check=[dict(language="shell", name="Syntax", command='sh -n "{file}"', pattern=r"^[^:\n]+: (?:line )?(?P<line>\d+): (?P<msg>[Ss]yntax error.*)$")],
     tools=[],
     detect=dict(extensions=["sh", "mk"], files=["Makefile", "makefile", "GNUmakefile", "Dockerfile"]),
     templates=[

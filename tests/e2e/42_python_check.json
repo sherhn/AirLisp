@@ -1,0 +1,41 @@
+[
+  {"op": "log", "value": "@needs_python @polyglot @modules python: Python's syntax errors are shown as problems after a save, from the interpreter itself"},
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+  {"op": "open", "path": "${PROJ}/tools/demo.py"},
+  {"op": "wait", "what": "checks_idle", "timeout": 30},
+  {"op": "frames", "value": 3},
+  {"op": "assert_max_problems", "value": 0},
+
+  {"op": "log", "value": "a syntax error: the interpreter says what and where"},
+  {"op": "set_text", "value": "x = 1\ndef f(:\n    pass\n"},
+  {"op": "command", "value": "file.save"},
+  {"op": "wait", "what": "checks_idle", "timeout": 30},
+  {"op": "frames", "value": 3},
+  {"op": "assert_problem", "value": "invalid syntax", "line": 2},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_error.png"},
+
+  {"op": "log", "value": "an unclosed bracket is told at once by the editor, and by the interpreter after a save"},
+  {"op": "set_text", "value": "x = (1,\n"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_problem", "value": "Unclosed '('", "line": 1},
+  {"op": "command", "value": "file.save"},
+  {"op": "wait", "what": "checks_idle", "timeout": 30},
+  {"op": "frames", "value": 3},
+  {"op": "assert_problem", "value": "was never closed", "line": 1},
+
+  {"op": "log", "value": "bad indentation"},
+  {"op": "set_text", "value": "if True:\nreturn 1\n"},
+  {"op": "command", "value": "file.save"},
+  {"op": "wait", "what": "checks_idle", "timeout": 30},
+  {"op": "frames", "value": 3},
+  {"op": "assert_problem", "value": "expected an indented block"},
+
+  {"op": "log", "value": "fixed: the problems go"},
+  {"op": "set_text", "value": "if True:\n    print(1)\n"},
+  {"op": "command", "value": "file.save"},
+  {"op": "wait", "what": "checks_idle", "timeout": 30},
+  {"op": "frames", "value": 3},
+  {"op": "assert_max_problems", "value": 0},
+  {"op": "quit"}
+]

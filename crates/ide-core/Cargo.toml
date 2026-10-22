@@ -11,4 +11,5 @@ air-lang.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ignore.workspace = true
+regex = "1"
 dirs.workspace = true

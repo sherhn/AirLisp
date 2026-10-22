@@ -692,15 +692,15 @@ mod tests {
         index.ensure("k".into(), vec![file.clone()], langs);
         for _ in 0..100 {
             index.poll();
-            if !index.get("c", "add").is_empty() {
+            if !index.get("add").is_empty() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        let hits = index.get("c", "add");
+        let hits = index.get("add");
         assert_eq!(hits.len(), 1);
         assert_eq!((hits[0].line, hits[0].kind.as_str()), (1, "function"));
-        assert!(index.get("c", "sub").is_empty());
+        assert!(index.get("sub").is_empty());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

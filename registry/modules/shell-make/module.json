@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "cover": "cover.png",
   "id": "shell-make",
   "name": "Shell and Make",
@@ -380,6 +380,14 @@
       "language": "shell",
       "name": "Run script",
       "command": "sh \"{file}\""
+    }
+  ],
+  "check": [
+    {
+      "language": "shell",
+      "name": "Syntax",
+      "command": "sh -n \"{file}\"",
+      "pattern": "^[^:\\n]+: (?:line )?(?P<line>\\d+): (?P<msg>[Ss]yntax error.*)$"
     }
   ],
   "tools": [],

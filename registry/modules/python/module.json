@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
+  "version": "1.1.0",
   "cover": "cover.png",
   "id": "python",
   "name": "Python",
@@ -27,6 +27,9 @@
         "()",
         "[]",
         "{}"
+      ],
+      "check": [
+        "brackets"
       ],
       "indent": {
         "mode": "python",
@@ -247,6 +250,15 @@
           "name": 1
         }
       ]
+    }
+  ],
+  "check": [
+    {
+      "language": "python",
+      "name": "Syntax",
+      "command": "python3 -c \"import sys;compile(open(sys.argv[1],encoding='utf-8').read(),sys.argv[1],'exec')\" \"{file}\"",
+      "windows": "where py >nul 2>nul & if errorlevel 1 (python -c \"import sys;compile(open(sys.argv[1],encoding='utf-8').read(),sys.argv[1],'exec')\" \"{file}\") else (py -c \"import sys;compile(open(sys.argv[1],encoding='utf-8').read(),sys.argv[1],'exec')\" \"{file}\")",
+      "pattern": "(?s)File \"(?P<file>[^<\"][^\"]*)\", line (?P<line>\\d+)\\n.*?(?P<sev>SyntaxError|IndentationError|TabError)[^:\\n]*: (?P<msg>[^\\n]*)"
     }
   ],
   "run": [

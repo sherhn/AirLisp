@@ -232,6 +232,7 @@ impl App {
             }
         }
         self.apply_languages();
+        self.recheck_all();
         self.refresh_needed_modules();
         self.refresh_make_targets();
     }

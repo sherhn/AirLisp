@@ -799,7 +799,11 @@ impl App {
                 .inner_margin(Margin::same(6))
                 .show(ui, |ui| {
                     ui.set_width(380.0);
-                    egui::ScrollArea::vertical().max_height(280.0).auto_shrink([false, true]).show(ui, |ui| {
+                    // the height is the rows' own (ten at most): a scroll area left to size itself keeps the height of the
+                    // list before it, so a longer list showed only the first rows
+                    let list_h = items.len().min(10) as f32 * 28.0;
+                    egui::ScrollArea::vertical().max_height(list_h).min_scrolled_height(list_h).auto_shrink([false, false]).show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
                         for (i, it) in items.iter().enumerate() {
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::click());
                             if i == selected {
@@ -953,12 +957,15 @@ impl App {
         let rect = ui.available_rect_before_wrap();
         ui.painter().rect_filled(rect, CornerRadius::ZERO, pal.editor_bg);
         let mut open: Option<PathBuf> = None;
-        let center_x = rect.center().x;
         let col_w = 460.0f32.min(rect.width() - 48.0);
         let top = (rect.height() * 0.14).max(28.0);
-        let mut ui2 = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(Pos2::new(center_x - col_w / 2.0, rect.min.y), Pos2::new(center_x + col_w / 2.0, rect.max.y))));
-        let ui = &mut ui2;
+        // the scroll area is the whole page, so its bar is at the window's edge; the column sits in the middle of it
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            let pad = ((ui.available_width() - col_w) / 2.0).max(0.0);
+            ui.horizontal_top(|ui| {
+            ui.add_space(pad);
+            ui.vertical(|ui| {
+            ui.set_width(col_w);
             ui.add_space(top);
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(72.0), Sense::hover());
@@ -1014,6 +1021,8 @@ impl App {
                 });
                 ui.add_space(2.0);
             }
+            });
+            });
         });
         if let Some(p) = open {
             self.request_open_project(&p);

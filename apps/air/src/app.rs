@@ -51,6 +51,8 @@ pub struct App {
     pub hint: Option<(String, f64)>,
     /// The documentation popup of the name the pointer rests on.
     pub hover: crate::hover::HoverState,
+    /// The syntax checks of the languages of modules, running in the background.
+    pub checks: crate::app_check::CheckState,
     /// UI tests: the pointer rests on this offset of the active document, wherever the real pointer is.
     pub fake_hover: Option<usize>,
     pub status: String,
@@ -140,6 +142,7 @@ impl App {
             toasts: vec![],
             hint: None,
             hover: Default::default(),
+            checks: Default::default(),
             fake_hover: None,
             status: String::new(),
             editor_focus: true,
@@ -363,6 +366,8 @@ impl App {
                 }
                 self.docs.push(d);
                 self.active = self.docs.len() - 1;
+                // a file that was just opened is checked too
+                self.schedule_check(self.active);
                 self.editor_focus = true;
                 self.recent_files.retain(|p| p != path);
                 self.recent_files.insert(0, path.to_path_buf());
@@ -498,6 +503,8 @@ impl App {
             proj.tree_ver += 1;
         }
         self.git.last_refresh = -100.0;
+        // the language's own check looks at what was just written
+        self.schedule_check(idx);
         if path.as_ref().and_then(|p| p.file_name()).is_some_and(|n| { let n = n.to_string_lossy().to_ascii_lowercase(); n == "makefile" || n == "gnumakefile" || n.ends_with(".mk") }) {
             self.refresh_make_targets();
         }
@@ -636,6 +643,7 @@ impl App {
         self.poll_terminal();
         self.poll_wsl();
         self.poll_modules(ctx);
+        self.poll_checks();
         self.poll_github();
         self.git_update_bases();
 
@@ -1065,6 +1073,17 @@ impl App {
                     message: diag.message.clone(),
                     source: "syntax",
                 });
+            }
+        }
+        for d in self.docs.iter().filter(|d| !d.ed.is_lisp() && d.diff.is_none()) {
+            let mut markers = d.language_markers();
+            let checked = d.check_rev == d.ed.revision();
+            if checked {
+                markers.extend(d.check_markers.iter().cloned());
+            }
+            let n_language = markers.len() - if checked { d.check_markers.len() } else { 0 };
+            for (k, m) in markers.into_iter().enumerate() {
+                v.push(ProblemRow { path: d.path.clone(), start: m.start, end: m.end, sev: m.sev, message: m.msg, source: if k < n_language { "syntax" } else { "check" } });
             }
         }
         v.extend(self.compiler_problems.iter().cloned());

@@ -112,6 +112,18 @@ impl App {
                 items.push(CItem { text: name, kind: kind.to_string(), source });
             }
         };
+        // the language's own words come first, so that a keyword is offered as the keyword it is even when the file
+        // already uses it as a word. Not after `.`, `->` or `::` (a member is not a keyword); and at the start of a
+        // statement the keywords go before the names, because that is where they are used
+        let before = &text[..s];
+        let after_member = before.ends_with('.') || before.ends_with("->") || before.ends_with("::");
+        let statement_start = before.rsplit('\n').next().unwrap_or("").trim().is_empty();
+        if !after_member {
+            for (w, class) in lang.words() {
+                let kind = kind_of_class(*class);
+                push(w.clone(), kind, if kind == "m" && statement_start { 0 } else { 3 }, &mut items);
+            }
+        }
         // what the project defines: the open files as they are now, the rest from the index
         let mut local: Vec<(String, String)> = vec![];
         for d in self.docs.iter_mut().filter(|d| d.diff.is_none() && d.ed.language().is_some_and(|l| l.id() == lang_id)) {
@@ -136,16 +148,13 @@ impl App {
         for w in identifiers(&text, &low, caret) {
             push(w, "s", 2, &mut items);
         }
-        // the language's own words
-        for (w, class) in lang.words() {
-            push(w.clone(), kind_of_class(*class), 3, &mut items);
-        }
         for (name, kind, lang) in all {
             if lang != lang_id {
                 push(name, kind_of_outline(&kind), 4, &mut items);
             }
         }
-        items.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.text.len().cmp(&b.text.len())).then_with(|| a.text.cmp(&b.text)));
+        // better sources first; among equals the ones that match the case typed, then the shorter
+        items.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| (!a.text.starts_with(&prefix)).cmp(&!b.text.starts_with(&prefix))).then_with(|| a.text.len().cmp(&b.text.len())).then_with(|| a.text.cmp(&b.text)));
         items.truncate(MAX_ITEMS);
         let started = self.completion.active && self.completion.start == s && self.completion.prefix == prefix;
         let selected = if started { self.completion.selected } else { 0 };

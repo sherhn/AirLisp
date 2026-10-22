@@ -92,6 +92,9 @@ pub struct LangDef {
     pub fold: String,
     /// The markup a rendered preview can show for files of this language: `markdown` or `rst` (empty: none).
     pub preview: String,
+    /// The checks the editor runs on its own while you type, for problems it can find without running anything:
+    /// `brackets` (a bracket that is never closed or never opened).
+    pub check: Vec<String>,
     pub grammar: Vec<RuleDef>,
     pub outline: Vec<OutlineDef>,
 }

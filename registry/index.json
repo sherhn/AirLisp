@@ -40,7 +40,7 @@
     {
       "id": "c-cpp",
       "name": "C and C++",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "Languages",
       "summary": "Highlighting, brackets, folding and an outline for C, C++ and headers; compile and run a file; the compilers and debuggers in Linux.",
       "cover": "cover.png",
@@ -48,8 +48,8 @@
       "files": [
         {
           "name": "module.json",
-          "size": 13422,
-          "sha256": "573c5de1e72f66d30f9e042bd9e4d48df8481e88d2307b12215e3c2d477507af"
+          "size": 13571,
+          "sha256": "b8a7880bbd5947f6caf40093703ac920d4658458dcb05949db30f444fcf1f775"
         },
         {
           "name": "cover.png",
@@ -80,7 +80,7 @@
     {
       "id": "python",
       "name": "Python",
-      "version": "1.0.1",
+      "version": "1.1.0",
       "category": "Languages",
       "summary": "Highlighting, indentation, folding by blocks and an outline for Python; run a file; python3 and pip in Linux.",
       "cover": "cover.png",
@@ -88,8 +88,8 @@
       "files": [
         {
           "name": "module.json",
-          "size": 7253,
-          "sha256": "c6021117b577ad48720fef09fc50db7ccbb7ae470c300abaa0c1880d8f01fdc7"
+          "size": 7936,
+          "sha256": "d73e38ed6d0f4d87eb59e7e9cd1099ecc9e16da49ff55487e73ddd004f8381c7"
         },
         {
           "name": "cover.png",
@@ -199,7 +199,7 @@
     {
       "id": "shell-make",
       "name": "Shell and Make",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "Languages",
       "summary": "Shell scripts, makefiles and the usual configuration files: highlighting, comments and an outline of functions and targets.",
       "cover": "cover.png",
@@ -207,8 +207,8 @@
       "files": [
         {
           "name": "module.json",
-          "size": 9100,
-          "sha256": "18180191ab4a1a052ec28e359e08950615ccc4b7af2927d49a43344c5b70318d"
+          "size": 9302,
+          "sha256": "81c9852438887370791a77b93901d3ea93208c0cb7cc89fb5343c41adf4000c7"
         },
         {
           "name": "cover.png",

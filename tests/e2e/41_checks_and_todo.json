@@ -1,0 +1,38 @@
+[
+  {"op": "log", "value": "@echo_module: a language's own checks - brackets that do not pair up, and the check command of its module - show as problems; marker comments are coloured"},
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+  {"op": "open", "path": "${PROJ}/tools/hello.zz"},
+  {"op": "assert_language", "value": "echo"},
+
+  {"op": "log", "value": "the check command runs on the file that was opened and reports like a compiler"},
+  {"op": "wait", "what": "checks_idle", "timeout": 30},
+  {"op": "frames", "value": 4},
+  {"op": "assert_problem", "value": "a demo problem", "line": 1},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_check.png"},
+
+  {"op": "log", "value": "brackets: an opening one that is never closed, a closing one that closes nothing"},
+  {"op": "set_text", "value": "say (hello\n"},
+  {"op": "focus_editor"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_problem", "value": "Unclosed '('", "line": 1},
+  {"op": "set_text", "value": "say hello)\n"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_problem", "value": "Unmatched ')'", "line": 1},
+  {"op": "set_text", "value": "say (hello)\n"},
+  {"op": "frames", "value": 3},
+  {"op": "assert_max_problems", "value": 1},
+
+  {"op": "log", "value": "after a save the command looks at the new file again"},
+  {"op": "command", "value": "file.save"},
+  {"op": "wait", "what": "checks_idle", "timeout": 30},
+  {"op": "frames", "value": 3},
+  {"op": "assert_problem", "value": "a demo problem"},
+
+  {"op": "log", "value": "marker comments: TODO, INFO, ALERT, FIXME are coloured differently from other comments"},
+  {"op": "open", "path": "${PROJ}/src/main.lisp"},
+  {"op": "set_text", "value": "; an ordinary comment\n; TODO: write the tests\n; INFO: runs on SBCL\n; ALERT: do not rename this\n; FIXME(me) later\n(defun f () 1)\n"},
+  {"op": "frames", "value": 4},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_todo.png"},
+  {"op": "quit"}
+]

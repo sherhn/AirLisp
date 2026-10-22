@@ -52,6 +52,9 @@ pub struct Doc {
     /// Compiler problems from the last compile (byte ranges valid for `compiled_rev`).
     pub compiler_markers: Vec<Marker>,
     pub compiled_rev: u64,
+    /// What the check command of the file's language found in the saved text (valid while `check_rev` is the revision).
+    pub check_markers: Vec<Marker>,
+    pub check_rev: u64,
     /// HEAD content of the file: None = not loaded, Some(None) = untracked / not in HEAD.
     pub git_base: Option<Option<String>>,
     pub git_marks: Vec<ide_core::diff::Mark>,
@@ -91,6 +94,8 @@ impl Doc {
             untitled_name: String::new(),
             compiler_markers: vec![],
             compiled_rev: 0,
+            check_markers: vec![],
+            check_rev: u64::MAX,
             git_base: None,
             git_marks: vec![],
             git_marks_rev: u64::MAX,
@@ -115,6 +120,8 @@ impl Doc {
             untitled_name: format!("untitled-{n}.lisp"),
             compiler_markers: vec![],
             compiled_rev: 0,
+            check_markers: vec![],
+            check_rev: u64::MAX,
             git_base: None,
             git_marks: vec![],
             git_marks_rev: u64::MAX,
@@ -214,11 +221,30 @@ impl Doc {
         false
     }
 
+    /// What the checks the language asks for find in the text itself: brackets that do not pair up.
+    pub fn language_markers(&self) -> Vec<Marker> {
+        self.ed
+            .language_problems()
+            .iter()
+            .map(|p| {
+                let (kind, c) = match p.kind {
+                    air_lang::ProblemKind::Unclosed(c) => ("Unclosed '{}'", c),
+                    air_lang::ProblemKind::Unmatched(c) => ("Unmatched '{}'", c),
+                };
+                Marker { start: p.start, end: p.end, sev: Sev::Error, msg: crate::i18n::fmt(kind, &[&c]) }
+            })
+            .collect()
+    }
+
     /// Syntax problems of the current text plus the compiler's (while still fresh).
     pub fn markers(&self) -> Vec<Marker> {
         let mut v: Vec<Marker> = if !self.ed.is_lisp() {
-            // the Lisp reader has nothing to say about C or a makefile
-            vec![]
+            // the Lisp reader has nothing to say about C or a makefile: the language's own checks do, and its check command
+            let mut m = self.language_markers();
+            if self.check_rev == self.ed.revision() {
+                m.extend(self.check_markers.iter().cloned());
+            }
+            m
         } else {
             self.ed
             .parsed()

@@ -10,9 +10,10 @@ Exception BaseException ValueError TypeError KeyError IndexError AttributeError 
 StopIteration NotImplementedError ZeroDivisionError AssertionError KeyboardInterrupt FileNotFoundError PermissionError""".split()
 
 PREFIX = r"(?:[rRbBuUfF]{1,2})?"
+PY_CHECK = "import sys;compile(open(sys.argv[1],encoding='utf-8').read(),sys.argv[1],'exec')"
 
 MODULE = module(
-    version="1.0.1",
+    version="1.1.0",
     id="python",
     name="Python",
     category="Languages",
@@ -20,7 +21,7 @@ MODULE = module(
     description="Python for Air: strings of every kind (triple-quoted, f-strings, raw), decorators, keywords, builtins and numbers; Enter after a colon indents and return/pass dedent; folding by indentation; the outline of classes and functions; a command to run the current file. The Linux side brings python3, pip and venv - installed from inside the IDE.",
     languages=[dict(
         id="python", name="Python", extensions=["py", "pyw", "pyi", "pyx"], filenames=["SConstruct", "SConscript", "Pipfile"], first_line=r"^#!.*\bpython",
-        line_comment="#", brackets=["()", "[]", "{}"], indent={"mode": "python", "size": 4}, fold="indent",
+        line_comment="#", brackets=["()", "[]", "{}"], check=["brackets"], indent={"mode": "python", "size": 4}, fold="indent",
         grammar=[
             region(PREFIX + '"""', '"""', "string"),
             region(PREFIX + "'''", "'''", "string"),
@@ -41,6 +42,13 @@ MODULE = module(
             outline(r"^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)", "function"),
             outline(r"^[ \t]*class[ \t]+(\w+)", "class"),
         ],
+    )],
+    # the syntax check compiles the file without running it; a SyntaxError names the line:
+    #   File "x.py", line 2 ... SyntaxError: invalid syntax   (the first `File "<string>"` of the traceback is the check's own)
+    check=[dict(
+        language="python", name="Syntax", command=f'python3 -c "{PY_CHECK}" "{{file}}"',
+        windows=f'where py >nul 2>nul & if errorlevel 1 (python -c "{PY_CHECK}" "{{file}}") else (py -c "{PY_CHECK}" "{{file}}")',
+        pattern=r'(?s)File "(?P<file>[^<"][^"]*)", line (?P<line>\d+)\n.*?(?P<sev>SyntaxError|IndentationError|TabError)[^:\n]*: (?P<msg>[^\n]*)',
     )],
     # on Windows `python` is often only the Microsoft Store stub: the `py` launcher is preferred when there is one
     run=[dict(language="python", name="Run file", command='python3 "{file}"',

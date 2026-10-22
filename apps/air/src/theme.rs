@@ -74,6 +74,9 @@ pub struct Palette {
     pub code: Color32,
     pub link: Color32,
     pub quote: Color32,
+    /// Marker comments: `TODO`, `INFO`, `NOTE`... and `FIXME`, `ALERT`, `HACK`...
+    pub todo: Color32,
+    pub alert: Color32,
     pub rainbow: [Color32; 6],
 }
 
@@ -144,6 +147,8 @@ impl Palette {
             code: c(0x6FE0C8),
             link: c(0x5CA0FF),
             quote: c(0x8A9892),
+            todo: c(0x6CB6FF),
+            alert: c(0xFFB454),
             rainbow: [c(0xF5D67A), c(0xB78CFF), c(0x6BA6FF), c(0x7ED492), c(0xFF9E7A), c(0x5AD1E6)],
         }
     }
@@ -209,6 +214,8 @@ impl Palette {
             code: c(0x0B7A6B),
             link: c(0x1750EB),
             quote: c(0x6B707C),
+            todo: c(0x1F6FD0),
+            alert: c(0xC25E00),
             rainbow: [c(0xB8860B), c(0x7C3FC4), c(0x1D4ED8), c(0x1E8A3D), c(0xC25E00), c(0x00808A)],
         }
     }

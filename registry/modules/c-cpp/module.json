@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "cover": "cover.png",
   "id": "c-cpp",
   "name": "C and C++",
@@ -174,6 +174,9 @@
         "()",
         "[]",
         "{}"
+      ],
+      "check": [
+        "brackets"
       ],
       "indent": {
         "mode": "braces",
@@ -420,6 +423,9 @@
         "[]",
         "{}"
       ],
+      "check": [
+        "brackets"
+      ],
       "indent": {
         "mode": "braces",
         "size": 4
@@ -471,6 +477,10 @@
   "tools": [
     {
       "name": "C and C++",
+      "required": [
+        "make",
+        "gcc"
+      ],
       "programs": [
         "make",
         "gcc",

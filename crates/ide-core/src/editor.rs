@@ -101,6 +101,7 @@ pub struct Editor {
     other: Option<Arc<Language>>,
     /// Highlighting spans of `other`, for the revision they were made for.
     lang_cache: RefCell<Option<(u64, Rc<Vec<Span>>)>>,
+    problem_cache: RefCell<Option<(u64, Rc<Vec<air_lang::Problem>>)>>,
     undo: Vec<Entry>,
     redo: Vec<Entry>,
     pending: Vec<Edit>,
@@ -123,6 +124,7 @@ impl Editor {
             dialect,
             other: None,
             lang_cache: RefCell::new(None),
+            problem_cache: RefCell::new(None),
             undo: Vec::new(),
             redo: Vec::new(),
             pending: Vec::new(),
@@ -161,6 +163,7 @@ impl Editor {
     pub fn set_language(&mut self, l: Option<Arc<Language>>) {
         self.other = l;
         *self.lang_cache.borrow_mut() = None;
+        *self.problem_cache.borrow_mut() = None;
     }
     pub fn is_lisp(&self) -> bool {
         self.other.is_none()
@@ -177,6 +180,21 @@ impl Editor {
         *self.lang_cache.borrow_mut() = Some((self.revision, spans.clone()));
         Some(spans)
     }
+    /// What the language's own checks find in the text (brackets that do not pair up...), cached per revision. Empty
+    /// for Lisp, which has its reader's diagnostics.
+    pub fn language_problems(&self) -> Rc<Vec<air_lang::Problem>> {
+        let Some(lang) = self.other.as_ref() else { return Rc::new(Vec::new()) };
+        if let Some((rev, p)) = &*self.problem_cache.borrow()
+            && *rev == self.revision
+        {
+            return p.clone();
+        }
+        let spans = self.language_spans().unwrap_or_default();
+        let found = Rc::new(lang.problems(&self.text, &spans));
+        *self.problem_cache.borrow_mut() = Some((self.revision, found.clone()));
+        found
+    }
+
     /// The bracket matching the one at the caret: by the Lisp reader, or by the language's own grammar.
     pub fn matching_bracket(&self, off: usize) -> Option<(usize, usize)> {
         match &self.other {

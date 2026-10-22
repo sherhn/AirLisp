@@ -345,6 +345,16 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
                         job.append(&t, 0.0, egui::TextFormat::simple(font.clone(), color));
                     }
                 };
+                // a comment with a marker in it (TODO, FIXME, INFO...): from the marker on it is coloured and slanted
+                let push_comment = |job: &mut LayoutJob, from: usize, to: usize| match ide_core::todo::marker_in(&text[from..to]) {
+                    Some((at, kind)) => {
+                        push(job, from, from + at, pal.comment);
+                        let t = text[from + at..to].replace('\t', "    ");
+                        let color = if kind == ide_core::todo::TodoKind::Alert { pal.alert } else { pal.todo };
+                        job.append(&t, 0.0, egui::TextFormat { italics: true, ..egui::TextFormat::simple(font.clone(), color) });
+                    }
+                    None => push(job, from, to, pal.comment),
+                };
                 while pos < le {
                     if si < spans.len() && spans[si].start < le {
                         let s = &spans[si];
@@ -353,7 +363,11 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
                             push(&mut job, pos, a, pal.plain);
                         }
                         let b = s.end.min(le);
-                        push(&mut job, a, b, pal.syntax(s.class, s.depth, cfg.rainbow));
+                        if s.class == lisp_syntax::highlight::Class::Comment {
+                            push_comment(&mut job, a, b);
+                        } else {
+                            push(&mut job, a, b, pal.syntax(s.class, s.depth, cfg.rainbow));
+                        }
                         pos = b;
                         si += 1;
                     } else {

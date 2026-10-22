@@ -67,6 +67,7 @@ impl App {
             }
             "completion" => self.completion.active && !self.completion.items.is_empty(),
             "hover" => self.hover.info.is_some(),
+            "checks_idle" => self.checks.idle(),
             "git_ready" => self.git.repo.is_some() && self.git.head.is_some() && self.git.rx.is_none(),
             "git_dirty" => self.git.rx.is_none() && !self.git.changes.is_empty(),
             "git_settled" => self.git.rx.is_none(),
@@ -663,6 +664,20 @@ impl App {
                 if all.len() > max {
                     let rows: Vec<String> = all.iter().map(|p| format!("{:?}: {}", p.path, p.message)).collect();
                     self.fail(format!("assert_max_problems: expected <= {max}, got {rows:?}"));
+                }
+            }
+            // a problem in the list whose text contains `value`; with `line`, on that 1-based line of the active file
+            "assert_problem" => {
+                let line = step["line"].as_u64().map(|l| l as usize);
+                let found = self.all_problems().iter().any(|p| {
+                    p.message.contains(&sval)
+                        && line.is_none_or(|l| {
+                            self.docs.iter().find(|d| d.path == p.path && d.diff.is_none()).is_some_and(|d| d.ed.line_col(p.start).0 + 1 == l)
+                        })
+                });
+                if !found {
+                    let rows: Vec<String> = self.all_problems().iter().map(|p| format!("{:?}@{}: {}", p.path.as_ref().and_then(|f| f.file_name()), p.start, p.message)).collect();
+                    self.fail(format!("assert_problem: {sval:?} (line {line:?}) not among {rows:?}"));
                 }
             }
             "assert_problems" => {

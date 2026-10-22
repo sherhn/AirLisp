@@ -70,6 +70,9 @@ def run_one(script_path):
         proj = make_fixture(tmp)
         text = script_path.read_text(encoding="utf-8")
         text = text.replace("${GH_TOKEN}", fake_github.FAKE_TOKEN).replace("${PROJ}", fwd(proj)).replace("${SHOTS}", fwd(SHOTS)).replace("${NAME}", name)
+        if "@needs_python" in text and not (shutil.which("py") or shutil.which("python3")):
+            # a real interpreter is what the script checks files with
+            return name, True, "skipped: no Python on this machine", 0.0
         script = tmp / "script.json"
         script.write_text(text, encoding="utf-8")
         json.loads(text)  # validate
@@ -128,8 +131,10 @@ def run_one(script_path):
             echo.mkdir(parents=True)
             (echo / "module.json").write_text(json.dumps({
                 "id": "echo", "name": "Echo", "version": "1.0.0", "category": "Languages", "summary": "a test language",
-                "languages": [{"id": "echo", "name": "Echo", "extensions": ["zz"], "grammar": [{"match": r"\bhello\b", "class": "keyword"}]}],
+                "languages": [{"id": "echo", "name": "Echo", "extensions": ["zz"], "brackets": ["()"], "check": ["brackets"], "grammar": [{"match": r"\bhello\b", "class": "keyword"}]}],
                 "run": [{"language": "echo", "name": "Say", "command": "echo ran {name} in {stem}"}],
+                # a check that always finds the same problem: `echo` prints it the way a compiler would
+                "check": [{"language": "echo", "name": "Demo", "command": "echo {name}:1:5: error: a demo problem", "pattern": r"^(?P<file>[^:\n]+):(?P<line>\d+):(?P<col>\d+): (?P<sev>\w+): (?P<msg>.*)$"}],
             }), encoding="utf-8")
         if "@linux_distro" in text:
             (tmp / "fake-wsl.json").write_text(json.dumps({"installed": True, "distros": {"Ubuntu-24.04": {"sbcl": False}}, "default": "Ubuntu-24.04"}), encoding="utf-8")

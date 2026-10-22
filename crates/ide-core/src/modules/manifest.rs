@@ -33,6 +33,31 @@ impl RunDef {
     }
 }
 
+/// A command that checks a file of a language for errors without running it (a syntax check) and the pattern that
+/// finds the problems in what it prints. Run on the saved file, in the project's Linux or on Windows like a run command.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct CheckDef {
+    /// The language id this applies to.
+    pub language: String,
+    pub name: String,
+    /// A shell command line, with the same placeholders as a run command's.
+    pub command: String,
+    /// A different command line for a project that runs on Windows (empty: the same one).
+    pub windows: String,
+    /// A regular expression over the whole output (`^` and `$` match at lines) with the groups `line` and `msg`, and
+    /// optionally `col` and `sev` (a word with `warn` in it makes a warning; anything else an error). See
+    /// [`crate::modules::check::problems`].
+    pub pattern: String,
+}
+
+impl CheckDef {
+    /// The command line that checks `file` (see [`RunDef::command_line`]).
+    pub fn command_line(&self, file: &str, dir: &str, windows: bool) -> String {
+        RunDef { language: self.language.clone(), name: self.name.clone(), command: self.command.clone(), windows: self.windows.clone() }.command_line(file, dir, windows)
+    }
+}
+
 /// A group of tools a module wants in the project's Linux (see the developer tools on the Linux page).
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
@@ -42,6 +67,16 @@ pub struct ToolDef {
     pub programs: Vec<String>,
     /// Debian / Ubuntu packages that bring them, separated by spaces.
     pub apt: String,
+    /// The programs a project in this language cannot be built or run without; when one is missing in the project's
+    /// Linux the IDE offers to install the tools. Empty: the first of `programs`.
+    pub required: Vec<String>,
+}
+
+impl ToolDef {
+    /// The programs a project of this language needs before anything else.
+    pub fn required_programs(&self) -> Vec<String> {
+        if self.required.is_empty() { self.programs.iter().take(1).cloned().collect() } else { self.required.clone() }
+    }
 }
 
 /// When a project looks like it needs the module.
@@ -82,6 +117,8 @@ pub struct Manifest {
     pub builtin: String,
     pub languages: Vec<LangDef>,
     pub run: Vec<RunDef>,
+    /// Syntax checks of the language's files, run when a file is saved.
+    pub check: Vec<CheckDef>,
     pub tools: Vec<ToolDef>,
     pub detect: Detect,
     pub templates: Vec<Template>,
@@ -112,6 +149,12 @@ impl Manifest {
             if !self.languages.iter().any(|l| l.id == r.language) && self.builtin.is_empty() {
                 return Err(format!("{}: the run command {:?} is for the unknown language {:?}", self.id, r.name, r.language));
             }
+        }
+        for c in &self.check {
+            if !self.languages.iter().any(|l| l.id == c.language) {
+                return Err(format!("{}: the check {:?} is for the unknown language {:?}", self.id, c.name, c.language));
+            }
+            crate::modules::check::compile(&c.pattern).map_err(|e| format!("{}: the check {:?}: {e}", self.id, c.name))?;
         }
         Ok(())
     }

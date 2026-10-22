@@ -46,12 +46,14 @@ COMMON = dict(
     line_comment="//",
     block_comment=["/*", "*/"],
     brackets=["()", "[]", "{}"],
+    check=["brackets"],
     indent={"mode": "braces", "size": 4},
     fold="braces",
     outline=OUTLINE,
 )
 
 MODULE = module(
+    version="1.1.0",
     id="c-cpp",
     name="C and C++",
     category="Languages",
@@ -66,7 +68,7 @@ MODULE = module(
         dict(language="cpp", name="Compile and run file", command='c++ -g -Wall -Wextra -std=c++17 "{file}" -o "{dir}/{stem}" && "{dir}/{stem}"', windows='g++ -g -Wall -Wextra -std=c++17 "{file}" -o "{dir}/{stem}.exe" && "{dir}/{stem}.exe"'),
     ],
     tools=[
-        dict(name="C and C++", programs=["make", "gcc", "g++", "ld", "gdb", "cmake", "ninja", "pkg-config"],
+        dict(name="C and C++", required=["make", "gcc"], programs=["make", "gcc", "g++", "ld", "gdb", "cmake", "ninja", "pkg-config"],
              apt="build-essential gdb cmake ninja-build pkg-config autoconf automake libtool ccache bear gcc-multilib g++-multilib"),
         dict(name="Clang and LLVM", programs=["clang", "clangd", "lldb", "clang-format"], apt="clang clangd lldb clang-format clang-tidy"),
         dict(name="Debugging and analysis", programs=["valgrind", "strace", "ltrace", "gdb-multiarch", "xxd"], apt="valgrind strace ltrace gdb-multiarch xxd"),

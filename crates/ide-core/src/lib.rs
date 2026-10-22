@@ -16,6 +16,7 @@ pub mod index;
 pub mod localvcs;
 pub mod modules;
 pub mod search;
+pub mod todo;
 pub mod settings;
 pub mod workspace;
 pub mod wsl;
