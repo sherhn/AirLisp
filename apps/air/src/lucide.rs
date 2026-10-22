@@ -84,3 +84,5 @@ pub const USER: char = '\u{e19f}';
 pub const LOCK: char = '\u{e10b}';
 pub const BOOK_MARKED: char = '\u{e3f1}';
 pub const PUZZLE: char = '\u{e29c}';
+pub const EYE: char = '\u{e0ba}';
+pub const COLUMNS_2: char = '\u{e098}';

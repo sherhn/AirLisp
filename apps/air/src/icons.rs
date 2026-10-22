@@ -81,6 +81,10 @@ pub enum Icon {
     Lock,
     /// A repository.
     Repo,
+    /// The rendered preview of a document.
+    Preview,
+    /// The editor and its preview side by side.
+    Columns,
 }
 
 pub fn glyph(icon: Icon) -> Option<char> {
@@ -152,6 +156,8 @@ pub fn glyph(icon: Icon) -> Option<char> {
         Icon::User => l::USER,
         Icon::Lock => l::LOCK,
         Icon::Repo => l::BOOK_MARKED,
+        Icon::Preview => l::EYE,
+        Icon::Columns => l::COLUMNS_2,
     })
 }
 
@@ -192,7 +198,7 @@ mod tests {
     #[test]
     fn every_icon_has_a_glyph_or_is_custom() {
         use Icon::*;
-        for i in [Folder, FolderOpen, File, Play, Stop, Restart, Search, Warning, Error, Check, ChevronRight, ChevronDown, ChevronUp, Close, Plus, Gear, List, Terminal, Trash, Project, Branch, Clear, Info, ArrowUp, ArrowDown, Commit, Refresh, History, Diff, Menu, More, Repl, Download, Palette, Keyboard, Sliders, Code, FolderPlus, FilePlus, Pencil, Copy, Save, Sun, Moon, Fork, External, Zap, Layers, Package, Puzzle, Hammer, Globe, Cloud, Eye, ChevronLeft, Undo, FileDiff, Script, Linux, Install, Ok, Spinner, Key, User, Lock, Repo] {
+        for i in [Folder, FolderOpen, File, Play, Stop, Restart, Search, Warning, Error, Check, ChevronRight, ChevronDown, ChevronUp, Close, Plus, Gear, List, Terminal, Trash, Project, Branch, Clear, Info, ArrowUp, ArrowDown, Commit, Refresh, History, Diff, Menu, More, Repl, Download, Palette, Keyboard, Sliders, Code, FolderPlus, FilePlus, Pencil, Copy, Save, Sun, Moon, Fork, External, Zap, Layers, Package, Puzzle, Hammer, Globe, Cloud, Eye, ChevronLeft, Undo, FileDiff, Script, Linux, Install, Ok, Spinner, Key, User, Lock, Repo, Preview, Columns] {
             assert!(glyph(i).is_some(), "{i:?}");
         }
         assert!(glyph(Lisp).is_none() && glyph(Dot).is_none());

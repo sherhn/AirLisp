@@ -5,6 +5,8 @@
 mod app;
 mod app_env;
 mod modules;
+mod preview;
+mod ui_preview;
 mod ui_modules;
 mod brand;
 mod app_git;

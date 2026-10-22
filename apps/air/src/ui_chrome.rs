@@ -77,7 +77,7 @@ impl App {
                 self.menu_items(
                     ui,
                     ctx,
-                    &["view.project", "view.commit", "view.structure", "view.git", "view.repl", "view.run", "view.problems", "view.terminal", "-", "view.split_right", "view.split_down", "view.unsplit", "view.switch_pane", "-", "view.zoom_in", "view.zoom_out", "view.zoom_reset", "-", "view.toggle_theme", "view.line_numbers", "view.whitespace", "view.rainbow", "view.hide_all"],
+                    &["view.project", "view.commit", "view.structure", "view.git", "view.repl", "view.run", "view.problems", "view.terminal", "-", "view.split_right", "view.split_down", "view.unsplit", "view.switch_pane", "-", "view.zoom_in", "view.zoom_out", "view.zoom_reset", "-", "view.preview_code", "view.preview_split", "view.preview_only", "-", "view.toggle_theme", "view.line_numbers", "view.whitespace", "view.rainbow", "view.hide_all"],
                 );
             });
             ui.menu_button(tr("Navigate"), |ui| {
@@ -539,6 +539,7 @@ impl App {
                 x += 20.0;
             }
         }
+        self.draw_preview_switch(ui, r, idx);
     }
 
     // ------------------------------------------------------------------ status bar

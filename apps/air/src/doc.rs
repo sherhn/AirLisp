@@ -59,6 +59,8 @@ pub struct Doc {
     /// Folded forms, identified by (text of the form's first line, occurrence index).
     pub folds: std::collections::HashSet<(String, usize)>,
     pub outline_cache: Option<(u64, Vec<lisp_syntax::outline::Definition>)>,
+    /// The rendered preview of a Markdown or reStructuredText document: its mode, scroll and caches.
+    pub preview: crate::preview::PreviewState,
 }
 
 fn mtime(p: &Path) -> Option<SystemTime> {
@@ -94,6 +96,7 @@ impl Doc {
             git_marks_rev: u64::MAX,
             folds: Default::default(),
             outline_cache: None,
+            preview: Default::default(),
         })
     }
 
@@ -117,6 +120,7 @@ impl Doc {
             git_marks_rev: u64::MAX,
             folds: Default::default(),
             outline_cache: None,
+            preview: Default::default(),
         }
     }
 

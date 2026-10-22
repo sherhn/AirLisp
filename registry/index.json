@@ -142,7 +142,7 @@
     {
       "id": "markdown",
       "name": "Markdown",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "Documents",
       "summary": "Headings, emphasis, code, links and lists; Enter continues a list; folding and an outline by headings.",
       "cover": "cover.png",
@@ -150,8 +150,8 @@
       "files": [
         {
           "name": "module.json",
-          "size": 3819,
-          "sha256": "8efe9986189555cf9f61719f06bfcf516558e21f2ace42799fb9992ffe22d393"
+          "size": 3959,
+          "sha256": "f3adda35933186b1c5a35780a55ced9e164ff038b41bd3de370ecff908ef95d1"
         },
         {
           "name": "cover.png",
@@ -170,7 +170,7 @@
     {
       "id": "restructuredtext",
       "name": "reStructuredText",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "category": "Documents",
       "summary": "Headings by underline, directives, roles, links and lists for .rst; folding and an outline by sections.",
       "cover": "cover.png",
@@ -178,8 +178,8 @@
       "files": [
         {
           "name": "module.json",
-          "size": 3781,
-          "sha256": "0e8cdd9adf7bfc4b6a2c75c6b30e1a36e790e1fa5246e390e0bf20ffab52043a"
+          "size": 3916,
+          "sha256": "e5760cdad1844d020a15d1bcd3b48173ff55f5824effca1a3bbb5709ca5ec938"
         },
         {
           "name": "cover.png",

@@ -194,6 +194,9 @@ cmds! {
     "view.zoom_in", "Increase Font Size", View, ["Ctrl+Alt+Equals"];
     "view.zoom_out", "Decrease Font Size", View, ["Ctrl+Alt+Minus"];
     "view.zoom_reset", "Reset Font Size", View, ["Ctrl+0"];
+    "view.preview_code", "Editor Only", View, [];
+    "view.preview_split", "Editor and Preview", View, [];
+    "view.preview_only", "Preview Only", View, [];
     "view.toggle_theme", "Toggle Dark/Light Theme", View, [];
     "view.line_numbers", "Toggle Line Numbers", View, [];
     "view.whitespace", "Toggle Whitespace", View, [];

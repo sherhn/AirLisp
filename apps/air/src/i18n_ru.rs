@@ -880,4 +880,9 @@ pub const RU: &[(&str, &str)] = &[
     ("Open Modules", "Открыть «Модули»"),
     ("Installed modules", "Установленные модули"),
     ("Modules are kept in this folder; remove one in the Modules tab", "Модули лежат в этой папке; удалить модуль можно во вкладке «Модули»"),
+    ("Editor Only", "Только редактор"),
+    ("Editor and Preview", "Редактор и просмотр"),
+    ("Preview Only", "Только просмотр"),
+    ("Only Markdown and reStructuredText files have a preview", "Просмотр есть только у файлов Markdown и reStructuredText"),
+    ("Cannot find {}", "Не найден {}"),
 ];

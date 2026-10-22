@@ -277,6 +277,11 @@ impl Language {
         &self.def.name
     }
 
+    /// The markup a preview of this language's files renders (`markdown`, `rst`), if it has one.
+    pub fn preview(&self) -> Option<&str> {
+        Some(self.def.preview.as_str()).filter(|p| !p.is_empty())
+    }
+
     pub fn is_plain(&self) -> bool {
         self.rules.is_empty() && self.outline.is_empty()
     }

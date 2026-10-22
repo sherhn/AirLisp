@@ -44,6 +44,7 @@ name = "air"
 version = "0.2.0"
 dependencies = [
  "air-lang",
+ "air-markup",
  "eframe",
  "embed-resource",
  "ide-core",
@@ -73,6 +74,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "air-markup"
+version = "0.2.0"
 
 [[package]]
 name = "android-activity"

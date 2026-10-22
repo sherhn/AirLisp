@@ -90,6 +90,8 @@ pub struct LangDef {
     pub indent: IndentDef,
     /// What can be folded: `none`, `braces`, `indent` or `headings`.
     pub fold: String,
+    /// The markup a rendered preview can show for files of this language: `markdown` or `rst` (empty: none).
+    pub preview: String,
     pub grammar: Vec<RuleDef>,
     pub outline: Vec<OutlineDef>,
 }

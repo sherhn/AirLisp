@@ -99,6 +99,14 @@ def run_one(script_path):
                 (proj / rel).write_bytes(content.encode("utf-8"))
             subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
             subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "polyglot"], cwd=proj, capture_output=True, check=True)
+        if "@markup" in text:
+            # Markdown and reStructuredText documents with everything a preview shows, and a picture next to them
+            site = proj / "site"
+            site.mkdir(exist_ok=True)
+            for f in (ROOT / "tests" / "fixtures" / "markup").iterdir():
+                shutil.copy2(f, site / f.name)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "add", "-A"], cwd=proj, capture_output=True, check=True)
+            subprocess.run(["git", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "markup"], cwd=proj, capture_output=True, check=True)
         if "@echo_module" in text:
             # a module of its own with a run command that needs no tools: `echo`, on Windows and in the fake Linux alike
             files = {"tools/hello.zz": "say hello\n"}
@@ -202,6 +210,8 @@ def run_one(script_path):
         except subprocess.TimeoutExpired as e:
             return name, False, f"TIMEOUT after 180s\n{(e.stdout or b'').decode(errors='replace') if isinstance(e.stdout, bytes) else e.stdout}", time.time() - t0
         out = (p.stdout or "") + (p.stderr or "")
+        if os.environ.get("AIR_E2E_VERBOSE"):
+            print(out)
         ok = p.returncode == 0 and "SCRIPT OK" in out
         return name, ok, out, time.time() - t0
     finally:

@@ -4,6 +4,7 @@ use eframe::egui::{self, CornerRadius, Frame, Margin};
 
 use crate::app::App;
 use crate::editor_view::{self, ViewCfg};
+use crate::preview::PreviewMode;
 use crate::state::*;
 use crate::widgets::{self, STATUS_H, STRIP_W, TOOLBAR_H};
 
@@ -183,6 +184,24 @@ impl App {
             self.draw_find_bar(ui, ctx);
             self.refresh_find();
         }
+        // Markdown and reStructuredText: the code, the rendered document, or both side by side
+        match (self.doc_markup(idx), self.preview_mode(idx)) {
+            (Some(markup), PreviewMode::Preview) => {
+                if focused {
+                    self.editor_rect = None;
+                    self.gutter_rect = None;
+                    self.caret_screen = None;
+                }
+                self.draw_preview(ui, ctx, idx, markup);
+                false
+            }
+            (Some(markup), PreviewMode::Split) => self.draw_split_markup(ui, ctx, idx, focused, own_view, markup),
+            _ => self.draw_editor(ui, ctx, idx, focused, own_view),
+        }
+    }
+
+    /// The code of a file: gutter, text, minimap and the problems on it.
+    pub fn draw_editor(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, idx: usize, focused: bool, own_view: bool) -> bool {
         let markers = self.docs[idx].markers();
         let find: Vec<(usize, usize)> = if focused && self.find.open { self.find.matches.clone() } else { vec![] };
         let git_marks: Vec<ide_core::diff::Mark> = App::git_marks(&mut self.docs[idx]).to_vec();

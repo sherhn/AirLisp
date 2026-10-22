@@ -3,14 +3,15 @@ from common import match, module, outline
 UNDERLINE = r"[=\-~^\"'#*+:._`]"
 
 MODULE = module(
+    version="1.1.0",
     id="restructuredtext",
     name="reStructuredText",
     category="Documents",
     summary="Headings by underline, directives, roles, links and lists for .rst; folding and an outline by sections.",
-    description="reStructuredText for Air (the markup of Sphinx and Python documentation): headings found by their underlines - the first style of underline is the top level - directives, hyperlink targets, comments, roles, literals, emphasis and links are coloured; Enter continues a list; the outline and folding follow the sections.",
+    description="reStructuredText for Air (the markup of Sphinx and Python documentation): headings found by their underlines - the first style of underline is the top level - directives, hyperlink targets, comments, roles, literals, emphasis and links are coloured; Enter continues a list; the outline and folding follow the sections. A rendered preview shows the document next to the code or instead of it (Editor, Editor and Preview, Preview).",
     languages=[dict(
         id="rst", name="reStructuredText", extensions=["rst", "rest"], filenames=[],
-        line_comment="..", brackets=[], indent={"mode": "markup", "size": 3}, fold="headings",
+        line_comment="..", brackets=[], indent={"mode": "markup", "size": 3}, fold="headings", preview="rst",
         grammar=[
             # a title and its underline (the title is the first line)
             match(r"^[^\s.\n][^\n]*\n" + UNDERLINE + r"{3,}[ \t]*$", "heading"),

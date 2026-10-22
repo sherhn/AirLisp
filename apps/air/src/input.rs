@@ -8,6 +8,7 @@ use ide_core::search::TextQuery;
 use crate::app::{App, RunConfig};
 use crate::editor_view::Sev;
 use crate::i18n::{self, tr};
+use crate::preview::PreviewMode;
 use crate::state::*;
 
 pub fn key_name(key: Key) -> Option<&'static str> {
@@ -61,7 +62,7 @@ fn is_symbol_char(c: char) -> bool {
 impl App {
     /// Is the code editor receiving typing right now?
     pub fn editor_active(&self, ctx: &egui::Context) -> bool {
-        self.editor_focus && !self.popup.is_open() && !ctx.text_edit_focused() && self.doc().is_some_and(|d| d.diff.is_none())
+        self.editor_focus && !self.popup.is_open() && !ctx.text_edit_focused() && self.doc().is_some_and(|d| d.diff.is_none()) && !self.editor_hidden()
     }
 
     /// Double-tap of the Shift key opens Search Everywhere.
@@ -269,7 +270,7 @@ impl App {
             self.toast(tr("This is part of the Lisp module - install and switch it on in Modules"), Sev::Weak);
             return;
         }
-        let editor_on = self.doc().is_some_and(|d| d.diff.is_none());
+        let editor_on = self.doc().is_some_and(|d| d.diff.is_none()) && !self.editor_hidden();
         match id {
             // ---- file
             "file.new" => {
@@ -546,6 +547,18 @@ impl App {
             "view.zoom_in" => self.settings.zoom(1.0),
             "view.zoom_out" => self.settings.zoom(-1.0),
             "view.zoom_reset" => self.settings.font_size = 14.0,
+            "view.preview_code" | "view.preview_split" | "view.preview_only" => {
+                let mode = match id {
+                    "view.preview_code" => PreviewMode::Code,
+                    "view.preview_split" => PreviewMode::Split,
+                    _ => PreviewMode::Preview,
+                };
+                if self.doc_markup(self.active).is_some() {
+                    self.set_preview_mode(self.active, mode);
+                } else {
+                    self.toast(tr("Only Markdown and reStructuredText files have a preview"), Sev::Weak);
+                }
+            }
             "view.toggle_theme" => {
                 self.settings.theme = self.settings.theme.toggled();
                 self.theme_changed();

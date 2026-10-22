@@ -37,6 +37,10 @@ pub struct ViewState {
     max_cols: Option<(u64, usize)>,
     pub last_viewport_lines: usize,
     pub last_text_rect: Option<Rect>,
+    /// The (fractional) source line at the top of the view, as of the last frame.
+    pub top_line_f: f32,
+    /// Scroll so that this (fractional) source line is at the top (used to keep a preview beside the code in step).
+    pub scroll_to_line_f: Option<f32>,
 }
 
 
@@ -162,6 +166,10 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     }
     let rows = folding::rows(total_lines, &regions, folds);
     let row_of_line = |line: usize| rows.row_of_line(line);
+    if let Some(lf) = state.scroll_to_line_f.take() {
+        let line = (lf.max(0.0).floor() as usize).min(total_lines.saturating_sub(1));
+        state.scroll.y = ((row_of_line(line) as f32 + lf.max(0.0).fract()) * lh).max(0.0);
+    }
     let region_start: std::collections::HashMap<usize, &Region> = regions.iter().map(|r| (r.start_line, r)).collect();
 
     let full = ui.available_rect_before_wrap();
@@ -467,6 +475,11 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         }
     });
     state.scroll = area.state.clamped_offset();
+    {
+        let row_f = state.scroll.y.max(0.0) / lh;
+        let r = (row_f.floor() as usize).min(rows.len().saturating_sub(1));
+        state.top_line_f = rows.at(r) as f32 + row_f.fract();
+    }
     for a in acts {
         match a {
             Act::Caret { off, extend } => ed.set_caret(off, extend),

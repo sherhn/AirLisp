@@ -791,6 +791,47 @@ impl App {
                     self.fail(format!("assert_no_term_contains: {sval:?} was printed"));
                 }
             }
+            // the pointer moves to (x, y) without a button
+            "move" => {
+                let pos = Pos2::new(step["x"].as_f64().unwrap_or(0.0) as f32, step["y"].as_f64().unwrap_or(0.0) as f32);
+                let s = self.script.as_mut().unwrap();
+                s.pending.push(Event::PointerMoved(pos));
+            }
+            // the preview of the active tab: `mode` (code, split, preview), `blocks_min` (blocks laid out), `scrolled`
+            // (it is not at the top) and `in_sync` (it shows the place the code shows)
+            "assert_preview" => {
+                let idx = self.active;
+                let mut errors = vec![];
+                let mode = if self.doc_markup(idx).is_some() { self.preview_mode(idx).name() } else { "none" };
+                if let Some(m) = step["mode"].as_str()
+                    && m != mode
+                {
+                    errors.push(format!("mode: expected {m}, got {mode}"));
+                }
+                if let Some(d) = self.docs.get(idx) {
+                    let pv = &d.preview;
+                    if let Some(n) = step["blocks_min"].as_u64()
+                        && (pv.blocks_y.len() as u64) < n
+                    {
+                        errors.push(format!("blocks: expected at least {n}, got {}", pv.blocks_y.len()));
+                    }
+                    if let Some(b) = step["scrolled"].as_bool()
+                        && b != (pv.scroll > 1.0)
+                    {
+                        errors.push(format!("scrolled: expected {b}, preview offset is {:.0}", pv.scroll));
+                    }
+                    if let Some(b) = step["in_sync"].as_bool() {
+                        let want = pv.line_to_y(d.view.top_line_f);
+                        let ok = want.is_some_and(|y| (y - pv.scroll).abs() < 40.0);
+                        if ok != b {
+                            errors.push(format!("in_sync: expected {b}; the code is at line {:.1} (preview y {:?}), the preview is at {:.0}", d.view.top_line_f, want, pv.scroll));
+                        }
+                    }
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_preview: {}", errors.join("; ")));
+                }
+            }
             "assert_toast" => {
                 if !self.toasts.iter().any(|t| t.text.contains(&sval)) {
                     let all: Vec<_> = self.toasts.iter().map(|t| t.text.clone()).collect();
