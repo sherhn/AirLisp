@@ -197,7 +197,7 @@ impl App {
                                         self.settings.clone_dir = d.to_string_lossy().into_owned();
                                     }
                                 });
-                                TextField::new(&mut self.settings.clone_dir).hint("~/AirLispProjects").icon(Icon::Folder).show(ui, &pal);
+                                TextField::new(&mut self.settings.clone_dir).hint("~/AirProjects").icon(Icon::Folder).show(ui, &pal);
                                 ui.add_space(12.0);
                                 if widgets::secondary_button(ui, &pal, tr("Clone a repository...")).clicked() {
                                     self.run_command(ctx, "file.clone");

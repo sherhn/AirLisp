@@ -92,7 +92,7 @@ impl App {
                     // the text wraps before the button instead of running under it
                     ui.set_max_width((ui.available_width() - 220.0).max(200.0));
                     ui.label(RichText::new(tr("Sign in with GitHub")).font(fonts::semibold(14.0)));
-                    let hint = if waiting { tr("Finish signing in on the GitHub page that opened in your browser, then come back here.") } else { tr("GitHub's sign-in page opens in your browser (two-factor login works there). AirLisp never sees your password.") };
+                    let hint = if waiting { tr("Finish signing in on the GitHub page that opened in your browser, then come back here.") } else { tr("GitHub's sign-in page opens in your browser (two-factor login works there). Air never sees your password.") };
                     ui.label(RichText::new(hint).color(pal.text_dim).size(11.5));
                 });
                 widgets::right_row(ui, 38.0, |ui| {

@@ -24,10 +24,10 @@ impl eframe::App for App {
         let title = {
             let file = self.doc().map(|d| d.name());
             match (&self.project, file) {
-                (Some(p), Some(f)) => format!("{} [{}] - {f} - AirLisp", p.name, p.root.display()),
-                (Some(p), None) => format!("{} [{}] - AirLisp", p.name, p.root.display()),
-                (None, Some(f)) => format!("{f} - AirLisp"),
-                (None, None) => "AirLisp".to_string(),
+                (Some(p), Some(f)) => format!("{} [{}] - {f} - Air", p.name, p.root.display()),
+                (Some(p), None) => format!("{} [{}] - Air", p.name, p.root.display()),
+                (None, Some(f)) => format!("{f} - Air"),
+                (None, None) => "Air".to_string(),
             }
         };
         if title != self.last_title {

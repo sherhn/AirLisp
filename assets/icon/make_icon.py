@@ -1,4 +1,4 @@
-"""Generates the AirLisp app icon (PNG sizes + .ico) with Pillow. Run: python assets/icon/make_icon.py
+"""Generates the Air app icon (PNG sizes + .ico) with Pillow. Run: python assets/icon/make_icon.py
 
 Design: a JetBrains-style black tile with the white underline bar, and a luminous gradient lambda
 (the Lisp symbol) whose strokes fade into "air" streaks on the left - ArtCraft-like colour, JetBrains-like structure.
@@ -110,10 +110,10 @@ def main():
     images = {}
     for sz in sizes:
         img = big.resize((sz, sz), Image.LANCZOS)
-        img.save(os.path.join(OUT, f"airlisp-{sz}.png"))
+        img.save(os.path.join(OUT, f"air-{sz}.png"))
         images[sz] = img
-    big.resize((1024, 1024), Image.LANCZOS).save(os.path.join(OUT, "airlisp-1024.png"))
-    images[256].save(os.path.join(OUT, "airlisp.ico"), format="ICO", sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
+    big.resize((1024, 1024), Image.LANCZOS).save(os.path.join(OUT, "air-1024.png"))
+    images[256].save(os.path.join(OUT, "air.ico"), format="ICO", sizes=[(s, s) for s in (16, 24, 32, 48, 64, 128, 256)])
     print("icons written to", OUT)
 
 

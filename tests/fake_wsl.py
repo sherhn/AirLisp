@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""A stand-in for wsl.exe used by the UI tests (AIRLISP_FAKE_WSL points at this file).
+"""A stand-in for wsl.exe used by the UI tests (AIR_FAKE_WSL points at this file).
 
 It never touches the real WSL. `make TARGET` "inside" a distribution prints what a kernel build with one compiler
 error looks like (and exits 2); the build tools of a distribution can be "installed" like SBCL. Its state (is WSL "installed", which distributions exist, which have SBCL) lives in
-the JSON file named by AIRLISP_FAKE_WSL_STATE; AIRLISP_FAKE_WSL_START=absent starts without WSL. Programs "inside"
+the JSON file named by AIR_FAKE_WSL_STATE; AIR_FAKE_WSL_START=absent starts without WSL. Programs "inside"
 a distribution run on Windows: /mnt/<drive>/... paths are mapped back, `sbcl` is the Windows SBCL
-(AIRLISP_FAKE_WSL_SBCL or PATH) and `sh -lc LINE` becomes `cmd /c LINE`.
+(AIR_FAKE_WSL_SBCL or PATH) and `sh -lc LINE` becomes `cmd /c LINE`.
 """
 import json
 import os
@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 
-STATE = os.environ.get("AIRLISP_FAKE_WSL_STATE") or os.path.join(os.environ.get("TEMP", "."), "airlisp-fake-wsl.json")
+STATE = os.environ.get("AIR_FAKE_WSL_STATE") or os.path.join(os.environ.get("TEMP", "."), "air-fake-wsl.json")
 ONLINE = [("Debian", "Debian GNU/Linux"), ("Ubuntu", "Ubuntu"), ("Ubuntu-24.04", "Ubuntu 24.04 LTS"), ("Ubuntu-22.04", "Ubuntu 22.04 LTS"), ("archlinux", "Arch Linux")]
 
 
@@ -23,7 +23,7 @@ def load():
         with open(STATE, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
-        return {"installed": os.environ.get("AIRLISP_FAKE_WSL_START") != "absent", "distros": {}, "default": None}
+        return {"installed": os.environ.get("AIR_FAKE_WSL_START") != "absent", "distros": {}, "default": None}
 
 
 def save(s):
@@ -59,11 +59,11 @@ def no_distro(name):
 def fake_apt(packages, version_lines):
     """What the setup scripts print on Ubuntu: the markers of the script, then apt's own lines (slowly enough for the
     progress bar of the UI to be seen)."""
-    out("@@airlisp stage prepare\n")
+    out("@@air stage prepare\n")
     for n in range(1, 7):
         out(f"Get:{n} http://archive.ubuntu.com/ubuntu noble InRelease [126 kB]\n")
         time.sleep(0.06)
-    out("Reading package lists... Done\n@@airlisp stage install\n")
+    out("Reading package lists... Done\n@@air stage install\n")
     out("Reading package lists...\nThe following NEW packages will be installed:\n  " + " ".join(packages) + "\n")
     out(f"0 upgraded, {len(packages)} newly installed, 0 to remove and 4 not upgraded.\nNeed to get 31.4 MB of archives.\n")
     for i, p in enumerate(packages, 1):
@@ -75,7 +75,7 @@ def fake_apt(packages, version_lines):
     for p in packages:
         out(f"Setting up {p} (1.0) ...\n")
         time.sleep(0.08)
-    out("@@airlisp stage verify\n")
+    out("@@air stage verify\n")
     for line in version_lines:
         out(line + "\n")
 
@@ -142,11 +142,11 @@ def run_inside(s, name, cwd, prog, args):
     if prog == "sh" and args[:1] == ["-lc"] and "git config --global" in (args[1] if len(args) > 1 else ""):
         out("name: E2E\nemail: e2e@example.com\ncredentials: !'/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe'\n")
         return 0
-    if prog == "sh" and args[:1] == ["-lc"] and "AIRLISP_SBCL=" in (args[1] if len(args) > 1 else ""):
-        out("AIRLISP_SBCL=" + ("/usr/bin/sbcl" if d.get("sbcl") else "") + "\n")
+    if prog == "sh" and args[:1] == ["-lc"] and "AIR_SBCL=" in (args[1] if len(args) > 1 else ""):
+        out("AIR_SBCL=" + ("/usr/bin/sbcl" if d.get("sbcl") else "") + "\n")
         if d.get("sbcl"):
-            out("AIRLISP_VERSION=SBCL 2.2.9.debian\n")
-        out("AIRLISP_MOUNT=/mnt/c/\n")
+            out("AIR_VERSION=SBCL 2.2.9.debian\n")
+        out("AIR_MOUNT=/mnt/c/\n")
         return 0
     env = dict(os.environ)
     if prog == "env":
@@ -173,7 +173,7 @@ def run_inside(s, name, cwd, prog, args):
         if not d.get("sbcl"):
             out(f"execvpe({prog}) failed: No such file or directory\n")
             return 1
-        sbcl = os.environ.get("AIRLISP_FAKE_WSL_SBCL") or shutil.which("sbcl")
+        sbcl = os.environ.get("AIR_FAKE_WSL_SBCL") or shutil.which("sbcl")
         if not sbcl:
             out("fake wsl: no Windows SBCL to stand in for Linux SBCL\n")
             return 1

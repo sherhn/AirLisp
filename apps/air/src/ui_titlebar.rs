@@ -37,7 +37,7 @@ impl App {
             (Some(p), Some(d)) => format!("{}  -  {}", p.name, d.name()),
             (Some(p), None) => p.name.clone(),
             (None, Some(d)) => d.name(),
-            (None, None) => "AirLisp".to_string(),
+            (None, None) => "Air".to_string(),
         };
         let tg = ui.painter().layout_no_wrap(title, fonts::ui(12.5), pal.text_dim);
         // the main menu occupies roughly the first 640 px

@@ -77,7 +77,7 @@ mod tests {
     use ide_core::settings::Settings;
 
     fn app_with(tag: &str, files: &[&str]) -> (App, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("airlisp-split-{}-{tag}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("air-split-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let mut app = App::new(Settings::default());

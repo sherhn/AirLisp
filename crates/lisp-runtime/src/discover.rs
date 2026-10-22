@@ -129,7 +129,7 @@ pub fn candidates(configured: &str) -> Vec<PathBuf> {
     if !configured.trim().is_empty() {
         v.push(PathBuf::from(configured.trim()));
     }
-    if let Ok(p) = std::env::var("AIRLISP_SBCL") {
+    if let Ok(p) = std::env::var("AIR_SBCL") {
         v.push(PathBuf::from(p));
     }
     if let Some(paths) = std::env::var_os("PATH") {
@@ -157,21 +157,21 @@ pub fn candidates(configured: &str) -> Vec<PathBuf> {
     v
 }
 
-/// Directory of the SBCL that ships with AirLisp: `AIRLISP_BUNDLE_DIR`, else `lisp/` next to the executable.
+/// Directory of the SBCL that ships with Air: `AIR_BUNDLE_DIR`, else `lisp/` next to the executable.
 pub fn bundle_dir() -> Option<PathBuf> {
-    if let Ok(d) = std::env::var("AIRLISP_BUNDLE_DIR") {
+    if let Ok(d) = std::env::var("AIR_BUNDLE_DIR") {
         return Some(PathBuf::from(d));
     }
     std::env::current_exe().ok()?.parent().map(|p| p.join("lisp"))
 }
 
-/// Find SBCL: the explicit setting, `AIRLISP_SBCL`, the bundled one, `PATH`, then well-known install locations.
+/// Find SBCL: the explicit setting, `AIR_SBCL`, the bundled one, `PATH`, then well-known install locations.
 pub fn find_sbcl(configured: &str) -> Option<Implementation> {
     let mut explicit = Vec::new();
     if !configured.trim().is_empty() {
         explicit.push(PathBuf::from(configured.trim()));
     }
-    if let Ok(p) = std::env::var("AIRLISP_SBCL") {
+    if let Ok(p) = std::env::var("AIR_SBCL") {
         explicit.push(PathBuf::from(p));
     }
     if let Some(p) = explicit.into_iter().find(|p| is_file(p)) {
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn bundled_requires_executable_and_core() {
-        let dir = std::env::temp_dir().join(format!("airlisp-bundle-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("air-bundle-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         assert!(Implementation::bundled(&dir).is_none());
         std::fs::write(dir.join(exe_name()), b"x").unwrap();

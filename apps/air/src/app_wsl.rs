@@ -397,7 +397,7 @@ impl App {
     /// Install a distribution from an image file (`.wsl` or a root file system `.tar`).
     pub fn wsl_install_file(&mut self, file: &Path) {
         let name = name_for_image(file, &self.wsl.distros());
-        let base = if self.wsl.location.trim().is_empty() { default_location().join("AirLisp").join("WSL") } else { PathBuf::from(self.wsl.location.trim()) };
+        let base = if self.wsl.location.trim().is_empty() { default_location().join("Air").join("WSL") } else { PathBuf::from(self.wsl.location.trim()) };
         let dir = base.join(&name);
         match wsl::install_file_command(file, &name, &dir) {
             Ok(cmd) => {
@@ -641,13 +641,13 @@ mod tests {
     #[test]
     fn progress_markers_stay_out_of_the_log() {
         let (mut log, mut open) = (vec![], false);
-        push_output(&mut log, &mut open, "Hit:1 http://x\n@@airlisp stage install\nGet:2 http://y\n");
+        push_output(&mut log, &mut open, "Hit:1 http://x\n@@air stage install\nGet:2 http://y\n");
         strip_markers(&mut log, open);
         assert_eq!(log, vec!["Hit:1 http://x", "Get:2 http://y"]);
         // a marker that is still being written is kept until its line is complete
-        push_output(&mut log, &mut open, "@@airlisp sta");
+        push_output(&mut log, &mut open, "@@air sta");
         strip_markers(&mut log, open);
-        assert_eq!(log.last().unwrap(), "@@airlisp sta");
+        assert_eq!(log.last().unwrap(), "@@air sta");
         push_output(&mut log, &mut open, "ge verify\nok\n");
         strip_markers(&mut log, open);
         assert_eq!(log, vec!["Hit:1 http://x", "Get:2 http://y", "ok"]);

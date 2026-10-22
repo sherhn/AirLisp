@@ -65,7 +65,7 @@ pub struct Settings {
     pub wsl_sbcl: String,
     /// Where Windows drives are mounted inside the distribution; empty = `/mnt/`.
     pub wsl_mount_root: String,
-    /// Default parent folder for "Get from Version Control"; empty = ~/AirLispProjects.
+    /// Default parent folder for "Get from Version Control"; empty = ~/AirProjects.
     pub clone_dir: String,
     /// The GitHub login last signed in with or looked up (prefills the GitHub tab); never a secret.
     pub github_user: String,
@@ -111,10 +111,10 @@ pub const MAX_FONT: f32 = 40.0;
 
 impl Settings {
     pub fn config_dir() -> Option<PathBuf> {
-        if let Ok(p) = std::env::var("AIRLISP_CONFIG_DIR") {
+        if let Ok(p) = std::env::var("AIR_CONFIG_DIR") {
             return Some(PathBuf::from(p));
         }
-        dirs::config_dir().map(|d| d.join("AirLisp"))
+        dirs::config_dir().map(|d| d.join("Air"))
     }
 
     pub fn load_from(path: &Path) -> Settings {
@@ -129,7 +129,17 @@ impl Settings {
     }
 
     pub fn load() -> Settings {
-        Self::config_dir().map(|d| Self::load_from(&d.join("settings.json"))).unwrap_or_default()
+        let Some(dir) = Self::config_dir() else { return Settings::default() };
+        let file = dir.join("settings.json");
+        // the IDE used to be called AirLisp: its settings are picked up once, and saved under the new name
+        if !file.exists()
+            && std::env::var_os("AIR_CONFIG_DIR").is_none()
+            && let Some(old) = dirs::config_dir().map(|d| d.join("AirLisp").join("settings.json"))
+            && old.exists()
+        {
+            return Self::load_from(&old);
+        }
+        Self::load_from(&file)
     }
 
     pub fn save_to(&self, path: &Path) -> io::Result<()> {

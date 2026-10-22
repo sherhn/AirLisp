@@ -19,7 +19,7 @@ use crate::widgets::{self, TextField};
 
 impl App {
     pub fn open_clone_dialog(&mut self) {
-        let parent = if self.settings.clone_dir.trim().is_empty() { dirs_home().join("AirLispProjects").to_string_lossy().into_owned() } else { self.settings.clone_dir.clone() };
+        let parent = if self.settings.clone_dir.trim().is_empty() { dirs_home().join("AirProjects").to_string_lossy().into_owned() } else { self.settings.clone_dir.clone() };
         let linux_distro = self.suggested_distro().unwrap_or_default();
         self.popup = Popup::Clone(Box::new(CloneState {
             tab: CloneTab::Url,

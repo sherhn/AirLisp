@@ -130,7 +130,7 @@ impl App {
         let tools_ready = matches!(self.wsl.tools.get(&selected), Some(Ok(v)) if lisp_runtime::wsl::missing_core(v).is_empty());
 
         // ---------------------------------------------------------------- intro
-        ui.label(RichText::new(tr("Work as on Linux without a virtual machine: WSL runs a real Linux next to Windows, and AirLisp starts SBCL, the REPL and the terminal inside it. Your files stay where they are.")).color(pal.text_dim).size(12.5));
+        ui.label(RichText::new(tr("Work as on Linux without a virtual machine: WSL runs a real Linux next to Windows, and Air starts SBCL, the REPL and the terminal inside it. Your files stay where they are.")).color(pal.text_dim).size(12.5));
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if widgets::secondary_button(ui, &pal, tr("Check again")).clicked() {
@@ -387,7 +387,7 @@ impl App {
                         });
                     }
                 });
-                rows.row(ui, &pal, tr("Linux user (optional)"), tr("On its first start a new distribution asks for a Linux user name and password. Until then AirLisp runs Lisp as root."), 190.0, |ui| {
+                rows.row(ui, &pal, tr("Linux user (optional)"), tr("On its first start a new distribution asks for a Linux user name and password. Until then Air runs Lisp as root."), 190.0, |ui| {
                     if widgets::secondary_button(ui, &pal, tr("Open Linux window")).clicked() {
                         act = Some(Act::OpenWindow(selected.clone()));
                     }

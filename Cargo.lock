@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "airlisp"
+name = "air"
 version = "0.2.0"
 dependencies = [
  "eframe",
@@ -55,7 +55,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "airlisp-cli"
+name = "air-cli"
 version = "0.2.0"
 dependencies = [
  "ide-core",

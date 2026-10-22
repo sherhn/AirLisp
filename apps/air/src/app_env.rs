@@ -1,7 +1,7 @@
 //! Where a project is built and run: on Windows, or in Linux through WSL.
 //!
 //! A project on a WSL file system (`\\wsl.localhost\Ubuntu\home\...`) is always a Linux project. Any other project
-//! can be switched; the choice is kept in `.airlisp/project.json`, which git never sees. A Linux project runs its
+//! can be switched; the choice is kept in `.air/project.json`, which git never sees. A Linux project runs its
 //! terminal, make targets, Lisp and REPL in the distribution, and its git runs there when it lives there.
 
 use std::path::Path;
@@ -26,7 +26,7 @@ pub struct ProjectConfig {
 }
 
 fn config_path(root: &Path) -> std::path::PathBuf {
-    root.join(".airlisp").join("project.json")
+    root.join(".air").join("project.json")
 }
 
 pub fn load_config(root: &Path) -> ProjectConfig {
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn config_roundtrip_and_detection() {
-        let d = std::env::temp_dir().join(format!("airlisp-env-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("air-env-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         assert_eq!(load_config(&d), ProjectConfig::default());

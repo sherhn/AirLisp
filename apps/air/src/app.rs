@@ -78,7 +78,7 @@ pub struct App {
     /// The GitHub session of the "Get from Version Control" dialog.
     pub github: crate::app_github::GithubState,
     pub run_config: crate::app_run::RunConfig,
-    /// Where the open project is built and run (`.airlisp/project.json`).
+    /// Where the open project is built and run (`.air/project.json`).
     pub project_cfg: crate::app_env::ProjectConfig,
     /// Ask whether the open (Unix-style) project should be built in Linux.
     pub env_banner: bool,
@@ -216,7 +216,7 @@ impl App {
         }
     }
 
-    /// Start another AirLisp process for `path`.
+    /// Start another Air process for `path`.
     pub fn open_project_in_new_window(&mut self, path: &Path) {
         let spawned = std::env::current_exe().and_then(|exe| std::process::Command::new(exe).arg(path).spawn());
         match spawned {
@@ -231,6 +231,11 @@ impl App {
             return;
         }
         let root = path.to_path_buf();
+        // a project of an older version keeps its own files in `.airlisp`
+        let moved = ide_core::workspace::migrate_project_dir(&root);
+        if moved && let Some(repo) = ide_core::git::find_repo(&root) {
+            ide_core::localvcs::LocalVcs::ensure_git_ignored(&repo);
+        }
         let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.to_string_lossy().into_owned());
         let (tx, rx) = mpsc::channel();
         let r2 = root.clone();

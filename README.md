@@ -1,6 +1,6 @@
-# AirLisp
+# Air
 
-<img src="assets/icon/airlisp-128.png" width="96" align="right" alt="AirLisp icon">
+<img src="assets/icon/air-128.png" width="96" align="right" alt="Air icon">
 
 A JetBrains-style IDE for Lisp, written in Rust (egui) and built the PhotoCraft way:
 a UI-independent engine, one command registry that drives menus, palettes and key bindings,
@@ -27,7 +27,7 @@ Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation
 * **Git** - branch switcher, update/commit/push in the toolbar, commit dialog (Ctrl+K, Ctrl+Enter to commit),
   Git tool window (changes with checkboxes, log), diff viewer, change markers in the gutter, file status colours in
   the tree and tabs, rollback. Uses the `git` executable.
-* **Local commits** - snapshots of your working tree kept outside of git (`.airlisp/`, excluded through
+* **Local commits** - snapshots of your working tree kept outside of git (`.air/`, excluded through
   `.git/info/exclude`). Made for working on top of somebody else's repository without a fork: create a local
   commit and the diff, gutter markers and changes list start from it; switch the comparison base between `HEAD`
   and any local commit, restore or delete checkpoints. Works in projects without git too.
@@ -54,7 +54,7 @@ ones included, newest push first) with search, fork / archived switches, languag
 a double click clones it into the chosen folder and opens it as a project. Signing in works like in PyCharm:
 
 * **Sign in in the browser** - Git Credential Manager (part of Git for Windows) opens GitHub's own authorization page;
-  you sign in there, two-factor included, and the account lands in Git's credential store. AirLisp never sees your
+  you sign in there, two-factor included, and the account lands in Git's credential store. Air never sees your
   password and has no OAuth secret of its own.
 * **Use the saved login** - the GitHub CLI's (`gh auth token`) or the one Git already saved for github.com.
 * **Token** - paste a personal access token (scope `repo` for private repositories); optionally remember it in Git's
@@ -62,7 +62,7 @@ a double click clones it into the chosen folder and opens it as a project. Signi
 
 Requests go through `curl` (no HTTP library is linked); the token reaches `curl` through its config on stdin and `git`
 through environment variables of that one clone, and only for `https://github.com/...` URLs. Nothing is written to
-AirLisp's own files except the last login name. For the UI tests `AIRLISP_GITHUB_API`, `AIRLISP_FAKE_GCM` and
+Air's own files except the last login name. For the UI tests `AIR_GITHUB_API`, `AIR_FAKE_GCM` and
 `tests/fake_github.py` / `tests/fake_gcm.py` replace GitHub and Git Credential Manager.
 
 ## Linux on Windows (WSL)
@@ -80,15 +80,15 @@ through the setup, each step one button:
 
 Your project stays where it is: Windows paths are translated (`C:\x` -> `/mnt/c/x`, `\\wsl.localhost\Ubuntu\home`
 -> `/home`) for everything handed to Lisp, and paths Lisp reports (go to definition) come back. Processes started
-in Linux are tagged so Stop really ends them. AirLisp never removes or changes an installed distribution.
-For the UI tests `AIRLISP_FAKE_WSL` (see `tests/fake_wsl.py`) replaces `wsl.exe`, so they never touch the real WSL.
+in Linux are tagged so Stop really ends them. Air never removes or changes an installed distribution.
+For the UI tests `AIR_FAKE_WSL` (see `tests/fake_wsl.py`) replaces `wsl.exe`, so they never touch the real WSL.
 
 ### Linux projects (C, assembly, make - e.g. an operating system like os-pi)
 
 A project can be *built and run in Linux* while you work on Windows:
 
 * **Choose it per project.** Opening a project with a makefile (or shell scripts) offers "Use Linux"; the status
-  bar shows `Windows` / `Linux: <distro>` and switches with a click. The choice is kept in `.airlisp/project.json`,
+  bar shows `Windows` / `Linux: <distro>` and switches with a click. The choice is kept in `.air/project.json`,
   which git never sees. The terminal, the make targets, Lisp and the REPL of that project then run in the distribution.
 * **Or keep the project in Linux.** Get from Version Control > *Linux: <distro>* clones with the distribution's own git
   into `~/projects/<name>` and opens it as `\\wsl.localhost\<distro>\home\...`; git for such a project always runs
@@ -124,18 +124,18 @@ a word or path, triple click a line, **Ctrl+A** selects everything, **Ctrl+C** o
 | `crates/lisp-syntax` | lexer, bracket matching, indentation, structural edits, outline, highlighting (no deps) |
 | `crates/ide-core` | editor model, command registry + keymap, project model, fuzzy/text search, symbol index, settings |
 | `crates/lisp-runtime` | SBCL discovery, REPL protocol (`lisp/repl-server.lisp`), file runner, compiler diagnostics |
-| `apps/airlisp` | the GUI (eframe/egui) incl. the JSON automation harness |
-| `apps/airlisp-cli` | headless engine: `check`, `fmt`, `outline`, `eval`, `run`, `compile`, `exec`, `commands`, ... |
+| `apps/air` | the GUI (eframe/egui) incl. the JSON automation harness |
+| `apps/air-cli` | headless engine: `check`, `fmt`, `outline`, `eval`, `run`, `compile`, `exec`, `commands`, ... |
 
 ## Build & run
 
 ```
-cargo run --release -p airlisp            # the IDE
-cargo run --release -p airlisp-cli -- help
+cargo run --release -p air            # the IDE
+cargo run --release -p air-cli -- help
 ```
 
 Requires Rust (stable) and, for the REPL/run features, SBCL (bundled in packaged builds; otherwise on `PATH`
-or set `AIRLISP_SBCL` / Settings > Lisp & REPL). Linux needs the usual windowing libs
+or set `AIR_SBCL` / Settings > Lisp & REPL). Linux needs the usual windowing libs
 (`libxkbcommon`, `libgl`, wayland/x11 headers).
 
 ## Tests
@@ -156,15 +156,15 @@ Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `pn
 
 ## Русский
 
-AirLisp - IDE для Lisp в стиле JetBrains (PyCharm/WebStorm), написанная на Rust. Структурное
+Air - IDE для Lisp в стиле JetBrains (PyCharm/WebStorm), написанная на Rust. Структурное
 редактирование, живой REPL на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация,
 рефакторинг (rename), тёмная и светлая темы и привычная раскладка клавиш IntelliJ.
-Сборка: `cargo run --release -p airlisp`. Для REPL нужен SBCL в `PATH`.
+Сборка: `cargo run --release -p air`. Для REPL нужен SBCL в `PATH`.
 
 **Репозитории GitHub.** Во вкладке GitHub диалога «Получить из системы контроля версий» виден список ваших
 репозиториев (в том числе приватных): поиск, значки форков и архивов, язык, звёзды; клик выбирает, двойной клик
 клонирует и открывает проект. Вход, как в PyCharm: в браузере откроется страница авторизации GitHub (через Git
-Credential Manager), пароль AirLisp не видит. Есть также вход сохранённым логином и по токену.
+Credential Manager), пароль Air не видит. Есть также вход сохранённым логином и по токену.
 
 **Linux без виртуальной машины.** В Настройки > Linux (WSL) можно по шагам установить WSL, дистрибутив (Ubuntu 24.04
 по умолчанию, или из файла `.wsl` / `.tar`) и SBCL внутри него, а затем одной кнопкой перевести SBCL, REPL, запуск,
@@ -172,8 +172,8 @@ Credential Manager), пароль AirLisp не видит. Есть также �
 `.iso` для WSL не подходит: это установщик для ПК или виртуальной машины.
 
 **Linux-проекты (C, ассемблер, make — например, ОС вроде os-pi).** Проект можно собирать и запускать в Linux, работая в
-Windows: при открытии проекта с makefile AirLisp предложит «Использовать Linux», а в строке состояния можно
-переключить «Windows / Linux: <дистрибутив>» (выбор хранится в `.airlisp/project.json`, git его не видит). Терминал,
+Windows: при открытии проекта с makefile Air предложит «Использовать Linux», а в строке состояния можно
+переключить «Windows / Linux: <дистрибутив>» (выбор хранится в `.air/project.json`, git его не видит). Терминал,
 цели make, Lisp и REPL проекта работают в дистрибутиве; цели make (`all`, `run`, `debug`, `clean`, тесты) — это
 конфигурации запуска, ошибки gcc/ld/nasm попадают в Problems и в редактор. Клонировать можно прямо в Linux
 (`~/projects`, git дистрибутива) или в папку Windows с окончаниями строк Linux. На странице Linux (WSL) одной кнопкой

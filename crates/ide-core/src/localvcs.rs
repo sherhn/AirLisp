@@ -3,7 +3,7 @@
 //! Use case: you work on top of somebody else's repository without a fork, so you cannot commit,
 //! but you want to "reset the diff" to see only your newest changes. A local commit records the
 //! content of every file that differs from git `HEAD`; the *base* for diffs, gutter markers and the
-//! changes list can then be `HEAD` or any local commit. Everything lives in `<root>/.airlisp/local`
+//! changes list can then be `HEAD` or any local commit. Everything lives in `<root>/.air/local`
 //! and is excluded from git through `.git/info/exclude` (never committed, never shown as a change).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -82,7 +82,7 @@ fn now_secs() -> u64 {
 
 impl LocalVcs {
     fn dir(root: &Path) -> PathBuf {
-        root.join(".airlisp").join("local")
+        root.join(".air").join("local")
     }
 
     /// Load the store of `root` (an empty one if none exists yet). Nothing is written until the first commit.
@@ -135,7 +135,7 @@ impl LocalVcs {
         let info = repo.root.join(".git").join("info");
         let exclude = info.join("exclude");
         let existing = fs::read_to_string(&exclude).unwrap_or_default();
-        if existing.lines().any(|l| l.trim() == "/.airlisp/" || l.trim() == ".airlisp/") {
+        if existing.lines().any(|l| l.trim() == "/.air/" || l.trim() == ".air/") {
             return;
         }
         let _ = fs::create_dir_all(&info);
@@ -143,7 +143,7 @@ impl LocalVcs {
         if !s.is_empty() && !s.ends_with('\n') {
             s.push('\n');
         }
-        s.push_str("/.airlisp/\n");
+        s.push_str("/.air/\n");
         let _ = fs::write(&exclude, s);
     }
 
@@ -472,7 +472,7 @@ mod tests {
         assert!(v.changes_vs(c1, Some(&repo)).is_empty());
         // git still sees both files as changed against HEAD (we never touched git)
         assert_eq!(repo.status().len(), 2);
-        assert!(!repo.status().iter().any(|c| c.path.starts_with(".airlisp")), "our store must be invisible to git");
+        assert!(!repo.status().iter().any(|c| c.path.starts_with(".air")), "our store must be invisible to git");
 
         // second round: only the new edit shows up against the checkpoint
         write(d.path(), "mine.lisp", "(mine)\n(more)\n");
@@ -528,7 +528,7 @@ mod tests {
         assert_eq!(again.commits().len(), 2);
         assert_eq!(*again.base(), Base::Local(c2));
         assert_eq!(again.commits()[0].message, "one");
-        let blobs = || fs::read_dir(d.path().join(".airlisp/local/blobs")).unwrap().count();
+        let blobs = || fs::read_dir(d.path().join(".air/local/blobs")).unwrap().count();
         assert_eq!(blobs(), 2);
         v.delete(c2).unwrap();
         assert_eq!(*v.base(), Base::Head, "deleting the base falls back to HEAD");
@@ -537,7 +537,7 @@ mod tests {
         assert_eq!(LocalVcs::open(d.path()).commits()[0].message, "renamed");
         // the store never snapshots itself
         let c3 = v.create("", None).unwrap();
-        assert!(v.commit(c3).unwrap().files.keys().all(|k| !k.contains(".airlisp")));
+        assert!(v.commit(c3).unwrap().files.keys().all(|k| !k.contains(".air")));
         assert_eq!(v.commit(c3).unwrap().message, format!("Local commit {c3}"));
     }
 

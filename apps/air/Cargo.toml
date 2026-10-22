@@ -1,12 +1,12 @@
 [package]
-name = "airlisp"
-description = "AirLisp - a JetBrains-style IDE for Lisp"
+name = "air"
+description = "Air - a JetBrains-style IDE for Lisp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "airlisp"
+name = "air"
 path = "src/main.rs"
 
 [dependencies]

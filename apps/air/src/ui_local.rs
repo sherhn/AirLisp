@@ -43,7 +43,7 @@ impl App {
             self.empty_state(ui, Icon::History, pal.text_dim, tr("No local commits yet"));
             ui.add_space(6.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new(tr("A local commit is a snapshot kept outside of git (in .airlisp/).\nAfter making one, diffs and change markers start from it - handy when you\ncannot commit upstream, e.g. working on someone else's repository.")).color(pal.text_dim).size(12.0));
+                ui.label(RichText::new(tr("A local commit is a snapshot kept outside of git (in .air/).\nAfter making one, diffs and change markers start from it - handy when you\ncannot commit upstream, e.g. working on someone else's repository.")).color(pal.text_dim).size(12.0));
             });
             return;
         }

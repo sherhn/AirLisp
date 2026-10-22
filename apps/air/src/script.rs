@@ -987,7 +987,7 @@ impl App {
                 {
                     errors.push(format!("fraction {f:?}, expected <= {max}"));
                 }
-                if self.wsl.log.iter().any(|l| l.contains("@@airlisp")) {
+                if self.wsl.log.iter().any(|l| l.contains("@@air")) {
                     errors.push("the log shows the progress markers".to_string());
                 }
                 if !errors.is_empty() {

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build a self-contained AirLisp distribution that works right after unpacking:
+"""Build a self-contained Air distribution that works right after unpacking:
 the app, the CLI, a bundled SBCL (REPL, compiler, ASDF) and all licence notices.
 
 Usage:
   python tools/package.py [--sbcl-dir DIR] [--no-zip] [--skip-build]
 
 --sbcl-dir  folder with sbcl[.exe], sbcl.core and contrib/ (default: auto-detected installation).
-Result: target/dist/AirLisp-<version>-<os>-<arch>[.zip]
+Result: target/dist/Air-<version>-<os>-<arch>[.zip]
 """
 import argparse
 import json
@@ -55,7 +55,7 @@ def notices(sbcl_version):
     lines = [
         "# Third-party notices",
         "",
-        "AirLisp itself is dual licensed MIT OR Apache-2.0.",
+        "Air itself is dual licensed MIT OR Apache-2.0.",
         "",
         "## Bundled software",
         "",
@@ -80,18 +80,18 @@ def main():
     a = ap.parse_args()
 
     if not a.skip_build:
-        subprocess.run(["cargo", "build", "--release", "-p", "airlisp", "-p", "airlisp-cli"], cwd=ROOT, check=True)
+        subprocess.run(["cargo", "build", "--release", "-p", "air", "-p", "air-cli"], cwd=ROOT, check=True)
     sbcl = find_sbcl_dir(a.sbcl_dir)
     ver = version()
     arch = platform.machine().lower().replace("amd64", "x64").replace("x86_64", "x64")
-    name = f"AirLisp-{ver}-{platform.system().lower()}-{arch}"
+    name = f"Air-{ver}-{platform.system().lower()}-{arch}"
     dist = ROOT / "target" / "dist" / name
     if dist.exists():
         shutil.rmtree(dist)
     (dist / "lisp").mkdir(parents=True)
     (dist / "licenses").mkdir()
 
-    for exe in ("airlisp", "airlisp-cli"):
+    for exe in ("air", "air-cli"):
         src = ROOT / "target" / "release" / f"{exe}{EXE}"
         if not src.is_file():
             sys.exit(f"missing {src}; build first")
@@ -109,8 +109,8 @@ def main():
     (dist / "THIRD_PARTY_NOTICES.md").write_text(notices(sbcl_ver), encoding="utf-8")
     shutil.copy2(ROOT / "README.md", dist / "README.md")
     (dist / "START_HERE.txt").write_text(
-        "AirLisp - an IDE for Lisp\n\n"
-        f"Run {'airlisp.exe' if os.name == 'nt' else './airlisp'}. Nothing else has to be installed:\n"
+        "Air - an IDE for Lisp\n\n"
+        f"Run {'air.exe' if os.name == 'nt' else './air'}. Nothing else has to be installed:\n"
         "the REPL, compiler and ASDF come from the bundled SBCL in the 'lisp' folder.\n"
         "Git features and 'Get from Version Control' use the git on your PATH (https://git-scm.com).\n\n"
         f"{sbcl_ver} is bundled; its licence is in licenses/SBCL-COPYING.txt.\n",

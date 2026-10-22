@@ -1,4 +1,4 @@
-//! AirLisp - an IDE for Lisp.
+//! Air - an IDE for Lisp.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
@@ -69,7 +69,7 @@ fn parse_args() -> Args {
             }
             "--no-restore" => a.no_restore = true,
             "--help" | "-h" => {
-                println!("airlisp [PATH...] [--script FILE.json] [--size WxH] [--no-restore]");
+                println!("air [PATH...] [--script FILE.json] [--size WxH] [--no-restore]");
                 std::process::exit(0);
             }
             p => a.paths.push(PathBuf::from(p)),
@@ -82,13 +82,13 @@ fn main() -> eframe::Result {
     let args = parse_args();
     let settings = Settings::load();
     let (w, h) = args.size.unwrap_or((1280.0, 800.0));
-    let mut viewport = egui::ViewportBuilder::default().with_inner_size([w, h]).with_min_inner_size([640.0, 400.0]).with_title("AirLisp").with_decorations(false).with_app_id("airlisp");
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([w, h]).with_min_inner_size([640.0, 400.0]).with_title("Air").with_decorations(false).with_app_id("air");
     if let Some(icon) = brand::window_icon() {
         viewport = viewport.with_icon(std::sync::Arc::new(icon));
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     eframe::run_native(
-        "AirLisp",
+        "Air",
         options,
         Box::new(move |cc| {
             fonts::install(&cc.egui_ctx);

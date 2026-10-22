@@ -1,11 +1,11 @@
-//! The AirLisp logo: window icon and the logo drawn in the title bar, welcome screen and About dialog.
+//! The Air logo: window icon and the logo drawn in the title bar, welcome screen and About dialog.
 
 use std::io::Cursor;
 
 use eframe::egui::{self, Color32, Rect, TextureHandle, TextureOptions, pos2};
 
-const ICON_256: &[u8] = include_bytes!("../../../assets/icon/airlisp-256.png");
-const LOGO_128: &[u8] = include_bytes!("../../../assets/icon/airlisp-128.png");
+const ICON_256: &[u8] = include_bytes!("../../../assets/icon/air-256.png");
+const LOGO_128: &[u8] = include_bytes!("../../../assets/icon/air-128.png");
 
 /// Decode an RGBA8 PNG.
 pub fn decode_png(bytes: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
@@ -27,7 +27,7 @@ pub fn window_icon() -> Option<egui::IconData> {
 pub fn load_logo(ctx: &egui::Context) -> Option<TextureHandle> {
     let (w, h, rgba) = decode_png(LOGO_128)?;
     let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
-    Some(ctx.load_texture("airlisp-logo", img, TextureOptions::LINEAR))
+    Some(ctx.load_texture("air-logo", img, TextureOptions::LINEAR))
 }
 
 /// Paint the logo into `rect`; falls back to a plain accent tile if the texture is missing.

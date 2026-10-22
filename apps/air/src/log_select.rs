@@ -113,7 +113,7 @@ mod tests {
         Pos { line, col }
     }
 
-    const LOG: [&str; 4] = ["$ ls", "Doxyfile  README.md", "", "airlisp-5096: 1: make: Permission denied"];
+    const LOG: [&str; 4] = ["$ ls", "Doxyfile  README.md", "", "sandbox-5096: 1: make: Permission denied"];
 
     fn row(i: usize) -> String {
         LOG[i].to_string()
@@ -147,7 +147,7 @@ mod tests {
         let one = Selection::new(p(1, 0), p(1, 8));
         assert_eq!(selected_text(&one, 4, row), "Doxyfile");
         let several = Selection::new(p(0, 2), p(3, 9));
-        assert_eq!(selected_text(&several, 4, row), "ls\nDoxyfile  README.md\n\nairlisp-5");
+        assert_eq!(selected_text(&several, 4, row), "ls\nDoxyfile  README.md\n\nsandbox-5");
         // backwards, and past the end of the log
         assert_eq!(selected_text(&Selection::new(p(1, 8), p(1, 0)), 4, row), "Doxyfile");
         assert_eq!(selected_text(&Selection::new(p(3, 23), p(9, 0)), 4, row), "Permission denied");

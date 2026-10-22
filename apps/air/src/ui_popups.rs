@@ -389,7 +389,7 @@ impl App {
                     let r = self.text_field(ui, &mut input, tr("Message (optional)"));
                     widgets::focus_once(ui, &r, &mut just_opened);
                     ui.add_space(8.0);
-                    ui.label(RichText::new(tr("Saves a snapshot of your changes outside of git (in .airlisp/, invisible to git).\nDiffs and change markers start from it afterwards.")).color(self.pal.text_dim).size(12.0));
+                    ui.label(RichText::new(tr("Saves a snapshot of your changes outside of git (in .air/, invisible to git).\nDiffs and change markers start from it afterwards.")).color(self.pal.text_dim).size(12.0));
                     let (o, c) = self.ok_cancel(ui, tr("Create"));
                     ok |= o;
                     cancel |= c;
@@ -546,7 +546,7 @@ impl App {
                             let (r, _) = ui.allocate_exact_size(Vec2::splat(96.0), Sense::hover());
                             crate::brand::paint_logo(ui.painter(), r, self.logo.as_ref(), pal.accent);
                             ui.add_space(14.0);
-                            ui.label(RichText::new("AirLisp").font(fonts::semibold(24.0)));
+                            ui.label(RichText::new("Air").font(fonts::semibold(24.0)));
                             ui.label(RichText::new(i18n::fmt("Version {}", &[&env!("CARGO_PKG_VERSION")])).color(pal.text_dim));
                             ui.add_space(12.0);
                             ui.label(tr("An IDE for Lisp, written in Rust."));
@@ -882,7 +882,7 @@ impl App {
                 ui.add_space(8.0);
                 ui.vertical(|ui| {
                     ui.add_space(6.0);
-                    ui.label(RichText::new("AirLisp").font(fonts::semibold(26.0)));
+                    ui.label(RichText::new("Air").font(fonts::semibold(26.0)));
                     ui.label(RichText::new(tr("The IDE for Lisp")).color(pal.text_dim));
                 });
             });
