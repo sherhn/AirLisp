@@ -97,11 +97,17 @@ A project can be *built and run in Linux* while you work on Windows:
 * **make targets are run configurations** (`make all`, `make run`, `make debug`, `make clean`, test targets...).
   The output goes to the Run tool window; gcc, ld and nasm errors land in Problems and in the editor, with
   `make -C` sub-directories resolved. `make run` starts QEMU in its own window (WSLg).
-* **Build tools in one click.** A project built with make whose distribution lacks them shows a banner with
-  *Install build tools* (and `make`/`command not found` in the terminal or Run says why). Settings > Linux (WSL) >
-  *Linux projects* checks make, gcc (with 32-bit support), nasm, gdb, git and QEMU and installs what is missing,
-  with a progress bar; *Set up git* gives Linux git your name, e-mail and the
-  Windows credential manager (GitHub logins).
+* **Developer tools in one click.** A project built with make whose distribution lacks them shows a banner with
+  *Install developer tools* (and `make`/`command not found` in the terminal or Run says why). Settings > Linux (WSL)
+  > *Developer tools* shows what is there group by group and installs the rest, with a progress bar. On Ubuntu and
+  Debian that is: **C and C++** (build-essential, gdb, cmake, ninja, pkg-config, autotools, ccache, bear, 32-bit
+  gcc/g++), **Clang and LLVM** (clang, clangd, lldb, clang-format, clang-tidy), **Debugging and analysis** (valgrind,
+  strace, ltrace, gdb-multiarch, xxd), **Git and network** (git, curl, wget, ssh, rsync), **Files and text** (zip, unzip,
+  xz, jq, ripgrep, fd, tree, vim, nano, htop), **Documentation** (man pages, doxygen), **Python** (python3, pip, venv)
+  and **OS development** (nasm, QEMU, xorriso, GRUB tools) - about 230 MB on top of a fresh Ubuntu 24.04. Packages a
+  release does not have are skipped. Other distributions get the C toolchain, nasm, gdb, git and QEMU only. Language
+  runtimes (Node.js, Java, Go, Rust) are not included: install them with the distribution's package manager.
+  *Set up git* gives Linux git your name, e-mail and the Windows credential manager (GitHub logins);
 * **C, assembly, shell and makefiles are not Lisp**: they get their own highlighting, bracket matching, brace
   indentation, folding and comment markers, and never show false Lisp errors.
 
@@ -171,7 +177,7 @@ Windows: при открытии проекта с makefile AirLisp предло
 цели make, Lisp и REPL проекта работают в дистрибутиве; цели make (`all`, `run`, `debug`, `clean`, тесты) — это
 конфигурации запуска, ошибки gcc/ld/nasm попадают в Problems и в редактор. Клонировать можно прямо в Linux
 (`~/projects`, git дистрибутива) или в папку Windows с окончаниями строк Linux. На странице Linux (WSL) одной кнопкой
-ставятся make, gcc с 32-битной поддержкой, nasm, gdb, git и QEMU, а git в Linux настраивается на ваши имя, почту и вход
+ставятся инструменты разработчика (C/C++ с cmake и ninja, clang/clangd, valgrind, strace, git, curl, python3/pip, jq, ripgrep, doxygen, nasm и QEMU — около 230 МБ в Ubuntu 24.04), а git в Linux настраивается на ваши имя, почту и вход
 в GitHub из Windows. Файлы C, ассемблера, shell и makefile подсвечиваются по-своему и не дают ложных Lisp-ошибок.
 Если в дистрибутиве нет этих инструментов, сверху появляется плашка «Установить инструменты сборки», а `make` в терминале
 или в Run объясняет причину (`make: Permission denied`, код 127 значит «не установлен»), с полосой прогресса установки.
