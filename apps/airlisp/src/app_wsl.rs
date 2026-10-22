@@ -75,7 +75,7 @@ pub struct WslState {
     pub sbcl: HashMap<String, Result<SbclCheck, String>>,
     sbcl_rx: Option<Receiver<(String, Result<SbclCheck, String>)>>,
     pub checking_sbcl: Option<String>,
-    /// Build tools found in each distribution: (tool, found) (`Err`: the check failed).
+    /// Developer tools found in each distribution: (program, found) (`Err`: the check failed).
     pub tools: HashMap<String, Result<Vec<(String, bool)>, String>>,
     tools_rx: Option<Receiver<(String, Result<Vec<(String, bool)>, String>)>>,
     pub task: Option<RunningTask>,
@@ -322,9 +322,9 @@ impl App {
         self.wsl.tools_rx.is_some()
     }
 
-    /// Install the build tools of C/assembly projects inside `distro`.
+    /// Install the developer tools (compilers, debuggers, everyday tools) inside `distro`.
     pub fn wsl_install_tools(&mut self, distro: &str) {
-        let title = i18n::fmt("Installing build tools in {}...", &[&distro]);
+        let title = i18n::fmt("Installing developer tools in {}...", &[&distro]);
         self.wsl_start(SetupTask::InstallTools(distro.to_string()), wsl::install_tools_command(distro), title);
     }
 
@@ -573,8 +573,8 @@ impl App {
             SetupTask::InstallDistro(n) | SetupTask::ImportFile(n) => fail(i18n::fmt("{} was not installed", &[&n])),
             SetupTask::InstallSbcl(d) if ok => Ok(i18n::fmt("SBCL is installed in {}.", &[&d])),
             SetupTask::InstallSbcl(d) => fail(i18n::fmt("SBCL was not installed in {}", &[&d])),
-            SetupTask::InstallTools(d) if ok => Ok(i18n::fmt("The build tools are installed in {}.", &[&d])),
-            SetupTask::InstallTools(d) => fail(i18n::fmt("The build tools were not installed in {}", &[&d])),
+            SetupTask::InstallTools(d) if ok => Ok(i18n::fmt("The developer tools are installed in {}.", &[&d])),
+            SetupTask::InstallTools(d) => fail(i18n::fmt("The developer tools were not installed in {}", &[&d])),
             SetupTask::GitSetup(d) if ok => Ok(i18n::fmt("Git in {} uses your name, e-mail and Windows logins.", &[&d])),
             SetupTask::GitSetup(d) => fail(i18n::fmt("Git in {} was not set up", &[&d])),
         });

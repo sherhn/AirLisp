@@ -126,7 +126,8 @@ impl App {
         let mut act: Option<Act> = None;
         // how far the running step has got, and how long it has been going
         let task_progress: Option<(Progress, u64)> = self.wsl.task.as_ref().map(|t| (t.tracker.progress(), t.started.elapsed().as_secs()));
-        let tools_ready = matches!(self.wsl.tools.get(&selected), Some(Ok(v)) if v.iter().all(|(_, f)| *f));
+        // the setup overview counts the tools a project needs to be built; the page lists the rest
+        let tools_ready = matches!(self.wsl.tools.get(&selected), Some(Ok(v)) if lisp_runtime::wsl::missing_core(v).is_empty());
 
         // ---------------------------------------------------------------- intro
         ui.label(RichText::new(tr("Work as on Linux without a virtual machine: WSL runs a real Linux next to Windows, and AirLisp starts SBCL, the REPL and the terminal inside it. Your files stay where they are.")).color(pal.text_dim).size(12.5));
@@ -143,7 +144,7 @@ impl App {
 
         // ---------------------------------------------------------------- the whole setup at a glance
         // four steps; the running one fills as it goes
-        let steps = [(tr("WSL"), installed), (tr("Distribution"), !distros.is_empty()), (tr("SBCL"), ready), (tr("Build tools"), tools_ready)];
+        let steps = [(tr("WSL"), installed), (tr("Distribution"), !distros.is_empty()), (tr("SBCL"), ready), (tr("Dev tools"), tools_ready)];
         let running_step = running.as_ref().and_then(|t| match t {
             SetupTask::InstallWsl => Some(0),
             SetupTask::InstallDistro(_) | SetupTask::ImportFile(_) => Some(1),
@@ -165,7 +166,7 @@ impl App {
                             Some(SetupTask::InstallWsl) => tr("Installing WSL...").to_string(),
                             Some(SetupTask::InstallDistro(n)) | Some(SetupTask::ImportFile(n)) => i18n::fmt("Installing {}...", &[n]),
                             Some(SetupTask::InstallSbcl(d)) => i18n::fmt("Installing SBCL in {}...", &[d]),
-                            Some(SetupTask::InstallTools(d)) => i18n::fmt("Installing build tools in {}...", &[d]),
+                            Some(SetupTask::InstallTools(d)) => i18n::fmt("Installing developer tools in {}...", &[d]),
                             Some(SetupTask::GitSetup(d)) => i18n::fmt("Setting up git in {}...", &[d]),
                             None => String::new(),
                         };
@@ -401,28 +402,43 @@ impl App {
             if tools.is_none() && !checking_tools && installed {
                 act = act.or(Some(Act::CheckTools(selected.clone())));
             }
-            group(ui, &pal, tr("Linux projects: C, assembly, make"), |ui, rows| {
-                let missing: Vec<String> = tools.as_ref().and_then(|r| r.as_ref().ok()).map(|v| v.iter().filter(|(_, f)| !f).map(|(t, _)| t.clone()).collect()).unwrap_or_default();
+            group(ui, &pal, tr("Developer tools"), |ui, rows| {
+                let found: Vec<(String, bool)> = tools.as_ref().and_then(|r| r.as_ref().ok()).cloned().unwrap_or_default();
+                let is_there = |p: &str| found.iter().any(|(n, ok)| *ok && n == p);
+                let missing = found.iter().filter(|(_, ok)| !*ok).count();
                 let desc = match &tools {
-                    _ if checking_tools => i18n::fmt("Looking for make, gcc, nasm, gdb, git and QEMU in {}...", &[&selected]),
-                    Some(Ok(_)) if missing.is_empty() => tr("make, gcc (with 32-bit support), nasm, gdb, git and QEMU are installed.").to_string(),
-                    Some(Ok(_)) => i18n::fmt("Missing: {}", &[&missing.join(", ")]),
+                    _ if checking_tools => i18n::fmt("Looking for the programs below in {}...", &[&selected]),
+                    Some(Ok(_)) if missing == 0 => tr("Everything below is installed.").to_string(),
+                    Some(Ok(_)) => i18n::fmt("{0} of {1} programs are missing. Ubuntu and Debian get everything below; other distributions only the C toolchain, nasm, gdb, git and QEMU.", &[&missing, &found.len()]),
                     Some(Err(e)) => i18n::fmt("Could not check {0}: {1}", &[&selected, &crate::ui_chrome::elide(e, 140)]),
                     None => tr("Not checked yet.").to_string(),
                 };
-                rows.row(ui, &pal, tr("Build tools"), &desc, 210.0, |ui| {
+                rows.row(ui, &pal, tr("Compilers, debuggers and everyday tools"), &desc, 230.0, |ui| {
                     if checking_tools {
                         spinner(ui, &pal);
-                    } else if matches!(&tools, Some(Ok(_))) && missing.is_empty() {
+                    } else if matches!(&tools, Some(Ok(_))) && missing == 0 {
                         status_ok(ui, &pal, tr("Ready"));
                     } else {
                         ui.add_enabled_ui(!busy_task, |ui| {
-                            if widgets::primary_button(ui, &pal, tr("Install build tools")).clicked() {
+                            if widgets::primary_button(ui, &pal, tr("Install developer tools")).clicked() {
                                 act = Some(Act::InstallTools(selected.clone()));
                             }
                         });
                     }
                 });
+                // what is in it, and what is already there
+                if !found.is_empty() {
+                    for g in &lisp_runtime::wsl::TOOL_GROUPS {
+                        let absent: Vec<&str> = g.programs.iter().copied().filter(|p| !is_there(p)).collect();
+                        rows.row(ui, &pal, tr(g.name), &g.programs.join(", "), 120.0, |ui| {
+                            if absent.is_empty() {
+                                status_ok(ui, &pal, tr("Ready"));
+                            } else {
+                                ui.label(RichText::new(i18n::fmt("{} missing", &[&absent.len()])).color(pal.warning).font(fonts::semibold(12.5)));
+                            }
+                        });
+                    }
+                }
                 rows.row(ui, &pal, tr("Git in Linux"), tr("Use your git name, e-mail and GitHub logins from Windows in this distribution (needs the Linux user from its first start)."), 210.0, |ui| {
                     ui.add_enabled_ui(!busy_task, |ui| {
                         if widgets::secondary_button(ui, &pal, tr("Set up git")).clicked() {

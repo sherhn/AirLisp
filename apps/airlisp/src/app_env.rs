@@ -147,7 +147,8 @@ impl App {
         }
         let t = self.wsl_target()?;
         let Some(Ok(found)) = self.wsl.tools.get(&t.distro) else { return None };
-        let missing: Vec<String> = found.iter().filter(|(_, ok)| !*ok).map(|(n, _)| n.clone()).collect();
+        // what the project needs to be built; the other developer tools are offered on the Linux page
+        let missing = lisp_runtime::wsl::missing_core(found);
         (!missing.is_empty()).then_some((t.distro, missing))
     }
 
@@ -163,8 +164,8 @@ impl App {
         self.forget_build_tools();
         let is_tool = |p: &str| lisp_runtime::wsl::BUILD_TOOLS.contains(&p) || p.starts_with("qemu") || matches!(p, "cc" | "g++" | "c++" | "as" | "ar" | "nm" | "objdump");
         Some(match program.filter(|p| is_tool(p)) {
-            Some(p) => i18n::fmt("{0} is not installed in Linux ({1}). Install the build tools: Settings > Linux (WSL) > Install build tools.", &[&p, &t.distro]),
-            None => i18n::fmt("Command not found in Linux ({}). Build tools (make, gcc, nasm, gdb, QEMU) can be installed in Settings > Linux (WSL).", &[&t.distro]),
+            Some(p) => i18n::fmt("{0} is not installed in Linux ({1}). Install the developer tools: Settings > Linux (WSL) > Install developer tools.", &[&p, &t.distro]),
+            None => i18n::fmt("Command not found in Linux ({}). Developer tools (make, gcc, nasm, gdb, QEMU and more) can be installed in Settings > Linux (WSL).", &[&t.distro]),
         })
     }
 
@@ -199,7 +200,7 @@ impl App {
                     if widgets::icon_button(ui, &pal, Icon::Close, 26.0, pal.text_dim, tr("Not now")).clicked() {
                         later = true;
                     }
-                    if widgets::primary_button(ui, &pal, tr("Install build tools")).clicked() {
+                    if widgets::primary_button(ui, &pal, tr("Install developer tools")).clicked() {
                         install = true;
                     }
                 });
@@ -213,7 +214,7 @@ impl App {
         }
     }
 
-    /// Install the build tools and show the progress on the Linux page.
+    /// Install the developer tools and show the progress on the Linux page.
     pub fn install_build_tools_here(&mut self, distro: &str) {
         self.wsl_install_tools(distro);
         self.open_settings_page(crate::ui_settings::WSL_PAGE);
