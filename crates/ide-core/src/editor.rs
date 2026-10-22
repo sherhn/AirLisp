@@ -86,12 +86,17 @@ fn class_of(c: char) -> Class {
     }
 }
 
+/// Indentation step of brace languages (C and friends).
+const C_INDENT: usize = 4;
+
 pub struct Editor {
     text: String,
     caret: usize,
     anchor: usize,
     want_col: Option<usize>,
     dialect: Dialect,
+    /// Set for a file that is not Lisp (C, assembly, a makefile...): its own indentation and comments.
+    other: Option<lisp_syntax::other::Lang>,
     undo: Vec<Entry>,
     redo: Vec<Entry>,
     pending: Vec<Edit>,
@@ -112,6 +117,7 @@ impl Editor {
             anchor: 0,
             want_col: None,
             dialect,
+            other: None,
             undo: Vec::new(),
             redo: Vec::new(),
             pending: Vec::new(),
@@ -142,6 +148,23 @@ impl Editor {
     pub fn set_dialect(&mut self, d: Dialect) {
         self.dialect = d;
         *self.parsed.borrow_mut() = None;
+    }
+    /// The language of a file that is not Lisp (`None`: Lisp).
+    pub fn other_lang(&self) -> Option<lisp_syntax::other::Lang> {
+        self.other
+    }
+    pub fn set_other_lang(&mut self, l: Option<lisp_syntax::other::Lang>) {
+        self.other = l;
+    }
+    pub fn is_lisp(&self) -> bool {
+        self.other.is_none()
+    }
+    /// The bracket matching the one at the caret: by the Lisp reader, or by the lexer of another language.
+    pub fn matching_bracket(&self, off: usize) -> Option<(usize, usize)> {
+        match self.other {
+            Some(l) => lisp_syntax::other::matching_bracket(&self.text, l, off),
+            None => self.parsed().matching_bracket(off),
+        }
     }
     pub fn revision(&self) -> u64 {
         self.revision
@@ -655,6 +678,15 @@ impl Editor {
                 let o = self.next_boundary(caret);
                 self.set_caret_raw(o, o);
             }
+            '}' if !sel && self.other.is_some_and(|l| l.braces()) && caret > self.line_start_of(caret) && self.text[self.line_start_of(caret)..caret].chars().all(|ch| ch == ' ' || ch == '\t') => {
+                // a closing brace typed first on a line goes back one level
+                let ls = self.line_start_of(caret);
+                let keep = (caret - ls).saturating_sub(C_INDENT);
+                self.splice(ls + keep, caret, "");
+                let c = ls + keep;
+                self.set_caret_raw(c, c);
+                self.replace_selection_with("}");
+            }
             '"' if !in_com => {
                 if in_str {
                     if !sel && next == Some('"') && prev != Some('\\') {
@@ -790,6 +822,13 @@ impl Editor {
         self.transact(EditKind::Other, |ed| {
             ed.delete_selection_inner();
             let c = ed.caret;
+            if ed.other.is_some_and(|l| l.braces()) && ed.char_before(c) == Some('{') && ed.char_after(c) == Some('}') {
+                // `{|}` + Enter: the closing brace gets a line of its own, the caret an indented one
+                ed.splice(c, c, "\n\n");
+                ed.indent_line_at(c + 2);
+                ed.indent_line_at(c + 1);
+                return;
+            }
             ed.splice(c, c, "\n");
             ed.indent_line_at(c + 1);
         });
@@ -797,12 +836,49 @@ impl Editor {
 
     /// Re-indent the line starting at `ls` and put the caret after the new indent.
     fn indent_line_at(&mut self, ls: usize) {
+        if let Some(lang) = self.other {
+            self.indent_line_plain(ls, lang);
+            return;
+        }
         let p = Rc::new(parse(&self.text, self.dialect));
         let want = indent::indent_for_line_start_parsed(&self.text, &p, ls).unwrap_or(0);
         let le = self.line_end_of(ls);
         let ws = self.text[ls..le].len() - self.text[ls..le].trim_start_matches([' ', '\t']).len();
         self.splice(ls, ls + ws, &" ".repeat(want));
         let c = ls + want;
+        self.set_caret_raw(c, c);
+    }
+
+    /// Indentation for a language that is not Lisp: the previous non-blank line's, one level deeper after an
+    /// opening brace, one level shallower when the line starts with a closing one.
+    fn indent_line_plain(&mut self, ls: usize, lang: lisp_syntax::other::Lang) {
+        let mut prev = String::new();
+        let mut p = ls;
+        while p > 0 {
+            let ps = self.line_start_of(p - 1);
+            let line = &self.text[ps..p - 1];
+            if !line.trim().is_empty() {
+                prev = line.to_string();
+                break;
+            }
+            p = ps;
+        }
+        let le = self.line_end_of(ls);
+        let cur = self.text[ls..le].to_string();
+        let ws = cur.len() - cur.trim_start_matches([' ', '\t']).len();
+        let mut want: String = prev.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+        if lang.braces() {
+            let code = prev.split("//").next().unwrap_or("").trim_end();
+            if code.ends_with('{') || code.ends_with('(') {
+                want.push_str(&" ".repeat(C_INDENT));
+            }
+            if cur.trim_start().starts_with('}') {
+                let n = want.len().saturating_sub(C_INDENT);
+                want.truncate(n);
+            }
+        }
+        self.splice(ls, ls + ws, &want);
+        let c = ls + want.len();
         self.set_caret_raw(c, c);
     }
 
@@ -939,6 +1015,10 @@ impl Editor {
             if non_empty.is_empty() {
                 return;
             }
+            if let Some(lang) = ed.other {
+                ed.toggle_comment_with(&lines, lang.line_comment());
+                return;
+            }
             let all_commented = non_empty.iter().all(|(_, t)| t.trim_start().starts_with(';'));
             let (a0, c0) = (ed.anchor, ed.caret);
             let mut deltas: Vec<(usize, isize)> = Vec::new(); // (position, delta) for caret fixup
@@ -984,6 +1064,41 @@ impl Editor {
             ed.anchor = fix(a0).min(ed.text.len());
             ed.caret = fix(c0).min(ed.text.len());
         });
+    }
+
+    /// Comment or uncomment `lines` (start offset, text) with the marker of a language that is not Lisp.
+    fn toggle_comment_with(&mut self, lines: &[(usize, String)], marker: &str) {
+        let non_empty: Vec<&(usize, String)> = lines.iter().filter(|(_, t)| !t.trim().is_empty()).collect();
+        let all_commented = non_empty.iter().all(|(_, t)| t.trim_start().starts_with(marker));
+        let min_indent = non_empty.iter().map(|(_, t)| t.len() - t.trim_start().len()).min().unwrap_or(0);
+        let (a0, c0) = (self.anchor, self.caret);
+        let mut shift: Vec<(usize, isize)> = Vec::new();
+        for (ls, t) in lines.iter().rev() {
+            if t.trim().is_empty() {
+                continue;
+            }
+            if all_commented {
+                let ind = t.len() - t.trim_start().len();
+                let n = marker.len() + usize::from(t[ind + marker.len()..].starts_with(' '));
+                self.splice(ls + ind, ls + ind + n, "");
+                shift.push((ls + ind, -(n as isize)));
+            } else {
+                let ins = format!("{marker} ");
+                self.splice(ls + min_indent, ls + min_indent, &ins);
+                shift.push((ls + min_indent, ins.len() as isize));
+            }
+        }
+        let fix = |p: usize| -> usize {
+            let mut q = p as isize;
+            for &(pos, d) in &shift {
+                if p >= pos {
+                    q += d.max(-((p - pos) as isize));
+                }
+            }
+            q.max(0) as usize
+        };
+        self.anchor = fix(a0).min(self.text.len());
+        self.caret = fix(c0).min(self.text.len());
     }
 
     pub fn indent_lines(&mut self) {
@@ -1055,12 +1170,18 @@ impl Editor {
 
     /// Reindent the whole file (Reformat Code).
     pub fn reformat(&mut self) {
+        if self.other.is_some() {
+            return;
+        }
         let new = indent::format(&self.text, self.dialect);
         self.apply_text_keeping_caret(new);
     }
 
     /// Reindent only the selected lines / current line (Auto-indent lines).
     pub fn auto_indent_lines(&mut self) {
+        if self.other.is_some() {
+            return;
+        }
         let formatted = indent::format(&self.text, self.dialect);
         let (l1, l2) = self.selected_lines();
         let old_lines: Vec<&str> = self.text.split('\n').collect();
@@ -1609,5 +1730,46 @@ mod tests {
             self.undo();
             self.redo();
         }
+    }
+
+    #[test]
+    fn c_files_indent_by_braces_and_comment_with_slashes() {
+        let mut e = Editor::new("int main(void) {", Dialect::CommonLisp);
+        e.set_other_lang(Some(lisp_syntax::other::Lang::C));
+        e.set_caret(e.text().len(), false);
+        e.type_text("}");
+        e.set_caret(e.text().len() - 1, false);
+        e.insert_newline();
+        assert_eq!(e.text(), "int main(void) {\n    \n}");
+        e.type_text("x = 1; // (not lisp");
+        e.insert_newline();
+        assert_eq!(e.text(), "int main(void) {\n    x = 1; // (not lisp\n    \n}");
+        e.type_text("}");
+        assert_eq!(e.text(), "int main(void) {\n    x = 1; // (not lisp\n}\n}");
+        e.undo();
+        e.set_caret(20, false);
+        e.toggle_line_comment();
+        assert!(e.text().contains("\n    // x = 1; // (not lisp"), "{}", e.text());
+        e.toggle_line_comment();
+        assert!(e.text().contains("\n    x = 1; // (not lisp"), "{}", e.text());
+        // the bracket inside the comment does not break matching
+        let open = e.text().find('{').unwrap();
+        assert_eq!(e.matching_bracket(open), Some((open, e.text().rfind('}').unwrap())));
+        // Lisp reformatting leaves C alone
+        let before = e.text().to_string();
+        e.reformat();
+        assert_eq!(e.text(), before);
+    }
+
+    #[test]
+    fn makefiles_keep_the_previous_indentation() {
+        let mut e = Editor::new("all:\n\tmake -C x", Dialect::CommonLisp);
+        e.set_other_lang(Some(lisp_syntax::other::Lang::Make));
+        e.set_caret(e.text().len(), false);
+        e.insert_newline();
+        assert_eq!(e.text(), "all:\n\tmake -C x\n\t");
+        e.set_caret(5, false);
+        e.toggle_line_comment();
+        assert_eq!(e.text(), "all:\n\t# make -C x\n\t");
     }
 }

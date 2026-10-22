@@ -5,6 +5,7 @@ pub mod dialect;
 pub mod highlight;
 pub mod indent;
 pub mod lexer;
+pub mod other;
 pub mod outline;
 pub mod parse;
 pub mod structure;
