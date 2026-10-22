@@ -13,7 +13,7 @@ use crate::theme::Palette;
 use crate::widgets::{self, TextField};
 
 /// The settings pages; `WSL_PAGE` is the index of the Linux (WSL) one.
-pub const PAGES: [(&str, Icon); 6] = [("Appearance", Icon::Palette), ("Editor", Icon::Code), ("Lisp & REPL", Icon::Repl), ("Linux (WSL)", Icon::Linux), ("Version Control", Icon::Branch), ("Keymap", Icon::Keyboard)];
+pub const PAGES: [(&str, Icon); 7] = [("Appearance", Icon::Palette), ("Editor", Icon::Code), ("Lisp & REPL", Icon::Repl), ("Linux (WSL)", Icon::Linux), ("Modules", Icon::Puzzle), ("Version Control", Icon::Branch), ("Keymap", Icon::Keyboard)];
 pub const WSL_PAGE: usize = 3;
 
 const DIALOG_W: f32 = 860.0;
@@ -79,6 +79,8 @@ impl App {
         let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
         let mut changed_theme = false;
         let mut redetect = false;
+        let mut registry_changed = false;
+        let mut open_modules = false;
         let screen = ctx.content_rect();
         let (dw, dh) = (DIALOG_W.min(screen.width() - 40.0), DIALOG_H.min(screen.height() - 40.0));
         egui::Area::new(egui::Id::new("settings")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
@@ -189,6 +191,47 @@ impl App {
                         }
                         WSL_PAGE => self.draw_wsl_page(ui),
                         4 => {
+                            group(ui, &pal, tr("Where modules come from"), |ui, rows| {
+                                rows.row(ui, &pal, tr("Registry"), tr("A web address or a folder with the list of modules; leave empty for the published one"), 130.0, |ui| {
+                                    if widgets::secondary_button(ui, &pal, tr("Browse...")).clicked()
+                                        && let Some(d) = rfd::FileDialog::new().pick_folder()
+                                    {
+                                        self.settings.registry_url = d.to_string_lossy().into_owned();
+                                        registry_changed = true;
+                                    }
+                                });
+                                let r = TextField::new(&mut self.settings.registry_url).hint(tr("the published registry")).icon(Icon::Globe).show(ui, &pal);
+                                if r.lost_focus() {
+                                    registry_changed = true;
+                                }
+                                ui.add_space(10.0);
+                                let now = match (&self.mods.index_source, &self.mods.index_error) {
+                                    (_, Some(e)) => (i18n::fmt("Registry: {}", &[e]), pal.error),
+                                    (Some(s), None) => (i18n::fmt("Registry: {}", &[&s.label()]), pal.ok),
+                                    (None, None) => (tr("The list of modules has not been loaded yet").to_string(), pal.text_dim),
+                                };
+                                ui.label(RichText::new(now.0).color(now.1).size(12.0));
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    if widgets::secondary_button(ui, &pal, tr("Check the registry again")).clicked() {
+                                        registry_changed = true;
+                                    }
+                                    if widgets::secondary_button(ui, &pal, tr("Open Modules")).clicked() {
+                                        open_modules = true;
+                                    }
+                                });
+                                ui.add_space(14.0);
+                            });
+                            if let Some(store) = &self.mods.store {
+                                group(ui, &pal, tr("Installed modules"), |ui, _| {
+                                    ui.label(RichText::new(tr("Modules are kept in this folder; remove one in the Modules tab")).color(pal.text_dim).size(12.0));
+                                    ui.add_space(4.0);
+                                    ui.label(RichText::new(store.dir().display().to_string()).size(12.5));
+                                    ui.add_space(14.0);
+                                });
+                            }
+                        }
+                        5 => {
                             group(ui, &pal, tr("Get from Version Control"), |ui, rows| {
                                 rows.row(ui, &pal, tr("Default clone directory"), tr("Parent folder for cloned repositories"), 130.0, |ui| {
                                     if widgets::secondary_button(ui, &pal, tr("Browse...")).clicked()
@@ -227,16 +270,29 @@ impl App {
             self.theme_changed();
             self.pal.apply(ctx);
         }
+        if registry_changed {
+            // look at the registry named now
+            self.mods.index = None;
+            self.mods.index_error = None;
+            self.save_settings();
+            self.modules_fetch_index();
+        }
         if redetect {
             self.settings.lisp_path = lisp_path.clone();
             self.lisp = self.resolve_lisp();
             detected = self.lisp.as_ref().map(|l| l.describe()).unwrap_or_default();
+        }
+        if open_modules {
+            close = true;
         }
         if close {
             self.settings.lisp_path = lisp_path;
             self.lisp = self.resolve_lisp();
             self.save_settings();
             self.editor_focus = true;
+            if open_modules {
+                self.open_modules_tab();
+            }
         } else {
             self.popup = Popup::Settings { lisp_path, detected, filter, page };
         }

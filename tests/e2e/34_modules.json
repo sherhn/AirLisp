@@ -58,5 +58,12 @@
   {"op": "assert_modules", "installed": ["c-cpp", "markdown"]},
   {"op": "open", "path": "${PROJ}/tools/demo.py"},
   {"op": "assert_language", "value": "plain"},
+
+  {"op": "log", "value": "the registry can be named in Settings"},
+  {"op": "command", "value": "app.settings"},
+  {"op": "settings_page", "value": 4},
+  {"op": "frames", "value": 4},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_settings.png"},
+  {"op": "key", "value": "Escape"},
   {"op": "quit"}
 ]
