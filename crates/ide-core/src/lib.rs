@@ -13,6 +13,7 @@ pub mod github;
 pub mod graph;
 pub mod index;
 pub mod localvcs;
+pub mod modules;
 pub mod search;
 pub mod settings;
 pub mod workspace;
