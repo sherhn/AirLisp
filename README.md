@@ -30,6 +30,15 @@ run line for C), **Linux tool groups** for the project's WSL distribution (`gcc`
   configurations and the Lisp commands go away.
 * **Run per language.** *Run Current File* (the *Current File* run configuration) runs a file with the run command of
   the module of its language, in the project's Linux or on Windows; output and compiler messages land in Run and Problems.
+* **Preview of Markdown and reStructuredText.** The Markdown and reStructuredText modules open their files in three modes,
+  as in PyCharm: *Editor*, *Editor and Preview* (side by side, scrolled together in both directions) and *Preview*. The
+  three buttons are at the right end of the breadcrumbs, and View > *Editor Only* / *Editor and Preview* / *Preview Only*
+  do the same. The preview draws headings, emphasis, links (a link to `#section` scrolls to it, a link to a file opens
+  it, a web address opens the browser), lists and task lists, tables, quotes, GitHub alerts and reStructuredText
+  admonitions, images next to the document (PNG), and code blocks coloured by the module of their language. The
+  parsers (`air-markup`) cover CommonMark with the GitHub extensions, and the reStructuredText of Sphinx: sections,
+  lists, literal blocks, grid / simple / list / csv tables and directives such as `note`, `code-block`, `image`,
+  `toctree` and `py:function`.
 * **Safe downloads.** The registry's `index.json` lists the size and SHA-256 of every file; a module is checked before it is
   put in place (atomically, in the settings folder under `modules/`). The list comes from
   `https://raw.githubusercontent.com/sherhn/AirLisp/main/registry`, or from a web address or folder named in
@@ -38,7 +47,8 @@ run line for C), **Linux tool groups** for the project's WSL distribution (`gcc`
 * **Write your own.** Add `tools/registry_src/<name>.py` (see `python.py`), list it in `tools/build_registry.py` and run
   `python tools/build_registry.py [--covers]`: it writes `registry/` (manifests, covers, the checksummed index). The
   grammar rules (`match`, `words`, `region`, `captures`, outline patterns) are the `air-lang` crate's JSON format; the
-  tests of `crates/ide-core/tests/registry.rs` check every shipped module against real code samples.
+  tests of `crates/ide-core/tests/registry.rs` check every shipped module against real code samples. A language with `"preview": "markdown"` or `"rst"` gives its
+  files the preview.
 
 Covers and the icon are drawn by `tools/glass.py` and `tools/covers.py`.
 
@@ -55,6 +65,10 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
   lookup straight from the running image.
 * **Run & compile** - Shift+F10 runs the file, Ctrl+F9 compiles with the real compiler and maps
   warnings/errors back to source ranges (Problems tool window + squiggles + error stripe).
+* **Documentation on hover** - rest the pointer on a name and a popup shows its arguments and what its author wrote: for
+  Lisp from the project's own definition (lambda list and docstring) or, with the REPL running, from the image itself
+  (`(car list)`, the documentation string); for the languages of modules from the definition found in the project, with
+  its docstring (Python) or the comment block above it (`///`, `/** */`, `#`, `;`), also when it is in another file.
 * **Navigation** - Search Everywhere (Double Shift), Go to File/Symbol/Line, Recent Files,
   File Structure, Go to Declaration (Ctrl+B / Ctrl+click), Back/Forward, Find Usages, Find in Files.
 * **Refactoring** - Rename symbol across the project (token based: strings and comments untouched).
@@ -159,6 +173,7 @@ a word or path, triple click a line, **Ctrl+A** selects everything, **Ctrl+C** o
 |---|---|
 | `crates/lisp-syntax` | the Lisp reader: lexer, bracket matching, indentation, structural edits, outline, highlighting (no deps) |
 | `crates/air-lang` | languages as data: the grammar engine behind the modules (highlighting, outline, folding, indentation) |
+| `crates/air-markup` | Markdown and reStructuredText parsed into one document model, for the preview (no deps) |
 | `crates/ide-core` | editor model, command registry + keymap, project model, fuzzy/text search, symbol index, settings, the module store and registry client |
 | `crates/lisp-runtime` | SBCL discovery, REPL protocol (`lisp/repl-server.lisp`), file runner, compiler diagnostics |
 | `apps/air` | the GUI (eframe/egui) incl. the JSON automation harness |
@@ -209,6 +224,19 @@ Air - IDE из модулей, написанная на Rust. Ядро: ред�
 GitHub (`registry/`), из адреса или папки в Настройки > Модули, либо из копии рядом с программой (работает без сети).
 «Запуск текущего файла» запускает файл командой его языка из модуля — в Linux проекта или в Windows. Если модуль Lisp
 выключен, REPL, ASDF и команды Lisp скрываются; WSL и остальное ядро от модулей не зависят.
+
+**Просмотр Markdown и reStructuredText.** Файлы модулей Markdown и reStructuredText открываются в трёх режимах, как в
+PyCharm: «Только редактор», «Редактор и просмотр» (рядом, прокрутка синхронна в обе стороны) и «Только просмотр».
+Три кнопки — справа в «хлебных крошках», те же команды есть в меню View. Просмотр рисует заголовки, выделение, ссылки
+(ссылка на `#раздел` прокручивает к нему, на файл — открывает его, веб-адрес — браузер), списки и задачи, таблицы,
+цитаты, GitHub-предупреждения и блоки note/warning из rst, PNG-картинки рядом с документом и блоки кода, окрашенные
+модулем их языка. Разбор — отдельный крейт `air-markup`: CommonMark с расширениями GitHub и rst из Sphinx (разделы,
+списки, литеральные блоки, таблицы, директивы `note`, `code-block`, `image`, `toctree`, `py:function`).
+
+**Документация при наведении.** Если задержать указатель на имени, всплывает окно с аргументами и описанием: для Lisp —
+из определения в проекте (лямбда-список и докстрока) или, когда запущен REPL, из самого образа; для языков модулей —
+из найденного в проекте определения с докстрокой (Python) или комментарием над ним (`///`, `/** */`, `#`, `;`), в том
+числе из другого файла.
 
 **Репозитории GitHub.** Во вкладке GitHub диалога «Получить из системы контроля версий» виден список ваших
 репозиториев (в том числе приватных): поиск, значки форков и архивов, язык, звёзды; клик выбирает, двойной клик
