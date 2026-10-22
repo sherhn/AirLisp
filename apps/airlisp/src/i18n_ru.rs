@@ -793,4 +793,10 @@ pub const RU: &[(&str, &str)] = &[
     // console copy
     ("Select all", "Выделить всё"),
     ("Copy all", "Копировать всё"),
+    // missing build tools
+    ("Build tools are missing in {}", "В {} не хватает инструментов сборки"),
+    ("Needed to build and run this project, but not found: {}", "Нужны для сборки и запуска проекта, но не найдены: {}"),
+    ("{0} is not installed in Linux ({1}). Install the build tools: Settings > Linux (WSL) > Install build tools.", "{0} не установлен в Linux ({1}). Установите инструменты сборки: Настройки > Linux (WSL) > Установить инструменты сборки."),
+    ("Command not found in Linux ({}). Build tools (make, gcc, nasm, gdb, QEMU) can be installed in Settings > Linux (WSL).", "Команда не найдена в Linux ({}). Инструменты сборки (make, gcc, nasm, gdb, QEMU) можно установить в Настройки > Linux (WSL)."),
+    ("make is not installed", "make не установлен"),
 ];
