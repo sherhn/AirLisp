@@ -1,0 +1,32 @@
+[
+  {"op": "open_project", "path": "${PROJ}"},
+  {"op": "wait", "what": "index"},
+
+  {"op": "log", "value": "a long command runs in the terminal"},
+  {"op": "key", "value": "Alt+F12"},
+  {"op": "assert_bottom", "value": "terminal"},
+  {"op": "frames", "value": 4},
+  {"op": "text", "value": "ping -n 60 127.0.0.1"},
+  {"op": "key", "value": "Enter"},
+  {"op": "wait", "what": "term_contains", "value": "TTL=", "timeout": 20},
+  {"op": "frames", "value": 3},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_running.png"},
+
+  {"op": "log", "value": "Ctrl+C with nothing selected stops it, and the program it started"},
+  {"op": "copy"},
+  {"op": "wait", "what": "term_idle", "timeout": 5},
+  {"op": "assert_term_contains", "value": "^C"},
+  {"op": "assert_term_contains", "value": "Process terminated"},
+  {"op": "assert_process_gone", "value": "PING.EXE"},
+  {"op": "frames", "value": 3},
+  {"op": "screenshot", "path": "${SHOTS}/${NAME}_stopped.png"},
+
+  {"op": "log", "value": "the terminal is usable afterwards, and Ctrl+C with nothing running does nothing"},
+  {"op": "copy"},
+  {"op": "frames", "value": 2},
+  {"op": "text", "value": "echo after-interrupt"},
+  {"op": "key", "value": "Enter"},
+  {"op": "wait", "what": "term_contains", "value": "after-interrupt", "timeout": 20},
+  {"op": "wait", "what": "term_idle", "timeout": 20},
+  {"op": "quit"}
+]

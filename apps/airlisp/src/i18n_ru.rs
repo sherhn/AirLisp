@@ -799,4 +799,6 @@ pub const RU: &[(&str, &str)] = &[
     ("{0} is not installed in Linux ({1}). Install the build tools: Settings > Linux (WSL) > Install build tools.", "{0} не установлен в Linux ({1}). Установите инструменты сборки: Настройки > Linux (WSL) > Установить инструменты сборки."),
     ("Command not found in Linux ({}). Build tools (make, gcc, nasm, gdb, QEMU) can be installed in Settings > Linux (WSL).", "Команда не найдена в Linux ({}). Инструменты сборки (make, gcc, nasm, gdb, QEMU) можно установить в Настройки > Linux (WSL)."),
     ("make is not installed", "make не установлен"),
+    // terminal Ctrl+C
+    ("running... (Ctrl+C to stop)", "выполняется... (Ctrl+C — остановить)"),
 ];

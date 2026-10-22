@@ -348,6 +348,14 @@ impl App {
         self.term_error(msg);
     }
 
+    /// Ctrl+C: end the running command (or script) and everything it started, as a terminal does.
+    pub fn terminal_interrupt(&mut self) {
+        if self.term_busy() {
+            self.term_info("^C");
+            self.terminal_stop();
+        }
+    }
+
     pub fn terminal_stop(&mut self) {
         let had = self.term.handle.is_some();
         if let Some(h) = self.term.handle.take() {

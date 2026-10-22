@@ -20,6 +20,8 @@ struct LogOut {
     pressed: bool,
     /// Text was copied to the clipboard.
     copied: bool,
+    /// The log has the keyboard: the editor and the text fields do not (so Ctrl+C is the log's).
+    keys_here: bool,
 }
 
 /// Where the rows of the console log last drawn are on screen; kept for the UI tests only (they drive the mouse by text).
@@ -635,6 +637,7 @@ impl App {
             }
             // keyboard: copy, select all, and Escape to let go (never while the editor or a text field has the keys)
             let keys_here = !self.editor_focus && !ui.ctx().text_edit_focused() && !self.popup.is_open();
+            out.keys_here = keys_here;
             if keys_here {
                 let hovered = ui.rect_contains_pointer(ui.clip_rect());
                 let has_sel = sel.is_some();
@@ -829,7 +832,7 @@ impl App {
             if let Some(r) = &self.term.script {
                 ui.label(RichText::new(i18n::fmt("script {0}: {1}/{2}", &[&r.name, &r.done, &r.total])).color(pal.accent).font(fonts::ui(12.0)));
             } else if self.term.handle.is_some() {
-                ui.label(RichText::new(tr("running...")).color(pal.warning).font(fonts::ui(12.0)));
+                ui.label(RichText::new(tr("running... (Ctrl+C to stop)")).color(pal.warning).font(fonts::ui(12.0)));
             }
             widgets::right_row(ui, 30.0, |ui| {
                 ui.add_space(8.0);
@@ -883,6 +886,13 @@ impl App {
             }
         }
         let resp = self.prompt_input(ui, id, "$", 1, tr("Type a command and press Enter"));
+        // Ctrl+C copies what is selected (the log did that above); with nothing selected it stops the running command
+        if !log_out.copied && self.term_busy() && ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy))) {
+            let input_selected = egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range()).is_some_and(|r| r.primary != r.secondary);
+            if (resp.has_focus() || log_out.keys_here) && !input_selected {
+                self.terminal_interrupt();
+            }
+        }
         if self.term.focus_input {
             resp.request_focus();
             self.term.focus_input = false;
@@ -920,6 +930,10 @@ impl App {
         let out = self.draw_log(ui, "run_log", &self.run.log, true, "$");
         if out.pressed {
             self.editor_focus = false;
+        }
+        // Ctrl+C in the output of a running program (after a click in it) stops the program, as in a terminal
+        if self.run.running && !out.copied && out.keys_here && ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy))) {
+            self.stop_run();
         }
     }
 

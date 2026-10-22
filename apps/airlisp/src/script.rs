@@ -307,6 +307,13 @@ impl App {
                 let s = self.script.as_mut().unwrap();
                 s.pending.push(Event::Copy);
             }
+            // a program of that name is not running any more (Windows `tasklist`)
+            "assert_process_gone" => {
+                let out = std::process::Command::new("tasklist").args(["/FI", &format!("IMAGENAME eq {sval}"), "/NH"]).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+                if out.to_lowercase().contains(&sval.to_lowercase()) {
+                    self.fail(format!("assert_process_gone: {sval} is still running: {}", out.trim()));
+                }
+            }
             "assert_copied" => {
                 // `value`: the whole text; or `starts` / `ends` / `contains` for the parts that do not depend on the machine
                 let got = ctx.data(|d| d.get_temp::<String>(egui::Id::new(crate::ui_panels::LAST_COPIED_ID))).unwrap_or_default();
