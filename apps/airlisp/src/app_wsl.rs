@@ -6,8 +6,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver};
+use std::time::Instant;
 
 use ide_core::settings::{RunEnv, Settings};
+use lisp_runtime::setup_progress::{Kind, MARKER, Tracker};
 use lisp_runtime::wsl::{self, ImageKind, OnlineDistro, Presence, Probe, SbclCheck, Target};
 use lisp_runtime::{Implementation, RunEvent, RunHandle, runner};
 
@@ -33,8 +35,33 @@ pub enum SetupTask {
 pub struct RunningTask {
     pub task: SetupTask,
     pub handle: RunHandle,
-    /// Download / install progress in percent, when the tool prints one.
-    pub progress: Option<f32>,
+    /// How far the step has got, read from its output.
+    pub tracker: Tracker,
+    pub started: Instant,
+}
+
+impl SetupTask {
+    /// What its output looks like, for the progress tracker.
+    fn kind(&self) -> Kind {
+        match self {
+            SetupTask::InstallWsl => Kind::Wsl,
+            SetupTask::InstallDistro(_) => Kind::Distro,
+            SetupTask::ImportFile(_) => Kind::Import,
+            SetupTask::InstallSbcl(_) | SetupTask::InstallTools(_) => Kind::Packages,
+            SetupTask::GitSetup(_) => Kind::Config,
+        }
+    }
+}
+
+/// Remove the lines the setup scripts print for the progress bar (an unfinished last line stays: more of it may come).
+pub fn strip_markers(log: &mut Vec<String>, open: bool) {
+    let last = log.len().saturating_sub(1);
+    let mut i = 0;
+    log.retain(|l| {
+        let keep = !l.starts_with(MARKER) || (open && i == last);
+        i += 1;
+        keep
+    });
 }
 
 #[derive(Default)]
@@ -150,14 +177,6 @@ pub fn push_output(log: &mut Vec<String>, open: &mut bool, text: &str) {
         let cut = log.len() - LOG_LINES;
         log.drain(..cut);
     }
-}
-
-/// The last percentage printed on `line` (`[=====  45.5%   ]` -> 45.5).
-pub fn percent(line: &str) -> Option<f32> {
-    let at = line.rfind('%')?;
-    let head = &line[..at];
-    let start = head.rfind(|c: char| !(c.is_ascii_digit() || c == '.' || c == ',')).map_or(0, |i| i + 1);
-    head[start..].replace(',', ".").parse::<f32>().ok().filter(|p| (0.0..=100.0).contains(p))
 }
 
 /// The drive a path is on (`C:\x` -> 'C').
@@ -348,7 +367,10 @@ impl App {
         self.wsl.outcome = None;
         push_output(&mut self.wsl.log, &mut self.wsl.log_open, &format!("{title}\n"));
         match runner::spawn_streaming(cmd) {
-            Ok(handle) => self.wsl.task = Some(RunningTask { task, handle, progress: None }),
+            Ok(handle) => {
+                let tracker = Tracker::new(task.kind());
+                self.wsl.task = Some(RunningTask { task, handle, tracker, started: Instant::now() });
+            }
             Err(e) => self.wsl.outcome = Some(Err(i18n::fmt("Cannot start: {}", &[&e]))),
         }
     }
@@ -520,11 +542,11 @@ impl App {
                 match ev {
                     RunEvent::Output { text, .. } => {
                         push_output(&mut self.wsl.log, &mut self.wsl.log_open, &text);
-                        if let Some(p) = self.wsl.log.last().and_then(|l| percent(l)) {
-                            t.progress = Some(p);
-                        }
+                        strip_markers(&mut self.wsl.log, self.wsl.log_open);
+                        t.tracker.feed(&text);
                     }
                     RunEvent::Exited(code) => {
+                        t.tracker.finish(code == Some(0));
                         finished = Some((t.task.clone(), code));
                         break;
                     }
@@ -586,10 +608,6 @@ mod tests {
         push_output(&mut log, &mut open, "\u{1b}[32mdone\u{1b}[0m");
         assert_eq!(log, vec!["Downloading: Ubuntu", "[=========  100.0% ]", "Installing", "done"]);
         assert!(open);
-        assert_eq!(percent("[====  42.5%  ]"), Some(42.5));
-        assert_eq!(percent("Загрузка 7,5%"), Some(7.5));
-        assert_eq!(percent("no number %"), None);
-        assert_eq!(percent("no percent"), None);
     }
 
     #[test]
@@ -618,5 +636,20 @@ mod tests {
         s.online = vec![OnlineDistro { name: "Debian".into(), friendly: "Debian 13".into() }];
         assert_eq!(s.friendly("Debian"), "Debian 13");
         assert_eq!(s.friendly("Custom"), "Custom");
+    }
+
+    #[test]
+    fn progress_markers_stay_out_of_the_log() {
+        let (mut log, mut open) = (vec![], false);
+        push_output(&mut log, &mut open, "Hit:1 http://x\n@@airlisp stage install\nGet:2 http://y\n");
+        strip_markers(&mut log, open);
+        assert_eq!(log, vec!["Hit:1 http://x", "Get:2 http://y"]);
+        // a marker that is still being written is kept until its line is complete
+        push_output(&mut log, &mut open, "@@airlisp sta");
+        strip_markers(&mut log, open);
+        assert_eq!(log.last().unwrap(), "@@airlisp sta");
+        push_output(&mut log, &mut open, "ge verify\nok\n");
+        strip_markers(&mut log, open);
+        assert_eq!(log, vec!["Hit:1 http://x", "Get:2 http://y", "ok"]);
     }
 }

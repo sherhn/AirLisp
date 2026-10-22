@@ -460,11 +460,38 @@ pub fn divider(ui: &egui::Ui, pal: &Palette, y: f32, x0: f32, x1: f32) {
 
 /// Thin determinate progress bar.
 pub fn progress_bar(ui: &mut egui::Ui, pal: &Palette, fraction: f32, width: f32) {
+    progress_bar_opt(ui, pal, Some(fraction), width);
+}
+
+/// A progress bar whose total may be unknown (`None`): a segment then slides back and forth while the work goes on.
+pub fn progress_bar_opt(ui: &mut egui::Ui, pal: &Palette, fraction: Option<f32>, width: f32) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(width, 8.0), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(4), pal.input_bg);
-    let mut f = r;
-    f.set_width((r.width() * fraction.clamp(0.0, 1.0)).max(8.0));
-    ui.painter().rect_filled(f, CornerRadius::same(4), pal.accent);
+    paint_progress(ui, r, pal.input_bg, pal.accent, fraction);
+}
+
+/// Paint a progress bar of any size into `r` (the height gives the rounding).
+pub fn paint_progress(ui: &egui::Ui, r: Rect, track: Color32, fill: Color32, fraction: Option<f32>) {
+    let round = CornerRadius::same((r.height() / 2.0).round().clamp(1.0, 127.0) as u8);
+    ui.painter().rect_filled(r, round, track);
+    match fraction {
+        Some(f) if f > 0.0 => {
+            let mut done = r;
+            done.set_width((r.width() * f.clamp(0.0, 1.0)).max(r.height()));
+            ui.painter().rect_filled(done, round, fill);
+        }
+        Some(_) => {}
+        None => {
+            let seg = (r.width() * 0.3).max(r.height());
+            let t = ui.input(|i| i.time) as f32;
+            // there and back again, slowing down at the ends
+            let phase = (t * 0.7) % 2.0;
+            let p = if phase < 1.0 { phase } else { 2.0 - phase };
+            let eased = p * p * (3.0 - 2.0 * p);
+            let x = r.left() + (r.width() - seg) * eased;
+            ui.painter().rect_filled(Rect::from_min_size(Pos2::new(x, r.top()), Vec2::new(seg, r.height())), round, fill);
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+        }
+    }
 }
 
 #[cfg(test)]

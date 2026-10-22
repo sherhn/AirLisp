@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use eframe::egui::{self, CornerRadius, Margin, RichText, Sense, Vec2};
 use ide_core::settings::RunEnv;
+use lisp_runtime::setup_progress::{Progress, clock};
 use lisp_runtime::wsl::Presence;
 
 use crate::app::App;
@@ -56,6 +57,44 @@ fn gb(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
+/// The four setup steps as one bar made of segments: done ones are full, the running one fills with its progress
+/// (or slides while its total is unknown). `running`: the index of the step being installed.
+fn draw_overview(ui: &mut egui::Ui, pal: &Palette, steps: &[(&str, bool)], running: Option<usize>, fraction: Option<Option<f32>>) {
+    let done = steps.iter().filter(|(_, d)| *d).count();
+    ui.add_space(12.0);
+    ui.label(RichText::new(i18n::fmt("{0} of {1} steps done", &[&done, &steps.len()])).font(fonts::semibold(13.0)).color(if done == steps.len() { pal.ok } else { pal.text }));
+    ui.add_space(8.0);
+    let gap = 6.0;
+    let w = ((ui.available_width() - gap * (steps.len() - 1) as f32) / steps.len() as f32).max(40.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        for (i, (name, is_done)) in steps.iter().enumerate() {
+            ui.vertical(|ui| {
+                ui.set_width(w);
+                let (r, _) = ui.allocate_exact_size(Vec2::new(w, 8.0), Sense::hover());
+                let (fill, color) = if *is_done {
+                    (Some(1.0), pal.ok)
+                } else if running == Some(i) {
+                    (fraction.flatten(), pal.accent)
+                } else {
+                    (Some(0.0), pal.accent)
+                };
+                widgets::paint_progress(ui, r, pal.input_bg, color, fill);
+                ui.add_space(5.0);
+                let label = RichText::new(format!("{}. {name}", i + 1)).size(11.5);
+                ui.label(if *is_done {
+                    label.color(pal.ok)
+                } else if running == Some(i) {
+                    label.color(pal.text)
+                } else {
+                    label.color(pal.text_dim)
+                });
+            });
+        }
+    });
+    ui.add_space(12.0);
+}
+
 impl App {
     pub fn draw_wsl_page(&mut self, ui: &mut egui::Ui) {
         let pal = self.pal;
@@ -85,6 +124,9 @@ impl App {
         let free = self.wsl.free;
         let probing = self.wsl.probing();
         let mut act: Option<Act> = None;
+        // how far the running step has got, and how long it has been going
+        let task_progress: Option<(Progress, u64)> = self.wsl.task.as_ref().map(|t| (t.tracker.progress(), t.started.elapsed().as_secs()));
+        let tools_ready = matches!(self.wsl.tools.get(&selected), Some(Ok(v)) if v.iter().all(|(_, f)| *f));
 
         // ---------------------------------------------------------------- intro
         ui.label(RichText::new(tr("Work as on Linux without a virtual machine: WSL runs a real Linux next to Windows, and AirLisp starts SBCL, the REPL and the terminal inside it. Your files stay where they are.")).color(pal.text_dim).size(12.5));
@@ -99,16 +141,26 @@ impl App {
         });
         ui.add_space(14.0);
 
+        // ---------------------------------------------------------------- the whole setup at a glance
+        // four steps; the running one fills as it goes
+        let steps = [(tr("WSL"), installed), (tr("Distribution"), !distros.is_empty()), (tr("SBCL"), ready), (tr("Build tools"), tools_ready)];
+        let running_step = running.as_ref().and_then(|t| match t {
+            SetupTask::InstallWsl => Some(0),
+            SetupTask::InstallDistro(_) | SetupTask::ImportFile(_) => Some(1),
+            SetupTask::InstallSbcl(_) => Some(2),
+            SetupTask::InstallTools(_) => Some(3),
+            SetupTask::GitSetup(_) => None,
+        });
+        group(ui, &pal, tr("Setup progress"), |ui, _rows| draw_overview(ui, &pal, &steps, running_step, task_progress.map(|(p, _)| p.fraction)));
+
         // ---------------------------------------------------------------- progress of the running / last setup step
         if busy_task || !self.wsl.log.is_empty() || self.wsl.outcome.is_some() {
-            let progress = self.wsl.task.as_ref().and_then(|t| t.progress);
             let outcome = self.wsl.outcome.clone();
             let log = self.wsl.log.clone();
             group(ui, &pal, tr("Progress"), |ui, _rows| {
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
                     if busy_task {
-                        spinner(ui, &pal);
                         let what = match &running {
                             Some(SetupTask::InstallWsl) => tr("Installing WSL...").to_string(),
                             Some(SetupTask::InstallDistro(n)) | Some(SetupTask::ImportFile(n)) => i18n::fmt("Installing {}...", &[n]),
@@ -127,12 +179,22 @@ impl App {
                         }
                     }
                 });
-                if let Some(p) = progress {
-                    ui.add_space(6.0);
+                if let Some((p, secs)) = task_progress {
+                    // what it is doing now, how much is done (when that is known) and for how long
+                    ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        widgets::progress_bar(ui, &pal, p / 100.0, (ui.available_width() - 70.0).max(80.0));
-                        ui.label(RichText::new(format!("{p:.0}%")).color(pal.text_dim).size(12.0));
+                        ui.label(RichText::new(tr(p.stage.label())).color(pal.text_dim).size(12.5));
+                        widgets::right_row(ui, 18.0, |ui| {
+                            let text = match p.fraction {
+                                Some(f) => format!("{:.0}%  ·  {}", (f * 100.0).floor(), clock(secs)),
+                                None => clock(secs),
+                            };
+                            ui.label(RichText::new(text).color(pal.text_dim).font(egui::FontId::monospace(12.0)));
+                        });
                     });
+                    ui.add_space(4.0);
+                    widgets::progress_bar_opt(ui, &pal, p.fraction, ui.available_width());
+                    ui.add_space(4.0);
                 }
                 if let Some(o) = &outcome {
                     let (text, color) = match o {
