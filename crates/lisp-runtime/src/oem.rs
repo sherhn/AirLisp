@@ -47,9 +47,12 @@ mod tests {
     #[test]
     fn high_bytes_never_produce_replacement_characters_on_windows() {
         let s = decode_non_utf8(&[0xa7, 0xad, 0xa0, 0xe7, 0xa5, 0xad, 0xa8, 0xa5]);
-        assert_eq!(s.chars().count(), 8);
         if cfg!(windows) {
+            assert_eq!(s.chars().count(), 8);
             assert!(!s.contains('\u{fffd}'), "{s:?}");
+        } else {
+            // elsewhere the bytes are decoded lossily: a valid UTF-8 sequence among them is one character
+            assert!(s.contains('\u{fffd}'), "{s:?}");
         }
     }
 }
