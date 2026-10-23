@@ -149,6 +149,16 @@ impl Editor {
             LineEnding::CrLf => self.text.replace('\n', "\r\n"),
         }
     }
+    /// Write the file with `le` from now on. The text in memory keeps `\n`, so only the next save changes; the file counts
+    /// as modified until then. Returns `false` when it already had `le`.
+    pub fn set_line_ending(&mut self, le: LineEnding) -> bool {
+        if self.line_ending == le {
+            return false;
+        }
+        self.line_ending = le;
+        self.revision += 1;
+        true
+    }
     pub fn dialect(&self) -> Dialect {
         self.dialect
     }
@@ -1743,6 +1753,28 @@ mod tests {
         let e = Editor::new("a\r\nb\r\n", Dialect::CommonLisp);
         assert_eq!(e.text(), "a\nb\n");
         assert_eq!(e.line_ending, LineEnding::CrLf);
+        assert_eq!(e.text_for_disk(), "a\r\nb\r\n");
+    }
+
+    #[test]
+    fn line_ending_can_be_switched_and_marks_the_file_modified() {
+        let mut e = Editor::new("a\r\nb\r\n", Dialect::CommonLisp);
+        assert!(!e.is_modified());
+        assert!(!e.set_line_ending(LineEnding::CrLf), "already CRLF: nothing to do");
+        assert!(!e.is_modified());
+        assert!(e.set_line_ending(LineEnding::Lf));
+        assert_eq!(e.line_ending.label(), "LF");
+        assert_eq!(e.text(), "a\nb\n");
+        assert_eq!(e.text_for_disk(), "a\nb\n");
+        assert!(e.is_modified(), "the next save has to write the new endings");
+        e.mark_saved();
+        assert!(e.set_line_ending(LineEnding::CrLf));
+        assert_eq!(e.text_for_disk(), "a\r\nb\r\n");
+        // typing and undo go on as before, the endings stay
+        e.set_caret(1, false);
+        e.type_text("x");
+        assert_eq!(e.text_for_disk(), "ax\r\nb\r\n");
+        e.undo();
         assert_eq!(e.text_for_disk(), "a\r\nb\r\n");
     }
 

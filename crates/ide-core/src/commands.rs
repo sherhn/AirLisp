@@ -95,6 +95,8 @@ cmds! {
     "edit.new_line_below", "Start New Line", Edit, ["Shift+Enter"];
     "edit.new_line_above", "Start New Line Before Current", Edit, ["Ctrl+Alt+Enter"];
     "edit.toggle_case", "Toggle Case", Edit, ["Ctrl+Shift+U"];
+    "edit.eol_lf", "Convert Line Endings to LF", Edit, [];
+    "edit.eol_crlf", "Convert Line Endings to CRLF", Edit, [];
     "edit.indent", "Indent Selection", Edit, ["Tab"];
     "edit.unindent", "Unindent Selection", Edit, ["Shift+Tab"];
     "edit.newline", "Enter", Edit, ["Enter"];

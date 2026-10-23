@@ -640,6 +640,24 @@ impl App {
                     self.fail(format!("assert_modified: expected {want}, got {got}"));
                 }
             }
+            "assert_eol" => {
+                // value: LF or CRLF, what the status bar says; "file": true looks at the bytes on disk instead
+                let got = if step["file"].as_bool().unwrap_or(false) {
+                    let bytes = path.as_ref().and_then(|p| std::fs::read(p).ok()).unwrap_or_default();
+                    let crlf = bytes.windows(2).filter(|w| w == b"\r\n").count();
+                    let lf = bytes.iter().filter(|&&b| b == b'\n').count();
+                    match (crlf, lf) {
+                        (0, _) => "LF".to_string(),
+                        (c, l) if c == l => "CRLF".to_string(),
+                        _ => "mixed".to_string(),
+                    }
+                } else {
+                    self.doc().map(|d| d.ed.line_ending.label().to_string()).unwrap_or_default()
+                };
+                if got != sval {
+                    self.fail(format!("assert_eol: expected {sval}, got {got}"));
+                }
+            }
             "assert_env" => {
                 let got = match self.wsl_target() {
                     Some(t) => format!("linux:{}", t.distro),

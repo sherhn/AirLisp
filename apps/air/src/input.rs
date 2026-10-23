@@ -2,6 +2,7 @@
 
 use eframe::egui::{self, Event, Key, Modifiers};
 use ide_core::commands::{self, Shortcut};
+use ide_core::editor::LineEnding;
 use ide_core::exec::{self, ExecCtx};
 use ide_core::search::TextQuery;
 
@@ -637,6 +638,14 @@ impl App {
             "git.stage_file" => {
                 if let Some(rel) = self.current_rel_path() {
                     self.git_run_sync("Add", move |r| r.stage(&[rel]).map(|_| String::new()));
+                }
+            }
+            "edit.eol_lf" | "edit.eol_crlf" => {
+                if editor_on {
+                    let le = if id == "edit.eol_crlf" { LineEnding::CrLf } else { LineEnding::Lf };
+                    if let Some(d) = self.doc_mut() {
+                        d.ed.set_line_ending(le);
+                    }
                 }
             }
             // ---- folding

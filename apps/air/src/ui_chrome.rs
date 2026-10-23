@@ -2,6 +2,7 @@
 
 use eframe::egui::{self, Align, Align2, Color32, CornerRadius, Layout, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use ide_core::commands;
+use ide_core::editor::LineEnding;
 
 use crate::app::{App, RunConfig};
 use crate::editor_view::Sev;
@@ -613,7 +614,7 @@ impl App {
                 let info = self.doc().filter(|d| d.diff.is_none()).map(|d| {
                     let (line, col) = d.ed.line_col(d.ed.caret());
                     let sel = if d.ed.has_selection() { format!(" ({} chars)", d.ed.selected_text().chars().count()) } else { String::new() };
-                    (format!("{}:{}{}", line + 1, col + 1, sel), d.ed.language().map_or(d.ed.dialect().name(), |l| l.name()).to_string(), d.ed.line_ending.label().to_string())
+                    (format!("{}:{}{}", line + 1, col + 1, sel), d.ed.language().map_or(d.ed.dialect().name(), |l| l.name()).to_string(), d.ed.line_ending)
                 });
                 if let Some((pos, dialect, eol)) = info {
                     if ui.add(egui::Label::new(small(pos)).sense(Sense::click())).on_hover_text(tr("Go to Line (Ctrl+G)")).clicked() {
@@ -622,7 +623,20 @@ impl App {
                     ui.label(small(dialect));
                     ui.label(small(tr("2 spaces").into()));
                     ui.label(small("UTF-8".into()));
-                    ui.label(small(eol));
+                    // the line endings the file is written with, with a menu to change them (as in VS Code)
+                    let resp = ui.add(egui::Label::new(small(eol.label().into())).sense(Sense::click())).on_hover_text(tr("Line endings of the file (LF or CRLF) - click to change"));
+                    let mut pick = None;
+                    egui::Popup::menu(&resp).show(|ui| {
+                        for (le, id) in [(LineEnding::Lf, "edit.eol_lf"), (LineEnding::CrLf, "edit.eol_crlf")] {
+                            if ui.selectable_label(eol == le, le.label()).clicked() {
+                                pick = Some(id);
+                                ui.close();
+                            }
+                        }
+                    });
+                    if let Some(id) = pick {
+                        self.run_command(ctx, id);
+                    }
                 }
                 if self.lisp_enabled() {
                 let (txt, color) = if self.repl.starting {
