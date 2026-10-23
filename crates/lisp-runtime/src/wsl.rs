@@ -424,20 +424,69 @@ pub fn install_sbcl_command(distro: &str) -> Command {
 pub const BUILD_TOOLS: [&str; 8] = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"];
 
 /// A group of the developer tools put into a distribution: its name, the programs that show it is there and the
-/// Debian/Ubuntu packages that bring them. The groups come from the modules that are on (C and C++, Python, ...) and
-/// from [`essential_groups`]; Debian and Ubuntu get all of them, the other package managers only the core set of
-/// [`install_tools_script`]'s other branches (C toolchain, nasm, gdb, git, QEMU).
+/// Debian/Ubuntu packages that bring them. The groups come from the modules that are on (C and C++, Python, ...), from
+/// [`essential_groups`] and from the tools the user added; Debian and Ubuntu get all of them, the other package
+/// managers the core set of [`install_tools_script`]'s other branches (C toolchain, nasm, gdb, git, QEMU) and the
+/// packages of the user's own groups.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ToolGroup {
     pub name: String,
+    /// What shows the group is installed: programs on the PATH, or `dpkg:<package>` for a package that brings none
+    /// (see [`check_label`]).
     pub programs: Vec<String>,
     pub packages: String,
+    /// Added by the user: its packages are named for the distribution's own package manager.
+    pub custom: bool,
 }
 
 impl ToolGroup {
     pub fn new(name: &str, programs: &[&str], packages: &str) -> ToolGroup {
-        ToolGroup { name: name.to_string(), programs: programs.iter().map(|p| p.to_string()).collect(), packages: packages.to_string() }
+        ToolGroup { name: name.to_string(), programs: programs.iter().map(|p| p.to_string()).collect(), packages: packages.to_string(), custom: false }
     }
+
+    /// The packages of the group, each once.
+    pub fn package_list(&self) -> Vec<&str> {
+        let mut v: Vec<&str> = Vec::new();
+        for p in self.packages.split_whitespace() {
+            if !v.contains(&p) {
+                v.push(p);
+            }
+        }
+        v
+    }
+
+    /// The group with only the packages `keep` says yes to (its programs stay: they are still looked for).
+    pub fn with_packages(&self, keep: impl Fn(&str) -> bool) -> ToolGroup {
+        ToolGroup { packages: self.package_list().into_iter().filter(|p| keep(p)).collect::<Vec<_>>().join(" "), ..self.clone() }
+    }
+}
+
+/// A tool the user adds: `packages` and `programs` are lists separated by spaces. Without programs the packages
+/// themselves are looked for (on Debian and Ubuntu with dpkg). `None` when a word of it could do harm in the shell
+/// script it ends up in (see [`is_safe_word`]), or the name or the packages are empty.
+pub fn custom_group(name: &str, packages: &str, programs: &str) -> Option<ToolGroup> {
+    let words = |s: &str| -> Option<Vec<String>> { s.split_whitespace().map(|w| is_safe_word(w).then(|| w.to_string())).collect() };
+    let (packages, programs) = (words(packages)?, words(programs)?);
+    let name = name.trim();
+    if name.is_empty() || packages.is_empty() {
+        return None;
+    }
+    let programs = if programs.is_empty() { packages.iter().map(|p| format!("{DPKG_PREFIX}{p}")).collect() } else { programs };
+    Some(ToolGroup { name: name.to_string(), programs, packages: packages.join(" "), custom: true })
+}
+
+/// The prefix of a check entry that asks dpkg about a package instead of looking for a program.
+const DPKG_PREFIX: &str = "dpkg:";
+
+/// What a check entry is called on screen: a program as it is, a package without the prefix.
+pub fn check_label(entry: &str) -> &str {
+    entry.strip_prefix(DPKG_PREFIX).unwrap_or(entry)
+}
+
+/// A name of a package or a program that is safe to put into a shell script unquoted: letters, digits and `. + - _ :`
+/// (what the names of Debian packages are made of), starting with a letter or a digit.
+pub fn is_safe_word(w: &str) -> bool {
+    w.chars().next().is_some_and(|c| c.is_ascii_alphanumeric()) && w.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-' | '_' | ':'))
 }
 
 /// What every developer wants whatever the language: git and network tools, text and archive tools, documentation.
@@ -468,10 +517,17 @@ pub fn missing_core(found: &[(String, bool)]) -> Vec<String> {
     found.iter().filter(|(n, ok)| !*ok && BUILD_TOOLS.contains(&n.as_str())).map(|(n, _)| n.clone()).collect()
 }
 
-/// Script that prints `TOOL=<path>` for every program of the groups (an empty path: missing). A login shell, so tools
-/// on the user's PATH count too.
+/// Script that prints `TOOL=<path>` for every program of the groups (an empty path: missing), and `dpkg:PACKAGE=<status>`
+/// for every package that is asked about instead. A login shell, so tools on the user's PATH count too.
 pub fn tools_check_script(groups: &[ToolGroup]) -> String {
-    all_programs(groups).iter().map(|t| format!("echo \"{t}=$(command -v {t} 2>/dev/null)\"")).collect::<Vec<_>>().join("; ")
+    all_programs(groups)
+        .iter()
+        .map(|t| match t.strip_prefix(DPKG_PREFIX) {
+            Some(pkg) => format!("echo \"{t}=$(dpkg-query -W -f='${{Status}}' {pkg} 2>/dev/null | grep 'ok installed')\""),
+            None => format!("echo \"{t}=$(command -v {t} 2>/dev/null)\""),
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Which programs of `groups` the check found (`true`) or missed.
@@ -500,17 +556,41 @@ pub fn check_tools(distro: &str, groups: &[ToolGroup]) -> Result<Vec<(String, bo
     Ok(parse_tools(&out.text, groups))
 }
 
-/// Shell script installing the developer tools (run as root): on Debian and Ubuntu every group of `groups`
+/// Shell script installing the developer tools (run as root): on Debian and Ubuntu every package of `groups`
 /// (packages this release of the distribution does not have are skipped, not fatal); with the other package managers
-/// a C toolchain with 32-bit support, nasm, a debugger, git and QEMU.
+/// a C toolchain with 32-bit support, nasm, a debugger, git and QEMU (when `groups` has a group that is not the user's
+/// own), and the packages of the groups the user added, one by one (one that cannot be installed is skipped).
 pub fn install_tools_script(groups: &[ToolGroup]) -> String {
     let mut packages: Vec<&str> = Vec::new();
-    for p in groups.iter().flat_map(|g| g.packages.split_whitespace()) {
+    for p in groups.iter().flat_map(|g| g.package_list()) {
         if !packages.contains(&p) {
             packages.push(p);
         }
     }
     let apt = packages.join(" ");
+    let mut own: Vec<&str> = Vec::new();
+    for p in groups.iter().filter(|g| g.custom).flat_map(|g| g.package_list()) {
+        if !own.contains(&p) {
+            own.push(p);
+        }
+    }
+    let own = own.join(" ");
+    let core = groups.iter().any(|g| !g.custom);
+    // the way each other package manager installs the core set, then the user's own packages one by one
+    let other = |manager: &str, core_cmd: &str, one: &str| -> String {
+        let mut s = String::from("  echo '@@air stage install'\n");
+        if core {
+            s.push_str(&format!("  {core_cmd}\n"));
+        }
+        if !own.is_empty() {
+            s.push_str(&format!("  for p in {own}; do {one} \"$p\" || echo \"Skipped ($p could not be installed with {manager})\"; done\n"));
+        }
+        s
+    };
+    let dnf = other("dnf", "dnf install -y make gcc glibc-devel.i686 libgcc.i686 nasm gdb git qemu-system-x86", "dnf install -y");
+    let zypper = other("zypper", "zypper --non-interactive install make gcc gcc-32bit nasm gdb git qemu-x86", "zypper --non-interactive install");
+    let pacman = other("pacman", "pacman -Sy --noconfirm base-devel lib32-gcc-libs nasm gdb git qemu-system-x86", "pacman -S --noconfirm");
+    let apk = other("apk", "apk add build-base nasm gdb git qemu-system-i386 qemu-system-x86_64", "apk add");
     format!(
         "set -e
 echo '@@air stage prepare'
@@ -522,26 +602,19 @@ if command -v apt-get >/dev/null 2>&1; then
   for p in {apt}; do
     if apt-cache show \"$p\" >/dev/null 2>&1; then have=\"$have $p\"; else echo \"Skipped (this distribution has no $p)\"; fi
   done
-  apt-get install -y $have
+  if [ -n \"$have\" ]; then apt-get install -y $have; fi
 elif command -v dnf >/dev/null 2>&1; then
-  echo '@@air stage install'
-  dnf install -y make gcc glibc-devel.i686 libgcc.i686 nasm gdb git qemu-system-x86
-elif command -v zypper >/dev/null 2>&1; then
-  echo '@@air stage install'
-  zypper --non-interactive install make gcc gcc-32bit nasm gdb git qemu-x86
-elif command -v pacman >/dev/null 2>&1; then
-  echo '@@air stage install'
-  pacman -Sy --noconfirm base-devel lib32-gcc-libs nasm gdb git qemu-system-x86
-elif command -v apk >/dev/null 2>&1; then
-  echo '@@air stage install'
-  apk add build-base nasm gdb git qemu-system-i386 qemu-system-x86_64
-else
+{dnf}elif command -v zypper >/dev/null 2>&1; then
+{zypper}elif command -v pacman >/dev/null 2>&1; then
+{pacman}elif command -v apk >/dev/null 2>&1; then
+{apk}else
   echo 'No supported package manager (apt, dnf, zypper, pacman, apk) found.' >&2
   exit 2
 fi
 echo '@@air stage verify'
-make --version | head -n 1
-gcc --version | head -n 1"
+for t in make gcc; do
+  if command -v \"$t\" >/dev/null 2>&1; then \"$t\" --version | head -n 1; fi
+done"
     )
 }
 
@@ -766,6 +839,89 @@ mod tests {
         // only the essentials: no compilers
         let light = install_tools_script(&essential_groups());
         assert!(light.contains("curl") && !light.contains("build-essential"));
+    }
+
+    #[test]
+    fn a_group_can_be_cut_down_to_the_packages_that_are_chosen() {
+        let g = ToolGroup::new("Files and text", &["zip", "jq", "vim"], "zip unzip jq vim vim");
+        assert_eq!(g.package_list(), ["zip", "unzip", "jq", "vim"], "each package once");
+        let cut = g.with_packages(|p| p != "vim" && p != "zip");
+        assert_eq!(cut.packages, "unzip jq");
+        assert_eq!(cut.programs, g.programs, "what is looked for stays");
+        assert_eq!(cut.name, g.name);
+        assert_eq!(g.with_packages(|_| false).packages, "");
+        // what is left out of the groups is left out of the script
+        let script = install_tools_script(&[cut, ToolGroup::new("Debugging", &["gdb"], "gdb valgrind")]);
+        let list = &script[script.find("for p in ").unwrap()..script.find("; do").unwrap()];
+        assert_eq!(list, "for p in unzip jq gdb valgrind");
+    }
+
+    #[test]
+    fn words_of_a_custom_tool_are_safe_to_put_in_a_script() {
+        for ok in ["libssl-dev", "g++", "python3.12", "libc6:i386", "x", "7zip", "nodejs_x"] {
+            assert!(is_safe_word(ok), "{ok}");
+        }
+        for bad in ["", "-rf", ".hidden", "a;b", "a b", "$(x)", "a`b`", "a|b", "a&b", "a'b", "a\"b", "a\nb", "a>b", "*", "a/b"] {
+            assert!(!is_safe_word(bad), "{bad:?}");
+        }
+        let g = custom_group("  Libraries ", "libssl-dev  zlib1g-dev", "").unwrap();
+        assert_eq!((g.name.as_str(), g.packages.as_str(), g.custom), ("Libraries", "libssl-dev zlib1g-dev", true));
+        assert_eq!(g.programs, ["dpkg:libssl-dev", "dpkg:zlib1g-dev"], "without programs the packages are looked for");
+        let g = custom_group("Net", "tcpdump nmap", "tcpdump  nmap").unwrap();
+        assert_eq!(g.programs, ["tcpdump", "nmap"]);
+        assert!(custom_group("", "nmap", "").is_none(), "a name is needed");
+        assert!(custom_group("x", "  ", "").is_none(), "and a package");
+        assert!(custom_group("x", "nmap; rm -rf /", "").is_none());
+        assert!(custom_group("x", "nmap", "$(reboot)").is_none());
+        assert_eq!(check_label("dpkg:libssl-dev"), "libssl-dev");
+        assert_eq!(check_label("make"), "make");
+    }
+
+    #[test]
+    fn a_package_without_a_program_is_asked_about_through_dpkg() {
+        let mut groups = module_groups();
+        groups.push(custom_group("Libraries", "libssl-dev", "").unwrap());
+        groups.push(custom_group("Net", "tcpdump", "tcpdump").unwrap());
+        let check = tools_check_script(&groups);
+        assert!(check.contains("echo \"dpkg:libssl-dev=$(dpkg-query -W -f='${Status}' libssl-dev 2>/dev/null | grep 'ok installed')\""), "{check}");
+        assert!(check.contains("echo \"tcpdump=$(command -v tcpdump 2>/dev/null)\""));
+        let text = "make=/usr/bin/make\ndpkg:libssl-dev=install ok installed\ntcpdump=\n";
+        let found = parse_tools(text, &groups);
+        assert!(found.contains(&("dpkg:libssl-dev".to_string(), true)));
+        assert!(found.contains(&("tcpdump".to_string(), false)));
+        assert!(missing_core(&found).iter().all(|m| BUILD_TOOLS.contains(&m.as_str())), "a custom tool never makes the banner");
+    }
+
+    #[test]
+    fn the_tools_the_user_added_are_installed_with_every_package_manager() {
+        let libs = custom_group("Libraries", "libssl-dev zlib1g-dev", "").unwrap();
+        let mut groups = module_groups();
+        groups.push(libs.clone());
+        let script = install_tools_script(&groups);
+        let list = &script[script.find("for p in ").unwrap()..script.find("; do").unwrap()];
+        assert!(list.contains("libssl-dev zlib1g-dev"), "apt: {list}");
+        // the others: the core set, then the packages one by one, a failing one is skipped
+        assert!(script.contains("dnf install -y make gcc"));
+        assert!(script.contains("for p in libssl-dev zlib1g-dev; do dnf install -y \"$p\" || echo"));
+        assert!(script.contains("for p in libssl-dev zlib1g-dev; do pacman -S --noconfirm \"$p\" || echo"));
+        assert!(script.contains("for p in libssl-dev zlib1g-dev; do apk add \"$p\" || echo"));
+        assert!(script.contains("for p in libssl-dev zlib1g-dev; do zypper --non-interactive install \"$p\" || echo"));
+        // only the user's own tools: the core set is not brought along
+        let only = install_tools_script(&[libs]);
+        assert!(!only.contains("dnf install -y make") && !only.contains("base-devel") && only.contains("for p in libssl-dev zlib1g-dev; do dnf install"), "{only}");
+        // nothing of one's own: no loop of one's own
+        assert!(!install_tools_script(&module_groups()).contains("could not be installed with"));
+    }
+
+    #[test]
+    fn the_install_script_does_not_fail_for_the_tools_it_left_out() {
+        // the check at the end only reports what is there (the script runs with `set -e`)
+        let s = install_tools_script(&[ToolGroup::new("Debugging", &["gdb"], "gdb")]);
+        let verify = &s[s.find("@@air stage verify").unwrap()..];
+        assert!(verify.contains("if command -v \"$t\""), "{verify}");
+        assert!(!verify.contains("\nmake --version") && !verify.contains("\ngcc --version"));
+        // and with nothing chosen from apt nothing is asked of apt-get
+        assert!(s.contains("if [ -n \"$have\" ]; then apt-get install -y $have; fi"));
     }
 
     #[test]

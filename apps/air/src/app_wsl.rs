@@ -95,6 +95,22 @@ pub struct WslState {
     free_rx: Option<Receiver<Option<(char, u64)>>>,
     /// The page has started its first check.
     pub requested: bool,
+    /// The groups of developer tools whose packages are listed for choosing (by name).
+    pub tools_open: std::collections::HashSet<String>,
+    /// The form for adding or changing a tool of one's own, while it is open.
+    pub tool_draft: Option<ToolDraft>,
+}
+
+/// A tool of one's own being typed in on the Linux page.
+#[derive(Clone, Debug, Default)]
+pub struct ToolDraft {
+    /// Which of `Settings::linux_tools.custom` it replaces (`None`: a new one).
+    pub index: Option<usize>,
+    pub name: String,
+    pub packages: String,
+    pub programs: String,
+    /// What is wrong with it, to be shown under the form.
+    pub error: String,
 }
 
 impl WslState {
@@ -323,10 +339,57 @@ impl App {
         self.wsl.tools_rx.is_some()
     }
 
-    /// Install the developer tools (compilers, debuggers, everyday tools) inside `distro`.
+    /// The set of tools changed (one was added, changed or removed): what was found in the distributions is looked
+    /// for again.
+    pub fn wsl_tools_changed(&mut self) {
+        self.wsl.tools.clear();
+        self.save_settings();
+    }
+
+    /// Keep the tool of one's own that the form holds: a new one, or the one it changes. What is wrong with it is
+    /// written in the form, which then stays open.
+    pub fn wsl_tool_save(&mut self) {
+        let Some(d) = self.wsl.tool_draft.clone() else { return };
+        let name = d.name.trim().to_string();
+        let problem = if name.is_empty() {
+            Some(tr("Give the tool a name").to_string())
+        } else if d.packages.split_whitespace().next().is_none() {
+            Some(tr("Name at least one package").to_string())
+        } else if wsl::custom_group(&name, &d.packages, &d.programs).is_none() {
+            Some(tr("Names of packages and programs may have letters, digits and . + - _ : only").to_string())
+        } else if self.tool_groups().iter().any(|g| !g.custom && g.name == name) || self.settings.linux_tools.custom.iter().enumerate().any(|(i, c)| Some(i) != d.index && c.name.trim() == name) {
+            Some(i18n::fmt("A tool called {} already exists", &[&name]))
+        } else {
+            None
+        };
+        if let Some(p) = problem {
+            if let Some(draft) = self.wsl.tool_draft.as_mut() {
+                draft.error = p;
+            }
+            return;
+        }
+        let tool = ide_core::settings::CustomTool { name, packages: d.packages.split_whitespace().collect::<Vec<_>>().join(" "), programs: d.programs.split_whitespace().collect::<Vec<_>>().join(" ") };
+        match d.index.filter(|i| *i < self.settings.linux_tools.custom.len()) {
+            Some(i) => self.settings.linux_tools.custom[i] = tool,
+            None => self.settings.linux_tools.custom.push(tool),
+        }
+        self.wsl.tool_draft = None;
+        self.wsl_tools_changed();
+    }
+
+    /// Install the developer tools that are chosen (compilers, debuggers, everyday tools, the user's own) inside `distro`.
     pub fn wsl_install_tools(&mut self, distro: &str) {
+        self.wsl_install_tools_with(distro, &[]);
+    }
+
+    /// Like [`App::wsl_install_tools`], and the groups that bring a program of `needed` are installed whole, chosen or not.
+    pub fn wsl_install_tools_with(&mut self, distro: &str, needed: &[String]) {
+        let groups = self.chosen_tool_groups(needed);
+        if groups.is_empty() {
+            self.toast(tr("No tool is chosen: tick the ones to install"), Sev::Weak);
+            return;
+        }
         let title = i18n::fmt("Installing developer tools in {}...", &[&distro]);
-        let groups = self.tool_groups();
         self.wsl_start(SetupTask::InstallTools(distro.to_string()), wsl::install_tools_command(distro, &groups), title);
     }
 

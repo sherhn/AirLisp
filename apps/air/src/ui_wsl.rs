@@ -43,13 +43,13 @@ enum Act {
     Cancel,
 }
 
-fn status_ok(ui: &mut egui::Ui, pal: &Palette, text: &str) {
+pub(crate) fn status_ok(ui: &mut egui::Ui, pal: &Palette, text: &str) {
     ui.label(RichText::new(text).color(pal.ok).font(fonts::semibold(12.5)));
     let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
     icons::paint(ui.painter(), r, Icon::Ok, pal.ok);
 }
 
-fn spinner(ui: &mut egui::Ui, pal: &Palette) {
+pub(crate) fn spinner(ui: &mut egui::Ui, pal: &Palette) {
     ui.add(egui::Spinner::new().size(18.0).color(pal.accent));
 }
 
@@ -127,7 +127,6 @@ impl App {
         // how far the running step has got, and how long it has been going
         let task_progress: Option<(Progress, u64)> = self.wsl.task.as_ref().map(|t| (t.tracker.progress(), t.started.elapsed().as_secs()));
         // the setup overview counts the tools a project needs to be built; the page lists the rest
-        let tool_groups = self.tool_groups();
         let tools_ready = matches!(self.wsl.tools.get(&selected), Some(Ok(v)) if lisp_runtime::wsl::missing_core(v).is_empty());
 
         // ---------------------------------------------------------------- intro
@@ -404,41 +403,8 @@ impl App {
                 act = act.or(Some(Act::CheckTools(selected.clone())));
             }
             group(ui, &pal, tr("Developer tools"), |ui, rows| {
-                let found: Vec<(String, bool)> = tools.as_ref().and_then(|r| r.as_ref().ok()).cloned().unwrap_or_default();
-                let is_there = |p: &str| found.iter().any(|(n, ok)| *ok && n == p);
-                let missing = found.iter().filter(|(_, ok)| !*ok).count();
-                let desc = match &tools {
-                    _ if checking_tools => i18n::fmt("Looking for the programs below in {}...", &[&selected]),
-                    Some(Ok(_)) if missing == 0 => tr("Everything below is installed.").to_string(),
-                    Some(Ok(_)) => i18n::fmt("{0} of {1} programs are missing. Ubuntu and Debian get everything below; other distributions only the C toolchain, nasm, gdb, git and QEMU.", &[&missing, &found.len()]),
-                    Some(Err(e)) => i18n::fmt("Could not check {0}: {1}", &[&selected, &crate::ui_chrome::elide(e, 140)]),
-                    None => tr("Not checked yet.").to_string(),
-                };
-                rows.row(ui, &pal, tr("Compilers, debuggers and everyday tools"), &desc, 230.0, |ui| {
-                    if checking_tools {
-                        spinner(ui, &pal);
-                    } else if matches!(&tools, Some(Ok(_))) && missing == 0 {
-                        status_ok(ui, &pal, tr("Ready"));
-                    } else {
-                        ui.add_enabled_ui(!busy_task, |ui| {
-                            if widgets::primary_button(ui, &pal, tr("Install developer tools")).clicked() {
-                                act = Some(Act::InstallTools(selected.clone()));
-                            }
-                        });
-                    }
-                });
-                // what is in it, and what is already there
-                if !found.is_empty() {
-                    for g in &tool_groups {
-                        let absent: Vec<&str> = g.programs.iter().map(String::as_str).filter(|p| !is_there(p)).collect();
-                        rows.row(ui, &pal, &i18n::tr_dyn(&g.name), &g.programs.join(", "), 120.0, |ui| {
-                            if absent.is_empty() {
-                                status_ok(ui, &pal, tr("Ready"));
-                            } else {
-                                ui.label(RichText::new(i18n::fmt("{} missing", &[&absent.len()])).color(pal.warning).font(fonts::semibold(12.5)));
-                            }
-                        });
-                    }
+                if self.draw_tool_rows(ui, rows, &selected, busy_task, &tools, checking_tools) {
+                    act = Some(Act::InstallTools(selected.clone()));
                 }
                 rows.row(ui, &pal, tr("Git in Linux"), tr("Use your git name, e-mail and GitHub logins from Windows in this distribution (needs the Linux user from its first start)."), 210.0, |ui| {
                     ui.add_enabled_ui(!busy_task, |ui| {

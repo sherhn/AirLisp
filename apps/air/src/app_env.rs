@@ -256,13 +256,14 @@ impl App {
             self.tools_banner_dismissed = true;
         }
         if install {
-            self.install_build_tools_here(&distro);
+            self.install_build_tools_here(&distro, &missing);
         }
     }
 
-    /// Install the developer tools and show the progress on the Linux page.
-    pub fn install_build_tools_here(&mut self, distro: &str) {
-        self.wsl_install_tools(distro);
+    /// Install the developer tools and show the progress on the Linux page; the groups that bring the `missing`
+    /// programs (the project cannot be built without them) are installed whole, whatever was chosen.
+    pub fn install_build_tools_here(&mut self, distro: &str, missing: &[String]) {
+        self.wsl_install_tools_with(distro, missing);
         self.open_settings_page(crate::ui_settings::WSL_PAGE);
     }
 

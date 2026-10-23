@@ -25,42 +25,64 @@ pub(crate) struct Rows {
     n: usize,
 }
 
+/// The measures of a row: its least height, the space added around its texts, and how far the texts are moved in from
+/// the left (room for a checkbox).
+#[derive(Clone, Copy)]
+struct Look {
+    min_h: f32,
+    pad: f32,
+    lead: f32,
+}
+
 impl Rows {
     /// One settings row: title + description on the left, `control` right-aligned and vertically centred.
     /// `ctrl_w` is the width reserved for the control (the texts wrap before it).
     pub(crate) fn row(&mut self, ui: &mut egui::Ui, pal: &Palette, title: &str, desc: &str, ctrl_w: f32, control: impl FnOnce(&mut egui::Ui)) {
-        self.row_sized(ui, pal, title, desc, ctrl_w, (56.0, 28.0), control);
+        self.row_sized(ui, pal, (title, desc), ctrl_w, Look { min_h: 56.0, pad: 28.0, lead: 0.0 }, control);
     }
 
     /// A row of a list of many (the colors of a theme): lower than [`Rows::row`].
     pub(crate) fn slim(&mut self, ui: &mut egui::Ui, pal: &Palette, title: &str, ctrl_w: f32, control: impl FnOnce(&mut egui::Ui)) {
-        self.row_sized(ui, pal, title, "", ctrl_w, (44.0, 14.0), control);
+        self.row_sized(ui, pal, (title, ""), ctrl_w, Look { min_h: 44.0, pad: 14.0, lead: 0.0 }, control);
     }
 
-    /// `height`: the least height of the row and the space added around its texts.
+    /// A row with a checkbox in front of its texts: `state` is what the box shows, and the result is whether the box
+    /// (or the texts beside it) was clicked.
     #[allow(clippy::too_many_arguments)]
-    fn row_sized(&mut self, ui: &mut egui::Ui, pal: &Palette, title: &str, desc: &str, ctrl_w: f32, height: (f32, f32), control: impl FnOnce(&mut egui::Ui)) {
+    pub(crate) fn check_row(&mut self, ui: &mut egui::Ui, pal: &Palette, state: ide_core::changes::Check, title: &str, desc: &str, ctrl_w: f32, control: impl FnOnce(&mut egui::Ui)) -> bool {
+        let id = ui.next_auto_id();
+        let rect = self.row_sized(ui, pal, (title, desc), ctrl_w, Look { min_h: 56.0, pad: 28.0, lead: 32.0 }, control);
+        let hit = Rect::from_min_max(rect.min, pos2(rect.max.x - ctrl_w, rect.max.y));
+        let resp = ui.interact(hit, id.with("check_row"), Sense::click());
+        widgets::checkbox_state(ui.painter(), Rect::from_center_size(pos2(rect.min.x + 10.0, rect.center().y), Vec2::splat(18.0)), state, pal);
+        resp.clicked()
+    }
+
+    /// The row: `texts` are the title and the description. Returns the rectangle it took.
+    fn row_sized(&mut self, ui: &mut egui::Ui, pal: &Palette, texts: (&str, &str), ctrl_w: f32, look: Look, control: impl FnOnce(&mut egui::Ui)) -> Rect {
+        let (title, desc) = texts;
         let w = ui.available_width();
         if self.n > 0 {
             let y = ui.cursor().min.y;
             ui.painter().line_segment([pos2(ui.cursor().min.x, y), pos2(ui.cursor().min.x + w, y)], Stroke::new(1.0, pal.border));
         }
         self.n += 1;
-        let text_w = (w - ctrl_w - 24.0).max(140.0);
+        let text_w = (w - ctrl_w - 24.0 - look.lead).max(140.0);
         let tg = ui.painter().layout(title.to_string(), fonts::ui(13.5), pal.text, text_w);
         let dg = (!desc.is_empty()).then(|| ui.painter().layout(desc.to_string(), fonts::ui(11.5), pal.text_dim, text_w));
         let content_h = tg.size().y + dg.as_ref().map_or(0.0, |g| 3.0 + g.size().y);
-        let h = (content_h + height.1).max(height.0);
+        let h = (content_h + look.pad).max(look.min_h);
         let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
         let top = rect.min.y + (h - content_h) / 2.0;
         let th = tg.size().y;
-        ui.painter().galley(pos2(rect.min.x, top), tg, pal.text);
+        ui.painter().galley(pos2(rect.min.x + look.lead, top), tg, pal.text);
         if let Some(g) = dg {
-            ui.painter().galley(pos2(rect.min.x, top + th + 3.0), g, pal.text_dim);
+            ui.painter().galley(pos2(rect.min.x + look.lead, top + th + 3.0), g, pal.text_dim);
         }
         let ctrl_rect = Rect::from_min_max(pos2(rect.max.x - ctrl_w, rect.min.y), rect.max);
         let mut c = ui.new_child(egui::UiBuilder::new().max_rect(ctrl_rect).layout(egui::Layout::right_to_left(Align::Center)));
         control(&mut c);
+        rect
     }
 }
 

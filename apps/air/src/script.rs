@@ -664,7 +664,7 @@ impl App {
             }
             // the "Install developer tools" button of the banner
             "banner_install_tools" => match self.missing_build_tools() {
-                Some((d, _)) if self.tools_banner_visible() => self.install_build_tools_here(&d),
+                Some((d, missing)) if self.tools_banner_visible() => self.install_build_tools_here(&d, &missing),
                 other => self.fail(format!("banner_install_tools: no banner ({other:?})")),
             },
             "assert_make_problem" => {
@@ -1221,6 +1221,88 @@ impl App {
                     other => self.fail(format!("wsl_action: unknown action {other}")),
                 }
             }
+            // the developer tools: `value` is choose / skip (a package `name`, or every package of the group `group`),
+            // open (the packages of the group `group` are listed), add (a tool of one's own: `name`, `packages` and
+            // `programs`; what is wrong with it is kept in the form) or remove (the tool `name`)
+            "linux_tool" => {
+                let arg = |k: &str| step[k].as_str().unwrap_or("").to_string();
+                match sval.as_str() {
+                    "choose" | "skip" => {
+                        let on = sval == "choose";
+                        let mut names = vec![];
+                        if step["name"].is_string() {
+                            names.push(arg("name"));
+                        }
+                        if let Some(g) = self.tool_groups().iter().find(|g| g.name == arg("group")) {
+                            names.extend(g.package_list().into_iter().map(String::from));
+                        } else if step["group"].is_string() {
+                            self.fail(format!("linux_tool: there is no group {}", arg("group")));
+                        }
+                        for n in names {
+                            self.settings.linux_tools.choose(&n, on);
+                        }
+                    }
+                    "open" => {
+                        self.wsl.tools_open.insert(arg("group"));
+                    }
+                    "add" => {
+                        self.wsl.tool_draft = Some(crate::app_wsl::ToolDraft { index: None, name: arg("name"), packages: arg("packages"), programs: arg("programs"), error: String::new() });
+                        self.wsl_tool_save();
+                    }
+                    "remove" => match self.settings.linux_tools.custom.iter().position(|c| c.name == arg("name")) {
+                        Some(i) => {
+                            self.settings.linux_tools.custom.remove(i);
+                            self.wsl_tools_changed();
+                        }
+                        None => self.fail(format!("linux_tool: there is no tool {}", arg("name"))),
+                    },
+                    other => self.fail(format!("linux_tool: unknown action {other}")),
+                }
+            }
+            // `groups`: names of the groups offered; `custom`: the names of the tools of one's own, in order; `install`: the
+            // packages that installing puts in (every one of `install_has` is in, none of `install_lacks`); `draft`: the
+            // form of a tool is open (`true`) or not, and `draft_error` what it complains about
+            "assert_linux_tools" => {
+                let list = |k: &str| -> Vec<String> { step[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default() };
+                let mut errors = vec![];
+                let groups: Vec<String> = self.tool_groups().into_iter().map(|g| g.name).collect();
+                for g in list("groups") {
+                    if !groups.contains(&g) {
+                        errors.push(format!("no group {g}; have {groups:?}"));
+                    }
+                }
+                if step["custom"].is_array() {
+                    let got: Vec<String> = self.settings.linux_tools.custom.iter().map(|c| c.name.clone()).collect();
+                    if got != list("custom") {
+                        errors.push(format!("custom tools {got:?}, expected {:?}", list("custom")));
+                    }
+                }
+                let install: Vec<String> = self.chosen_tool_groups(&[]).iter().flat_map(|g| g.package_list().into_iter().map(String::from).collect::<Vec<_>>()).collect();
+                for p in list("install_has") {
+                    if !install.contains(&p) {
+                        errors.push(format!("{p} is not installed by the tools; the packages are {install:?}"));
+                    }
+                }
+                for p in list("install_lacks") {
+                    if install.contains(&p) {
+                        errors.push(format!("{p} is installed by the tools although it was left out"));
+                    }
+                }
+                if let Some(open) = step["draft"].as_bool()
+                    && open != self.wsl.tool_draft.is_some()
+                {
+                    errors.push(format!("the form is {}", if open { "closed" } else { "open" }));
+                }
+                if let Some(e) = step["draft_error"].as_str() {
+                    let got = self.wsl.tool_draft.as_ref().map(|d| d.error.clone()).unwrap_or_default();
+                    if !got.contains(e) {
+                        errors.push(format!("the form says {got:?}, expected {e:?}"));
+                    }
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_linux_tools: {}", errors.join("; ")));
+                }
+            }
             "assert_wsl_progress" => {
                 // the running step: its stage, how far it is, and that the markers of the scripts are not in the log
                 let Some(t) = self.wsl.task.as_ref() else {
@@ -1303,6 +1385,26 @@ impl App {
                     let o = format!("{:?}", w.outcome);
                     if !o.contains(t) {
                         errors.push(format!("outcome {o}, expected it to contain {t:?}"));
+                    }
+                }
+                if let Some(t) = step["log_contains"].as_str()
+                    && !w.log.iter().any(|l| l.contains(t))
+                {
+                    errors.push(format!("the log of the step does not contain {t:?}"));
+                }
+                if let Some(t) = step["log_lacks"].as_str()
+                    && w.log.iter().any(|l| l.contains(t))
+                {
+                    errors.push(format!("the log of the step contains {t:?}"));
+                }
+                // the packages the fake distribution got in its last install
+                if let Some(t) = step["tools_found"].as_object() {
+                    let found = w.tools.get(&w.selected).and_then(|r| r.as_ref().ok());
+                    for (name, want) in t {
+                        let got = found.and_then(|f| f.iter().find(|(n, _)| n == name)).map(|(_, ok)| *ok);
+                        if got != want.as_bool() {
+                            errors.push(format!("{name} found: {got:?}, expected {want}"));
+                        }
                     }
                 }
                 if !errors.is_empty() {

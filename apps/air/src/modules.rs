@@ -273,18 +273,33 @@ impl App {
         self.docs = docs;
     }
 
-    /// The developer tools wanted in Linux: what everyone wants, and the groups of the modules that are on.
+    /// The developer tools offered for Linux: what everyone wants, the groups of the modules that are on, and the tools
+    /// the user added (one that is not written safely, or has the name of another group, is left out).
     pub fn tool_groups(&self) -> Vec<lisp_runtime::wsl::ToolGroup> {
-        use lisp_runtime::wsl::{ToolGroup, essential_groups};
+        use lisp_runtime::wsl::{ToolGroup, custom_group, essential_groups};
         let mut groups = essential_groups();
         for m in self.mods.installed.iter().filter(|m| m.enabled) {
             for t in &m.manifest.tools {
                 if !groups.iter().any(|g| g.name == t.name) {
-                    groups.push(ToolGroup { name: t.name.clone(), programs: t.programs.clone(), packages: t.apt.clone() });
+                    groups.push(ToolGroup { name: t.name.clone(), programs: t.programs.clone(), packages: t.apt.clone(), custom: false });
                 }
             }
         }
+        for c in &self.settings.linux_tools.custom {
+            if let Some(g) = custom_group(&c.name, &c.packages, &c.programs)
+                && !groups.iter().any(|x| x.name == g.name)
+            {
+                groups.push(g);
+            }
+        }
         groups
+    }
+
+    /// What installing the developer tools puts into Linux: the groups cut down to the packages that are chosen on the
+    /// Linux page. A group with a program of `force` (what a project cannot be built without) comes whole.
+    pub fn chosen_tool_groups(&self, force: &[String]) -> Vec<lisp_runtime::wsl::ToolGroup> {
+        let tools = &self.settings.linux_tools;
+        self.tool_groups().into_iter().map(|g| if g.programs.iter().any(|p| force.contains(p)) { g } else { g.with_packages(|p| tools.is_chosen(p)) }).filter(|g| !g.packages.is_empty()).collect()
     }
 
     /// The id of the language of the active document (for run commands).
@@ -481,4 +496,59 @@ fn fetch_covers(index: &Index, source: &Source, cache: Option<&Path>, tx: &Sende
 
 fn cover_entry(e: &IndexEntry) -> Option<&FileEntry> {
     e.files.iter().find(|f| f.name == e.cover)
+}
+
+#[cfg(test)]
+mod tests {
+    use ide_core::settings::{CustomTool, Settings};
+
+    use crate::app::App;
+
+    fn packages(app: &App, force: &[&str]) -> Vec<String> {
+        let force: Vec<String> = force.iter().map(|s| s.to_string()).collect();
+        app.chosen_tool_groups(&force).iter().flat_map(|g| g.package_list().into_iter().map(String::from).collect::<Vec<_>>()).collect()
+    }
+
+    #[test]
+    fn the_groups_to_install_follow_the_choice() {
+        let mut app = App::new(Settings::default());
+        let all = packages(&app, &[]);
+        assert!(all.contains(&"git".to_string()) && all.contains(&"vim".to_string()) && all.contains(&"doxygen".to_string()), "everything by default: {all:?}");
+        app.settings.linux_tools.choose("vim", false);
+        for p in ["man-db", "manpages-dev", "doxygen"] {
+            app.settings.linux_tools.choose(p, false);
+        }
+        let some = packages(&app, &[]);
+        assert!(!some.contains(&"vim".to_string()) && !some.contains(&"doxygen".to_string()) && some.contains(&"nano".to_string()));
+        // a group with nothing chosen is not installed at all
+        assert!(!app.chosen_tool_groups(&[]).iter().any(|g| g.name == "Documentation"));
+        // what is looked for is still every program: the page shows what is missing even if it is left out
+        let looked_for = lisp_runtime::wsl::all_programs(&app.tool_groups());
+        assert!(looked_for.contains(&"vim".to_string()) && looked_for.contains(&"doxygen".to_string()));
+        // a program the project cannot do without brings its group whole, chosen or not
+        let forced = packages(&app, &["doxygen"]);
+        assert!(forced.contains(&"doxygen".to_string()) && forced.contains(&"man-db".to_string()) && !forced.contains(&"vim".to_string()), "{forced:?}");
+        // nothing chosen: nothing to install
+        for p in &all {
+            app.settings.linux_tools.choose(p, false);
+        }
+        assert!(app.chosen_tool_groups(&[]).is_empty());
+    }
+
+    #[test]
+    fn tools_of_ones_own_join_the_groups_unless_they_are_unsafe_or_clash() {
+        let mut app = App::new(Settings::default());
+        let tool = |n: &str, p: &str, r: &str| CustomTool { name: n.into(), packages: p.into(), programs: r.into() };
+        app.settings.linux_tools.custom = vec![tool("Libraries", "libssl-dev zlib1g-dev", ""), tool("Network", "tcpdump nmap", "tcpdump"), tool("Evil", "x; reboot", ""), tool("Documentation", "nmap", ""), tool("Libraries", "other", "")];
+        let groups = app.tool_groups();
+        let names: Vec<&str> = groups.iter().filter(|g| g.custom).map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["Libraries", "Network"], "an unsafe one and a clash with another group are left out");
+        let libs = groups.iter().find(|g| g.name == "Libraries").unwrap();
+        assert_eq!(libs.packages, "libssl-dev zlib1g-dev");
+        assert_eq!(libs.programs, ["dpkg:libssl-dev", "dpkg:zlib1g-dev"]);
+        assert!(!groups.iter().find(|g| g.name == "Documentation").unwrap().custom, "the group of the same name stays the built-in one");
+        // they are chosen like the others
+        app.settings.linux_tools.choose("nmap", false);
+        assert!(!packages(&app, &[]).contains(&"nmap".to_string()) && packages(&app, &[]).contains(&"tcpdump".to_string()));
+    }
 }

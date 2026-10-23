@@ -78,6 +78,41 @@ pub fn format_color([r, g, b, a]: [u8; 4]) -> String {
     if a == 255 { format!("#{r:02X}{g:02X}{b:02X}") } else { format!("#{r:02X}{g:02X}{b:02X}{a:02X}") }
 }
 
+/// A group of Linux packages the user added to the developer tools on the Linux page.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomTool {
+    pub name: String,
+    /// The packages, separated by spaces, as the distribution's package manager names them.
+    pub packages: String,
+    /// The programs that show it is installed, separated by spaces; empty: the packages themselves are looked for.
+    pub programs: String,
+}
+
+/// What of the developer tools is put into the project's Linux: everything the modules ask for unless it is left out
+/// here, and the tools the user added.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LinuxTools {
+    /// Packages that are not installed (a package that is not listed is).
+    pub skipped: Vec<String>,
+    pub custom: Vec<CustomTool>,
+}
+
+impl LinuxTools {
+    pub fn is_chosen(&self, package: &str) -> bool {
+        !self.skipped.iter().any(|p| p == package)
+    }
+
+    /// Choose a package for installing (`true`) or leave it out.
+    pub fn choose(&mut self, package: &str, chosen: bool) {
+        self.skipped.retain(|p| p != package);
+        if !chosen {
+            self.skipped.push(package.to_string());
+        }
+    }
+}
+
 /// Language of the user interface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Language {
@@ -121,6 +156,8 @@ pub struct Settings {
     pub wsl_sbcl: String,
     /// Where Windows drives are mounted inside the distribution; empty = `/mnt/`.
     pub wsl_mount_root: String,
+    /// Which developer tools are put into Linux, and the ones the user added.
+    pub linux_tools: LinuxTools,
     /// Where modules are downloaded from (a web address or a folder); empty: the published registry.
     pub registry_url: String,
     /// The first-run welcome (choosing modules) has been shown.
@@ -158,6 +195,7 @@ impl Default for Settings {
             wsl_distro: String::new(),
             wsl_sbcl: String::new(),
             wsl_mount_root: String::new(),
+            linux_tools: LinuxTools::default(),
             registry_url: String::new(),
             modules_welcome_done: false,
             markup_preview: "split".into(),
@@ -360,6 +398,37 @@ mod tests {
         assert_eq!(s.toggled_theme(), Theme::Light, "a dark custom theme");
         s.custom_theme.dark = false;
         assert_eq!(s.toggled_theme(), Theme::Dark, "a light custom theme");
+    }
+
+    #[test]
+    fn linux_tools_are_all_chosen_until_one_is_left_out() {
+        let mut t = LinuxTools::default();
+        assert!(t.is_chosen("gcc") && t.is_chosen("anything"));
+        t.choose("vim", false);
+        t.choose("vim", false);
+        t.choose("jq", false);
+        assert_eq!(t.skipped, ["vim", "jq"], "left out once");
+        assert!(!t.is_chosen("vim") && t.is_chosen("gcc"));
+        t.choose("vim", true);
+        assert!(t.is_chosen("vim") && t.skipped == ["jq"]);
+    }
+
+    #[test]
+    fn linux_tools_survive_a_roundtrip_and_older_files_have_none() {
+        let d = TempDir::new("settings6");
+        let f = d.path().join("s.json");
+        fs::write(&f, r#"{"theme":"Dark"}"#).unwrap();
+        assert_eq!(Settings::load_from(&f).linux_tools, LinuxTools::default());
+        let mut s = Settings::default();
+        s.linux_tools.choose("doxygen", false);
+        s.linux_tools.custom.push(CustomTool { name: "Libraries".into(), packages: "libssl-dev zlib1g-dev".into(), programs: String::new() });
+        s.save_to(&f).unwrap();
+        assert_eq!(Settings::load_from(&f), s);
+        // a tool written by hand with only some of its fields
+        fs::write(&f, r#"{"linux_tools":{"custom":[{"name":"Net","packages":"nmap"}]}}"#).unwrap();
+        let t = Settings::load_from(&f).linux_tools;
+        assert_eq!(t.custom, [CustomTool { name: "Net".into(), packages: "nmap".into(), programs: String::new() }]);
+        assert!(t.skipped.is_empty());
     }
 
     #[test]

@@ -9,6 +9,7 @@ a distribution run on Windows: /mnt/<drive>/... paths are mapped back, `sbcl` is
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -81,8 +82,27 @@ def fake_apt(packages, version_lines):
 
 
 TOOLS = ["make", "gcc", "ld", "nasm", "gdb", "git", "qemu-system-i386", "qemu-system-x86_64"]
-# every program the developer tools check looks for (see TOOL_GROUPS in crates/lisp-runtime/src/wsl.rs)
+# every program the developer tools check looks for (see essential_groups and the modules in the registry)
 ALL_PROGRAMS = TOOLS + ["g++", "cmake", "ninja", "pkg-config", "clang", "clangd", "lldb", "clang-format", "valgrind", "strace", "ltrace", "gdb-multiarch", "xxd", "curl", "wget", "ssh", "rsync", "zip", "unzip", "xz", "jq", "rg", "fdfind", "tree", "vim", "nano", "htop", "man", "doxygen", "python3", "pip3", "qemu-img", "xorriso", "grub-mkrescue"]
+
+
+# the programs a package brings when they are not named like it
+PACKAGE_PROGRAMS = {
+    "build-essential": ["make", "gcc", "g++", "ld"], "ripgrep": ["rg"], "fd-find": ["fdfind"], "openssh-client": ["ssh"],
+    "xz-utils": ["xz"], "man-db": ["man"], "python3-pip": ["pip3"], "qemu-system-x86": ["qemu-system-i386", "qemu-system-x86_64"],
+}
+# the first loop of the install script of the developer tools: the packages that are asked of apt
+TOOLS_LOOP = re.compile(r"for p in ([^;]*); do\n\s+if apt-cache show")
+
+
+def package_found(d, name):
+    """Whether the check of the developer tools finds `name` (a program, or `dpkg:PACKAGE`) in the distribution."""
+    packages = d.get("packages", [])
+    if name.startswith("dpkg:"):
+        return name[5:] in packages
+    if d.get("tools") and name in ALL_PROGRAMS or name == "ld":
+        return True
+    return name in packages or any(name in PACKAGE_PROGRAMS.get(p, []) for p in packages)
 
 
 def fake_make(lcwd, target, merged):
@@ -120,9 +140,18 @@ def run_inside(s, name, cwd, prog, args):
         return 0
     if prog == "sh" and args[:1] == ["-c"]:
         script = args[1] if len(args) > 1 else ""
-        if "gcc-multilib" in script:
-            fake_apt(["build-essential", "gcc-multilib", "nasm", "gdb", "git", "qemu-system-x86", "qemu-system-common", "libvirglrenderer1", "seabios", "ipxe-qemu"], ["GNU Make 4.3", "gcc (Ubuntu 13.2.0) 13.2.0"])
-            d["tools"] = True
+        loop = TOOLS_LOOP.search(script)
+        if loop:
+            packages = loop.group(1).split()
+            if "gcc-multilib" in packages:
+                # everything the modules ask for: the full install, after which every tool is there
+                fake_apt(["build-essential", "gcc-multilib", "nasm", "gdb", "git", "qemu-system-x86", "qemu-system-common", "libvirglrenderer1", "seabios", "ipxe-qemu"], ["GNU Make 4.3", "gcc (Ubuntu 13.2.0) 13.2.0"])
+                d["tools"] = True
+            else:
+                # a choice: only these packages come, and `make` and `gcc` are told only if they are there
+                fake_apt(packages, ["GNU Make 4.3"] if "build-essential" in packages else [])
+            d["packages"] = sorted(set(d.get("packages", [])) | set(packages))
+            d["last_install"] = packages
             save(s)
             return 0
         if "cd ~ && pwd" in script:
@@ -135,9 +164,12 @@ def run_inside(s, name, cwd, prog, args):
             return 0
         out("fake wsl: unsupported script\n")
         return 1
-    if prog == "sh" and args[:1] == ["-lc"] and "command -v make" in (args[1] if len(args) > 1 else ""):
-        for t in ALL_PROGRAMS:
-            out(f"{t}=" + (f"/usr/bin/{t}" if d.get("tools") or t in ("ld",) else "") + "\n")
+    checked = re.findall(r'echo "([^"=]+)=\$\((?:command -v|dpkg-query)', args[1]) if prog == "sh" and args[:1] == ["-lc"] and len(args) > 1 else []
+    if checked:
+        # the check of the developer tools: one `NAME=...` line per program (or `dpkg:PACKAGE=...`) of its script
+        for name in checked:
+            found = package_found(d, name)
+            out(f"{name}=" + (("install ok installed" if name.startswith("dpkg:") else f"/usr/bin/{name}") if found else "") + "\n")
         return 0
     if prog == "sh" and args[:1] == ["-lc"] and "git config --global" in (args[1] if len(args) > 1 else ""):
         out("name: E2E\nemail: e2e@example.com\ncredentials: !'/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe'\n")

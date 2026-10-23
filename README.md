@@ -184,8 +184,20 @@ there - `python3`, `gcc`, `nasm` - when they are missing), not only one with a m
   xz, jq, ripgrep, fd, tree, vim, nano, htop), **Documentation** (man pages, doxygen), **Python** (python3, pip, venv)
   and **OS development** (nasm, QEMU, xorriso, GRUB tools) - about 230 MB on top of a fresh Ubuntu 24.04. Packages a
   release does not have are skipped. Other distributions get the C toolchain, nasm, gdb, git and QEMU only. Language
-  runtimes (Node.js, Java, Go, Rust) are not included: install them with the distribution's package manager.
-  *Set up git* gives Linux git your name, e-mail and the Windows credential manager (GitHub logins);
+  runtimes (Node.js, Java, Go, Rust) are not included: install them with the distribution's package manager (or add
+  them as a tool of your own, see below). *Set up git* gives Linux git your name, e-mail and the Windows credential
+  manager (GitHub logins);
+* **Choose what goes into Linux, and add your own.** Every group of the developer tools has a box: tick it to install the
+  group, clear it to leave the group out, and open it (the arrow on its row) to tick the packages one by one - `vim`
+  without `nano`, `jq` without the rest. *Tick all* and *Untick all* work on every package at once, and *Install the chosen
+  tools* installs exactly the ticked packages (what is left out is not even asked of the package manager). The choice is
+  kept in `settings.json` (`linux_tools`). **Your own tools:** *Add a tool...* takes a name, the packages (as the
+  distribution's package manager names them: `nmap`, `libssl-dev`, `nodejs`...) and, optionally, the programs that show
+  it is installed; without programs the packages themselves are looked for (with `dpkg` on Ubuntu and Debian). A tool of
+  your own shows up as a group like the others (changed or removed with the pencil and the bin), is checked like them
+  and is installed with every package manager Air knows (apt, dnf, zypper, pacman, apk), one package at a time, so
+  one that cannot be installed is skipped and does not stop the rest. Names are limited to letters, digits and `. + - _ :`.
+  A banner for a project that cannot be built without a tool (`gcc`, `make`...) installs that group whole, ticked or not.
 * **C, assembly, shell and makefiles are not Lisp**: they get their own highlighting, bracket matching, brace
   indentation, folding and comment markers, and never show false Lisp errors.
 
@@ -300,6 +312,18 @@ Windows: при открытии проекта с makefile Air предложи
 в GitHub из Windows. Файлы C, ассемблера, shell и makefile подсвечиваются по-своему и не дают ложных Lisp-ошибок.
 Если в дистрибутиве нет этих инструментов, сверху появляется плашка «Установить инструменты сборки», а `make` в терминале
 или в Run объясняет причину (`make: Permission denied`, код 127 значит «не установлен»), с полосой прогресса установки.
+
+**Какие инструменты ставить в Linux, и свои.** У каждой группы инструментов разработчика есть флажок: отмеченная группа
+ставится, снятая пропускается; стрелка на строке группы раскрывает её пакеты, и их можно отмечать по одному (`vim` без
+`nano`, `jq` без остального). «Отметить все» и «Снять все» действуют на все пакеты сразу, а «Установить выбранные
+инструменты» ставит ровно отмеченное (то, что снято, менеджеру пакетов даже не передаётся). Выбор хранится в
+`settings.json` (`linux_tools`). **Свои инструменты:** «Добавить инструмент...» просит название, пакеты (так, как их
+называет менеджер пакетов дистрибутива: `nmap`, `libssl-dev`, `nodejs`...) и, по желанию, программы, по которым видно,
+что инструмент установлен; без программ ищутся сами пакеты (через `dpkg` в Ubuntu и Debian). Свой инструмент появляется
+в списке как обычная группа (меняется и удаляется карандашом и корзиной), проверяется так же и ставится любым из
+известных Air менеджеров пакетов (apt, dnf, zypper, pacman, apk) по одному пакету, так что пакет, который не
+установился, пропускается и не мешает остальным. В названиях допустимы буквы, цифры и `. + - _ :`. Плашка проекта, без
+инструмента которого его не собрать (`gcc`, `make`...), ставит его группу целиком, отмечена она или нет.
 
 **Ошибки в любых языках.** Язык может попросить редактор отмечать непарные скобки, а модуль — задать проверку синтаксиса
 (`check` в манифесте: команда и шаблон разбора вывода). Проверка запускается на сохранённом файле, в Linux проекта или в
