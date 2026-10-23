@@ -163,7 +163,7 @@ impl App {
         let h = (screen.height() * 0.84).clamp(420.0, 860.0).min(screen.height() - 24.0);
         let (_, message, time) = commits[idx].clone();
         let mono = FontId::monospace(13.0);
-        egui::Area::new(egui::Id::new("local_view")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("local_view")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
             let fr = widgets::glass_frame(&pal).inner_margin(Margin::same(20)).show(ui, |ui| {
                 ui.set_width(w - 40.0);
                 // ---------------------------------------------------------------- header
@@ -356,7 +356,7 @@ impl App {
         }
         let (mut close, mut revert, mut full_diff, mut copy) = (false, false, false, false);
         let mut rect = Rect::NOTHING;
-        egui::Area::new(egui::Id::new("hunk_popup")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("hunk_popup")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
             let fr = egui::Frame::new().fill(pal.popup_bg).corner_radius(CornerRadius::same(14)).inner_margin(Margin::symmetric(14, 12)).show(ui, |ui| {
                 ui.set_width(width - 28.0);
                 ui.horizontal(|ui| {

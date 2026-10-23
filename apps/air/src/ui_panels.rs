@@ -46,7 +46,7 @@ pub const LAST_COPIED_ID: &str = "log_last_copied";
 
 /// Put `text` on the clipboard (and remember it for the tests).
 fn copy_log_text(ctx: &egui::Context, text: String) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(LAST_COPIED_ID), text.clone()));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(LAST_COPIED_ID), text.clone()));
     ctx.copy_text(text);
 }
 
@@ -95,7 +95,7 @@ impl App {
     fn header_action(&mut self, ui: &mut egui::Ui, header: Rect, slot: usize, icon: Icon, tip: &'static str) -> bool {
         let pal = self.pal;
         let r = Rect::from_min_size(Pos2::new(header.max.x - 12.0 - 32.0 * (slot as f32 + 1.0), header.center().y - 14.0), Vec2::splat(28.0));
-        let resp = ui.interact(r, ui.id().with(("hdr", tip)), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with(("hdr", tip)), Sense::click());
         if resp.hovered() {
             ui.painter().rect_filled(r, widgets::radius(), pal.hover);
         }
@@ -385,7 +385,7 @@ impl App {
             let g = ui.painter().layout_no_wrap(label.clone(), font.clone(), pal.text);
             let w = g.size().x + 26.0;
             let r = Rect::from_min_size(Pos2::new(x, hr.min.y), Vec2::new(w, hr.height()));
-            let resp = ui.interact(r, ui.id().with(("btab", label.clone())), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("btab", label.clone())), Sense::click());
             if active {
                 ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 8.0)), CornerRadius::same(12), pal.tab_active_bg);
             } else if resp.hovered() {
@@ -518,7 +518,7 @@ impl App {
         let pal = self.pal;
         let font = egui::FontId::monospace((self.settings.font_size - 1.0).max(9.0));
         let row_h = (ui.fonts_mut(|f| f.row_height(&font)) + 5.0).round();
-        let sel_id = ui.id().with(("log_selection", id));
+        let sel_id = ui.scope_id().with(("log_selection", id));
         let mut sel: Option<Selection> = ui.data(|d| d.get_temp::<Selection>(sel_id)).and_then(|s| s.clamped(lines.len()));
         let mut out = LogOut::default();
         let row_len = |i: usize| Self::log_row_text(&lines[i], prompt).chars().count();
@@ -598,7 +598,7 @@ impl App {
             {
                 let char_w = ui.fonts_mut(|f| f.glyph_width(&font, 'M'));
                 let shown = range.clone().map(|i| Self::log_row_text(&lines[i], prompt)).collect();
-                ui.data_mut(|d| d.insert_temp(egui::Id::new(LOG_GEOMETRY_ID), LogGeometry { left: first.1.left(), top: first.1.top(), row_h, char_w, rows: shown, ..Default::default() }));
+                ui.data_mut(|d| d.insert_temp(egui::Id::unique(LOG_GEOMETRY_ID), LogGeometry { left: first.1.left(), top: first.1.top(), row_h, char_w, rows: shown, ..Default::default() }));
             }
             // A selection is dragged while the button is down - not while the row it started on is on screen: scrolling
             // takes that row away (only the rows on screen exist), and the drag must go on.
@@ -688,11 +688,11 @@ impl App {
         if self.script.is_some() {
             // where the log is scrolled to, for the UI tests
             ui.data_mut(|d| {
-                if let Some(mut g) = d.get_temp::<LogGeometry>(egui::Id::new(LOG_GEOMETRY_ID)) {
-                    g.offset_y = area.state.offset().y;
+                if let Some(mut g) = d.get_temp::<LogGeometry>(egui::Id::unique(LOG_GEOMETRY_ID)) {
+                    g.offset_y = area.state.clamped_offset().y;
                     g.view_h = area.inner_rect.height();
                     g.max_offset = (area.content_size.y - area.inner_rect.height()).max(0.0);
-                    d.insert_temp(egui::Id::new(LOG_GEOMETRY_ID), g);
+                    d.insert_temp(egui::Id::unique(LOG_GEOMETRY_ID), g);
                 }
             });
         }
@@ -797,7 +797,7 @@ impl App {
             log_out = self.draw_log(ui, "repl_log", &self.repl.log, stick, ">");
         });
         self.after_log(log_out, false);
-        let id = egui::Id::new("repl_input");
+        let id = egui::Id::unique("repl_input");
         let mut submit = false;
         let mut hist: Option<isize> = None;
         if ctx.memory(|m| m.has_focus(id)) {
@@ -902,7 +902,7 @@ impl App {
             log_out = self.draw_log(ui, "term_log", &self.term.log, true, "$");
         });
         self.after_log(log_out, true);
-        let id = egui::Id::new("term_input");
+        let id = egui::Id::unique("term_input");
         let mut submit = false;
         let mut hist: Option<isize> = None;
         if ctx.memory(|m| m.has_focus(id)) {

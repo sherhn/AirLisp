@@ -230,7 +230,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let slider_top = |scroll_y: f32| map_rect.min.y + scroll_y / lh * MAP_ROW - map_offset(scroll_y);
     let mut map_resp = None;
     if map_w > 0.0 {
-        let resp = ui.interact(map_rect, ui.id().with("minimap"), Sense::click_and_drag());
+        let resp = ui.interact(map_rect, ui.scope_id().with("minimap"), Sense::click_and_drag());
         let on_slider = |p: Pos2| p.y >= slider_top(state.scroll.y) && p.y <= slider_top(state.scroll.y) + slider_h;
         if let Some(p) = resp.interact_pointer_pos()
             && (resp.clicked() || resp.drag_started())
@@ -254,7 +254,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     let max_scroll_x = (content_w - text_rect.width()).max(0.0);
     let vthumb_h = (text_rect.height() / content_h.max(1.0) * vbar.height()).clamp(28.0, vbar.height().max(28.0));
     let hthumb_w = (text_rect.width() / content_w.max(1.0) * hbar.width()).clamp(28.0, hbar.width().max(28.0));
-    let vresp = ui.interact(vbar, ui.id().with("vbar"), Sense::click_and_drag());
+    let vresp = ui.interact(vbar, ui.scope_id().with("vbar"), Sense::click_and_drag());
     if max_scroll_y > 0.0
         && let (true, Some(p)) = (vresp.is_pointer_button_down_on() || vresp.dragged(), vresp.interact_pointer_pos())
     {
@@ -262,7 +262,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
         state.scroll.y = f * max_scroll_y;
         ui.ctx().request_repaint();
     }
-    let hresp = ui.interact(hbar, ui.id().with("hbar"), Sense::click_and_drag());
+    let hresp = ui.interact(hbar, ui.scope_id().with("hbar"), Sense::click_and_drag());
     if max_scroll_x > 0.0
         && let (true, Some(p)) = (hresp.is_pointer_button_down_on() || hresp.dragged(), hresp.interact_pointer_pos())
     {
@@ -534,7 +534,7 @@ pub fn show(ui: &mut egui::Ui, ed: &mut Editor, state: &mut ViewState, folds: &m
     // ---------------------------------------------------------------- gutter
     // same background as the code (JetBrains style); the caret row is highlighted across numbers and code
     let gp = ui.painter_at(gutter_rect);
-    let gresp = ui.interact(gutter_rect, ui.id().with("gutter"), Sense::click());
+    let gresp = ui.interact(gutter_rect, ui.scope_id().with("gutter"), Sense::click());
     let hover_gutter = gresp.hovered();
     let first = ((state.scroll.y / lh).floor().max(0.0)) as usize;
     let last = ((((state.scroll.y + gutter_rect.height()) / lh).ceil()) as usize + 1).min(rows.len());

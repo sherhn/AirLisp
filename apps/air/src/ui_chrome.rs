@@ -425,7 +425,7 @@ impl App {
             let galley = ui.painter().layout_no_wrap(name.clone(), font.clone(), pal.text);
             let w = 14.0 + 18.0 + 8.0 + galley.size().x + 10.0 + 22.0 + 8.0;
             let r = Rect::from_min_size(Pos2::new(x, strip.min.y), Vec2::new(w, TAB_H));
-            let resp = ui.interact(r, ui.id().with(("tab", i)), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("tab", i)), Sense::click());
             let active = i == self.active;
             let hit = r.shrink2(Vec2::new(0.0, 8.0));
             if active {
@@ -454,7 +454,7 @@ impl App {
             let text_color = if has_err { pal.error } else if let Some(c) = git_color { c } else if active { pal.text } else { pal.text_dim };
             ui.painter().text(Pos2::new(r.min.x + 40.0, r.center().y), Align2::LEFT_CENTER, name, font.clone(), text_color);
             let cr = Rect::from_center_size(Pos2::new(r.max.x - 20.0, r.center().y), Vec2::splat(20.0));
-            let close_resp = ui.interact(cr, ui.id().with(("tabclose", i)), Sense::click());
+            let close_resp = ui.interact(cr, ui.scope_id().with(("tabclose", i)), Sense::click());
             if *modified || *conflict {
                 if close_resp.hovered() {
                     ui.painter().rect_filled(cr, CornerRadius::same(5), pal.hover);
@@ -666,7 +666,7 @@ impl App {
             let w = (g.size().x + 68.0).min(620.0);
             let h = 48.0;
             let rect = Rect::from_min_size(Pos2::new(screen.max.x - w - 20.0, y - h), Vec2::new(w, h));
-            egui::Area::new(egui::Id::new(("toast", i))).fixed_pos(rect.min).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
+            egui::Area::new(egui::Id::unique(("toast", i))).fixed_pos(rect.min).order(egui::Order::Tooltip).interactable(false).show(ctx, |ui| {
                 let p = ui.painter();
                 p.rect_filled(rect, CornerRadius::same(12), pal.popup_bg);
                 p.rect_filled(Rect::from_min_size(rect.min + Vec2::new(0.0, 10.0), Vec2::new(3.0, h - 20.0)), CornerRadius::same(2), color);

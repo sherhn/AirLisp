@@ -95,7 +95,7 @@ fn swatch(ui: &mut egui::Ui, pal: &Palette, key: &str, color: &mut Color32, tran
     ui.painter().rect_stroke(rect, round, Stroke::new(1.0, if resp.hovered() { pal.text_dim } else { pal.border.gamma_multiply(2.0) }), StrokeKind::Inside);
     let mut changed = false;
     let alpha = if translucent { egui::color_picker::Alpha::OnlyBlend } else { egui::color_picker::Alpha::Opaque };
-    egui::Popup::from_toggle_button_response(&resp).close_behavior(PopupCloseBehavior::CloseOnClickOutside).id(egui::Id::new(("theme_picker", key))).show(|ui| {
+    egui::Popup::from_toggle_button_response(&resp).close_behavior(PopupCloseBehavior::CloseOnClickOutside).id(egui::Id::unique(("theme_picker", key))).show(|ui| {
         ui.set_min_width(250.0);
         changed = egui::color_picker::color_picker_color32(ui, color, alpha);
     });
@@ -105,7 +105,7 @@ fn swatch(ui: &mut egui::Ui, pal: &Palette, key: &str, color: &mut Color32, tran
 /// The hex code of a colour, editable: a code that reads as a colour is taken at once. While the field has the focus
 /// it keeps what is typed; otherwise it shows the colour as it is.
 fn hex_field(ui: &mut egui::Ui, pal: &Palette, key: &str, now: Color32) -> Option<[u8; 4]> {
-    let id = egui::Id::new(("theme_hex", key));
+    let id = egui::Id::unique(("theme_hex", key));
     let now = now.to_srgba_unmultiplied();
     let editing = ui.memory(|m| m.has_focus(id));
     let mut text = if editing { ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| format_color(now)) } else { format_color(now) };

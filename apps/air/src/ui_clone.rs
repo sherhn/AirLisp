@@ -149,7 +149,7 @@ impl App {
         let running = st.run.is_some();
         // Enter belongs to the text field being edited: on the GitHub tab it signs in or searches, it does not clone
         let enter = enter && st.tab == CloneTab::Url;
-        egui::Area::new(egui::Id::new("clone_dialog")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("clone_dialog")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
             let r = widgets::glass_frame(&pal).show(ui, |ui| {
                 ui.set_width(700.0);
                 ui.horizontal(|ui| {
@@ -169,7 +169,7 @@ impl App {
                 if st.tab == CloneTab::Url {
                     widgets::caption(ui, &pal, &tr("Repository URL").to_uppercase());
                     ui.add_space(6.0);
-                    let id = egui::Id::new("clone_url");
+                    let id = egui::Id::unique("clone_url");
                     let r = TextField::new(&mut st.url).id(id).hint(tr("https://github.com/owner/repo  or  owner/repo")).icon(Icon::Globe).enabled(!running).show(ui, &pal);
                     if r.changed() {
                         st.error = None;

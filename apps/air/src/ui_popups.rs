@@ -104,7 +104,7 @@ impl App {
             }
         });
         let mut outside_rect = Rect::NOTHING;
-        egui::Area::new(egui::Id::new("palette")).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, Vec2::new(0.0, 80.0)).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("palette")).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, Vec2::new(0.0, 80.0)).show(ctx, |ui| {
             popup_frame(&pal).show(ui, |ui| {
                 ui.set_width(width);
                 ui.horizontal(|ui| {
@@ -137,7 +137,7 @@ impl App {
                     PaletteMode::Structure => tr("Filter definitions"),
                     PaletteMode::Choose => tr("Filter"),
                 };
-                let resp = TextField::new(&mut st.query).id(egui::Id::new("palette_query")).hint(hint).icon(Icon::Search).font(fonts::ui(15.0)).height(42.0).show(ui, &pal);
+                let resp = TextField::new(&mut st.query).id(egui::Id::unique("palette_query")).hint(hint).icon(Icon::Search).font(fonts::ui(15.0)).height(42.0).show(ui, &pal);
                 widgets::focus_once(ui, &resp, &mut st.just_opened);
                 ui.add_space(8.0);
                 let row_h = 38.0;
@@ -235,7 +235,7 @@ impl App {
     pub(crate) fn dialog_card(&self, ctx: &egui::Context, id: &str, title: &str, width: f32, build: impl FnOnce(&mut egui::Ui)) -> Rect {
         let pal = self.pal;
         let mut rect = Rect::NOTHING;
-        egui::Area::new(egui::Id::new(id)).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, Vec2::new(0.0, 130.0)).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique(id)).order(egui::Order::Foreground).anchor(Align2::CENTER_TOP, Vec2::new(0.0, 130.0)).show(ctx, |ui| {
             popup_frame(&pal).show(ui, |ui| {
                 ui.set_width(width);
                 ui.label(RichText::new(title).font(fonts::semibold(16.0)));
@@ -596,7 +596,7 @@ impl App {
         match popup {
             Popup::Info { title, text } => {
                 let mut close = esc;
-                egui::Area::new(egui::Id::new("info")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+                egui::Area::new(egui::Id::unique("info")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
                     popup_frame(&pal).show(ui, |ui| {
                         ui.set_width(620.0);
                         ui.horizontal(|ui| {
@@ -623,7 +623,7 @@ impl App {
             }
             Popup::About => {
                 let mut close = esc;
-                egui::Area::new(egui::Id::new("about")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+                egui::Area::new(egui::Id::unique("about")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
                     popup_frame(&pal).show(ui, |ui| {
                         ui.set_width(400.0);
                         ui.vertical_centered(|ui| {
@@ -660,7 +660,7 @@ impl App {
                 }
                 let mut choice = if esc { Some(Choice::Cancel) } else { None };
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string_lossy().into_owned());
-                egui::Area::new(egui::Id::new("open_project_ask")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+                egui::Area::new(egui::Id::unique("open_project_ask")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
                     let r = popup_frame(&pal).show(ui, |ui| {
                         ui.set_width(440.0);
                         ui.label(RichText::new(tr("Open Project")).font(fonts::semibold(16.0)));
@@ -697,7 +697,7 @@ impl App {
             Popup::Confirm { kind, message } => {
                 let mut result: Option<bool> = esc.then_some(false);
                 let mut save_first = false;
-                egui::Area::new(egui::Id::new("confirm")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+                egui::Area::new(egui::Id::unique("confirm")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
                     popup_frame(&pal).show(ui, |ui| {
                         ui.set_width(420.0);
                         ui.label(RichText::new(&message).size(14.0));
@@ -793,7 +793,7 @@ impl App {
             pos.y = (pos.y - h - 28.0).max(0.0);
         }
         pos.x = pos.x.min(screen.max.x - 420.0);
-        egui::Area::new(egui::Id::new("completion")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("completion")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
             egui::Frame::new()
                 .fill(pal.popup_bg)
                 .corner_radius(CornerRadius::same(12))
@@ -850,7 +850,7 @@ impl App {
         let mut p = Pos2::new(pos.x, pos.y - 64.0);
         p.x = p.x.min(screen.max.x - 460.0).max(8.0);
         p.y = p.y.max(8.0);
-        egui::Area::new(egui::Id::new("hint")).order(egui::Order::Tooltip).fixed_pos(p).interactable(false).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("hint")).order(egui::Order::Tooltip).fixed_pos(p).interactable(false).show(ctx, |ui| {
             egui::Frame::new().fill(pal.popup_bg).corner_radius(CornerRadius::same(9)).inner_margin(Margin::symmetric(12, 8)).show(ui, |ui| {
                 ui.label(RichText::new(text).monospace().size(12.5));
             });
@@ -873,7 +873,7 @@ impl App {
         egui::Frame::new().fill(pal.panel_bg).inner_margin(Margin::symmetric(16, 10)).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                let id = egui::Id::new("find_query");
+                let id = egui::Id::unique("find_query");
                 let r = TextField::new(&mut self.find.query).id(id).hint(tr("Find")).icon(Icon::Search).width(300.0).height(34.0).show(ui, &pal);
                 if self.find.focus {
                     r.request_focus();

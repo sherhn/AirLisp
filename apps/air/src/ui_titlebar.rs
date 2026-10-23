@@ -24,7 +24,7 @@ impl App {
         let bar = ui.max_rect();
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         // the empty part of the bar drags the window; widgets added later take priority
-        let drag = ui.interact(bar, ui.id().with("titlebar_drag"), Sense::click_and_drag());
+        let drag = ui.interact(bar, ui.scope_id().with("titlebar_drag"), Sense::click_and_drag());
         if drag.drag_started_by(egui::PointerButton::Primary) {
             ctx.send_viewport_cmd(ViewportCommand::StartDrag);
         }
@@ -50,7 +50,7 @@ impl App {
         for (i, ctl) in [Ctl::Minimize, Ctl::Maximize, Ctl::Close].into_iter().enumerate() {
             let x = bar.max.x - BTN_W * (3 - i) as f32;
             let r = Rect::from_min_size(Pos2::new(x, bar.min.y), Vec2::new(BTN_W, bar.height()));
-            let resp = ui.interact(r, ui.id().with(("winctl", i)), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("winctl", i)), Sense::click());
             let hot = resp.hovered();
             if hot {
                 ui.painter().rect_filled(r, CornerRadius::ZERO, if ctl == Ctl::Close { Color32::from_rgb(0xE8, 0x11, 0x23) } else { pal.hover });
@@ -115,9 +115,9 @@ impl App {
             (Rect::from_min_size(Pos2::new(s.min.x, s.max.y - c), Vec2::splat(c)), D::SouthWest, CursorIcon::ResizeNeSw),
             (Rect::from_min_size(Pos2::new(s.max.x - c, s.max.y - c), Vec2::splat(c)), D::SouthEast, CursorIcon::ResizeNwSe),
         ];
-        egui::Area::new(egui::Id::new("resize_handles")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).interactable(true).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("resize_handles")).order(egui::Order::Foreground).fixed_pos(Pos2::ZERO).interactable(true).show(ctx, |ui| {
             for (i, (rect, dir, cursor)) in zones.into_iter().enumerate() {
-                let resp = ui.interact(rect, egui::Id::new(("resize", i)), Sense::click_and_drag());
+                let resp = ui.interact(rect, egui::Id::unique(("resize", i)), Sense::click_and_drag());
                 if resp.hovered() || resp.dragged() {
                     ctx.set_cursor_icon(cursor);
                 }

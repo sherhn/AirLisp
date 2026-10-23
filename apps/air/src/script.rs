@@ -308,7 +308,7 @@ impl App {
             // the mouse on a row of the console log last drawn: `line` is the text of the row as shown, `col` a character
             // column or "end"; `action`: down, move, up, or click (with `count`)
             "log_mouse" => {
-                let Some(g) = ctx.data(|d| d.get_temp::<crate::ui_panels::LogGeometry>(egui::Id::new(crate::ui_panels::LOG_GEOMETRY_ID))) else {
+                let Some(g) = ctx.data(|d| d.get_temp::<crate::ui_panels::LogGeometry>(egui::Id::unique(crate::ui_panels::LOG_GEOMETRY_ID))) else {
                     self.fail("log_mouse: no console log has been drawn".to_string());
                     return;
                 };
@@ -446,7 +446,7 @@ impl App {
                 }
             }
             "assert_log" => {
-                let Some(g) = ctx.data(|d| d.get_temp::<crate::ui_panels::LogGeometry>(egui::Id::new(crate::ui_panels::LOG_GEOMETRY_ID))) else {
+                let Some(g) = ctx.data(|d| d.get_temp::<crate::ui_panels::LogGeometry>(egui::Id::unique(crate::ui_panels::LOG_GEOMETRY_ID))) else {
                     self.fail("assert_log: no console log has been drawn".to_string());
                     return;
                 };
@@ -468,7 +468,7 @@ impl App {
             }
             "assert_copied" => {
                 // `value`: the whole text; or `starts` / `ends` / `contains` for the parts that do not depend on the machine
-                let got = ctx.data(|d| d.get_temp::<String>(egui::Id::new(crate::ui_panels::LAST_COPIED_ID))).unwrap_or_default();
+                let got = ctx.data(|d| d.get_temp::<String>(egui::Id::unique(crate::ui_panels::LAST_COPIED_ID))).unwrap_or_default();
                 let mut errors = vec![];
                 if step["value"].is_string() && got != sval {
                     errors.push(format!("expected {sval:?}"));

@@ -414,7 +414,7 @@ pub fn module_picker(ui: &mut egui::Ui, pal: &Palette, data: &PickerData, select
     for (i, c) in data.cards.iter().enumerate() {
         let r = Rect::from_min_size(Pos2::new(area.min.x + (i % cols) as f32 * (w + 10.0), area.min.y + (i / cols) as f32 * 56.0), Vec2::new(w, 50.0));
         let on = selected.contains(&c.id);
-        let resp = ui.interact(r, ui.id().with(("pick", &c.id)), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with(("pick", &c.id)), Sense::click());
         let fill = if on { pal.accent.gamma_multiply(0.20) } else if resp.hovered() { pal.hover } else { pal.input_bg.gamma_multiply(0.6) };
         ui.painter().rect_filled(r, CornerRadius::same(12), fill);
         if on {

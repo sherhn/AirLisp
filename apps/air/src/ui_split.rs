@@ -54,7 +54,7 @@ impl App {
             let font = if focused { fonts::semibold(12.5) } else { fonts::ui(12.5) };
             pane.painter().with_clip_rect(hr.shrink2(vec2(36.0, 0.0))).text(pos2(hr.min.x + 36.0, hr.center().y), egui::Align2::LEFT_CENTER, label, font, if focused { pal.text } else { pal.text_dim });
             let cr = Rect::from_center_size(pos2(hr.max.x - 18.0, hr.center().y), vec2(22.0, 22.0));
-            let close = pane.interact(cr, pane.id().with(("pane_close", k)), Sense::click());
+            let close = pane.interact(cr, pane.scope_id().with(("pane_close", k)), Sense::click());
             if close.hovered() {
                 pane.painter().rect_filled(cr, CornerRadius::same(6), pal.hover);
             }

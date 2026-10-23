@@ -179,7 +179,7 @@ pub fn show(ui: &mut egui::Ui, env: &Env, doc: &Document, st: &mut PreviewState)
     if let Some(y) = forced {
         area = area.vertical_scroll_offset(y);
     }
-    let id = ui.id().value();
+    let id = ui.scope_id().value();
     let mut cx = Cx { env, st, out: Out::default(), anchors: HashMap::new(), origin_y: 0.0, id };
     let mut ys: Vec<(usize, f32)> = vec![];
     let res = area.show(ui, |ui| {

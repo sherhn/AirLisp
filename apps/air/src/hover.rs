@@ -592,7 +592,7 @@ impl App {
         let screen = ctx.content_rect();
         let width = 560.0_f32.min(screen.width() - 24.0);
         let pos = pos2((self.hover.pos.x + 10.0).min(screen.max.x - width - 12.0).max(screen.min.x + 8.0), self.hover.pos.y + 22.0);
-        let resp = egui::Area::new(egui::Id::new("hover_doc")).order(egui::Order::Tooltip).fixed_pos(pos).constrain(true).fade_in(false).show(ctx, |ui| {
+        let resp = egui::Area::new(egui::Id::unique("hover_doc")).order(egui::Order::Tooltip).fixed_pos(pos).constrain(true).fade_in(false).show(ctx, |ui| {
             // opaque: it lies over code
             egui::Frame::new().fill(pal.popup_bg).corner_radius(egui::CornerRadius::same(12)).stroke(egui::Stroke::new(1.0, pal.border)).inner_margin(Margin::symmetric(14, 11)).show(ui, |ui| {
                 ui.set_max_width(width - 30.0);

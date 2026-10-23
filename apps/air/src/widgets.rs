@@ -91,7 +91,7 @@ pub fn sheen(painter: &Painter, rect: Rect, pal: &Palette) {
 
 /// Dim everything behind a modal dialog.
 pub fn scrim(ctx: &egui::Context, pal: &Palette) {
-    let layer = egui::LayerId::new(egui::Order::Middle, egui::Id::new("scrim"));
+    let layer = egui::LayerId::new(egui::Order::Middle, egui::Id::unique("scrim"));
     let alpha = if pal.dark { 110 } else { 60 };
     ctx.layer_painter(layer).rect_filled(ctx.content_rect(), CornerRadius::ZERO, Color32::from_black_alpha(alpha));
 }

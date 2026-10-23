@@ -98,7 +98,7 @@ impl App {
         let mut chosen = None;
         for (mode, icon, tip) in buttons {
             let r = Rect::from_min_size(pos2(x, row.center().y - size / 2.0), vec2(size, size));
-            let resp = ui.interact(r, ui.id().with(("preview_mode", idx, mode.name())), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("preview_mode", idx, mode.name())), Sense::click());
             let on = cur == mode;
             if on {
                 ui.painter().rect_filled(r, CornerRadius::same(7), pal.accent.gamma_multiply(0.22));

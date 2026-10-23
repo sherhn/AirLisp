@@ -116,7 +116,7 @@ impl App {
         let mut open_modules = false;
         let screen = ctx.content_rect();
         let (dw, dh) = (DIALOG_W.min(screen.width() - 40.0), DIALOG_H.min(screen.height() - 40.0));
-        egui::Area::new(egui::Id::new("settings")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("settings")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
             let r = widgets::glass_frame(&pal).inner_margin(Margin::same(0)).show(ui, |ui| {
                 let (full, _) = ui.allocate_exact_size(vec2(dw, dh), Sense::hover());
 
@@ -124,7 +124,7 @@ impl App {
                 ui.painter().text(pos2(full.min.x + 28.0, full.min.y + 38.0), Align2::LEFT_CENTER, tr("Settings"), fonts::semibold(18.0), pal.text);
                 for (i, (name, icon)) in PAGES.iter().enumerate() {
                     let r = Rect::from_min_size(pos2(full.min.x + 12.0, full.min.y + 78.0 + i as f32 * 40.0), vec2(SIDEBAR_W - 24.0, 38.0));
-                    let resp = ui.interact(r, egui::Id::new(("settings_page", i)), Sense::click());
+                    let resp = ui.interact(r, egui::Id::unique(("settings_page", i)), Sense::click());
                     widgets::row_background(ui, &pal, r.expand2(vec2(8.0, 1.0)), i == page, resp.hovered());
                     let c = if i == page { pal.accent } else { pal.text_dim };
                     icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 22.0, r.center().y), Vec2::splat(16.0)), *icon, c);

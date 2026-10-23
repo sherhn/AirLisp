@@ -272,7 +272,7 @@ impl App {
 
     fn draw_commit_form(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let pal = self.pal;
-        let msg_id = egui::Id::new("git_commit_msg");
+        let msg_id = egui::Id::unique("git_commit_msg");
         ui.add_space(6.0);
         let w = ui.available_width() - 24.0;
         let mut commit = false;
