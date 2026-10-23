@@ -690,6 +690,9 @@ mod tests {
     #[test]
     fn image_names_are_cleaned_and_kept_unique() {
         let taken = vec!["ubuntu-24.04".to_string()];
+        assert_eq!(name_for_image(Path::new("ubuntu-24.04.wsl"), &taken), "ubuntu-24.04-2");
+        // a backslash separates folders only in a Windows path
+        #[cfg(windows)]
         assert_eq!(name_for_image(Path::new(r"C:\d\ubuntu-24.04.wsl"), &taken), "ubuntu-24.04-2");
         assert_eq!(name_for_image(Path::new("debian rootfs.tar.gz"), &[]), "debian-rootfs");
         assert_eq!(name_for_image(Path::new(".tar"), &[]), "Linux");
