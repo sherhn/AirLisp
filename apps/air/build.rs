@@ -1,9 +1,16 @@
 //! Embeds the application icon and version info into the Windows executable.
 //! The version comes from the workspace `Cargo.toml`, so a release changes it in one place.
 
-use std::{env, fs, path::PathBuf};
-
 fn main() {
+    // embed-resource is a build dependency on Windows hosts only
+    #[cfg(windows)]
+    windows_resources();
+}
+
+#[cfg(windows)]
+fn windows_resources() {
+    use std::{env, fs, path::PathBuf};
+
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
