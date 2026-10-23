@@ -232,7 +232,9 @@ impl Palette {
             input_bg: c(0x1A2324),
             base_top: c(0x0B1412),
             base_bottom: c(0x070A0F),
-            glass: Color32::from_rgba_unmultiplied(24, 33, 34, 240),
+            // dialogs hold dense text over a busy screen, and there is no blur: more see-through than this and the
+            // words behind show through the words in front
+            glass: Color32::from_rgba_unmultiplied(24, 33, 34, 252),
             sheen: Color32::from_white_alpha(46),
             blue: c(0x3B82F6),
             glow_a: c(0x1FD66B),
@@ -299,7 +301,7 @@ impl Palette {
             input_bg: c(0xE8F0EC),
             base_top: c(0xEAF3EE),
             base_bottom: c(0xDDE8F2),
-            glass: Color32::from_rgba_unmultiplied(255, 255, 255, 244),
+            glass: Color32::from_rgba_unmultiplied(255, 255, 255, 252),
             sheen: Color32::from_white_alpha(220),
             blue: c(0x2563EB),
             glow_a: c(0x3FD487),
