@@ -1508,17 +1508,16 @@ impl App {
                                 self.fail(format!("assert_diff: expected {n} removed lines, got {removed}"));
                             }
                         }
-                        if let Some(s) = step["old_contains"].as_str() {
-                            if !old.contains(&s.replace("\n", "
-")) {
-                                self.fail(format!("assert_diff: old text does not contain {s:?}: {old:?}"));
-                            }
+                        // `\n` written out in the script is a line break, as in `set_text`
+                        if let Some(s) = step["old_contains"].as_str()
+                            && !old.contains(&s.replace("\\n", "\n"))
+                        {
+                            self.fail(format!("assert_diff: old text does not contain {s:?}: {old:?}"));
                         }
-                        if let Some(s) = step["new_contains"].as_str() {
-                            if !new.contains(&s.replace("\n", "
-")) {
-                                self.fail(format!("assert_diff: new text does not contain {s:?}: {new:?}"));
-                            }
+                        if let Some(s) = step["new_contains"].as_str()
+                            && !new.contains(&s.replace("\\n", "\n"))
+                        {
+                            self.fail(format!("assert_diff: new text does not contain {s:?}: {new:?}"));
                         }
                     }
                 }
