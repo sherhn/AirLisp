@@ -24,6 +24,7 @@ fn filler(pal: &Palette) -> Color32 {
     pal.hover.gamma_multiply(0.5)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn paint_side_row(painter: &Painter, pal: &Palette, r: Rect, half: f32, row: &SideRow, mono: &FontId, cw: f32, current: bool) {
     let left = Rect::from_min_size(r.min, vec2(half, r.height()));
     let right = Rect::from_min_size(pos2(r.min.x + half + 1.0, r.min.y), vec2(half, r.height()));
@@ -159,13 +160,13 @@ impl App {
         if step_file != 0 {
             self.diff_step_file(step_file);
         }
-        if step_change != 0 {
-            if self.docs.get(idx).is_some_and(|d| d.diff.is_some()) {
-                let was = self.active;
-                self.active = idx;
-                self.diff_step_change(step_change);
-                self.active = was;
-            }
+        if step_change != 0
+            && self.docs.get(idx).is_some_and(|d| d.diff.is_some())
+        {
+            let was = self.active;
+            self.active = idx;
+            self.diff_step_change(step_change);
+            self.active = was;
         }
         if let Some(u) = set_unified
             && let Some(t) = self.docs.get_mut(idx).and_then(|d| d.diff.as_mut())

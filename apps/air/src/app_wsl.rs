@@ -64,6 +64,9 @@ pub fn strip_markers(log: &mut Vec<String>, open: bool) {
     });
 }
 
+/// What the check of the developer tools found in a distribution: (program, found), or why the check failed.
+pub type ToolsFound = Result<Vec<(String, bool)>, String>;
+
 #[derive(Default)]
 pub struct WslState {
     pub probe: Option<Probe>,
@@ -76,8 +79,8 @@ pub struct WslState {
     sbcl_rx: Option<Receiver<(String, Result<SbclCheck, String>)>>,
     pub checking_sbcl: Option<String>,
     /// Developer tools found in each distribution: (program, found) (`Err`: the check failed).
-    pub tools: HashMap<String, Result<Vec<(String, bool)>, String>>,
-    tools_rx: Option<Receiver<(String, Result<Vec<(String, bool)>, String>)>>,
+    pub tools: HashMap<String, ToolsFound>,
+    tools_rx: Option<Receiver<(String, ToolsFound)>>,
     pub task: Option<RunningTask>,
     /// Output of the last setup task; a progress bar redrawing its line replaces the last entry.
     pub log: Vec<String>,

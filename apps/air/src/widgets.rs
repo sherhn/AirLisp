@@ -523,11 +523,5 @@ pub fn paint_progress(ui: &egui::Ui, r: Rect, track: Color32, fill: Color32, fra
     }
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn grid_constants_are_consistent() {
-        assert!(super::TAB_H > super::ROW_H);
-        assert!(super::CARD_RADIUS > super::RADIUS);
-    }
-}
+// the grid is consistent: checked when the program is compiled
+const _: () = assert!(TAB_H > ROW_H && CARD_RADIUS > RADIUS);

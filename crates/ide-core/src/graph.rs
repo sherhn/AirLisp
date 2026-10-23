@@ -50,9 +50,8 @@ pub fn layout(commits: &[Commit]) -> Vec<GraphRow> {
                 outgoing.push((j, lanes[j].as_ref().map_or(0, |l| l.1)));
                 continue;
             }
-            let (slot, col) = if k == 0 && lane < lanes.len() && lanes[lane].is_none() {
-                (lane, color)
-            } else if k == 0 && lane >= lanes.len() {
+            // the first parent continues the commit's own lane when that lane is free (or new)
+            let (slot, col) = if k == 0 && lanes.get(lane).is_none_or(|l| l.is_none()) {
                 (lane, color)
             } else {
                 next_color += 1;

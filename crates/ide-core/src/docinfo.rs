@@ -340,7 +340,7 @@ mod tests {
     fn calls_are_matched_to_definitions_by_their_arguments() {
         assert!(arity_fits(Some(1), signature_arity("int open(char *name)", "open")));
         assert!(!arity_fits(Some(2), signature_arity("int open(char *name)", "open")));
-        assert!(arity_fits(Some(0), signature_arity("def area(width, height=1):", "area")) == false);
+        assert!(!arity_fits(Some(0), signature_arity("def area(width, height=1):", "area")));
         assert!(arity_fits(Some(7), signature_arity("int printf(const char *fmt, ...)", "printf")));
         // when either side is unknown, nothing is ruled out
         assert!(arity_fits(None, Some((1, Some(1)))));

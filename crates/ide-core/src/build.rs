@@ -78,10 +78,9 @@ fn parse_line(l: &str) -> Option<(String, usize, usize, Level, String)> {
         (Level::Error, t)
     } else if let Some(t) = rest.strip_prefix("warning:") {
         (Level::Warning, t)
-    } else if let Some(t) = rest.strip_prefix("note:") {
-        (Level::Note, t)
     } else {
-        return None;
+        let t = rest.strip_prefix("note:")?;
+        (Level::Note, t)
     };
     if file.trim().is_empty() || file.contains(' ') && !file.contains('/') && !file.contains('\\') {
         return None;

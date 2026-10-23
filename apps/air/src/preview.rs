@@ -189,7 +189,7 @@ pub fn show(ui: &mut egui::Ui, env: &Env, doc: &Document, st: &mut PreviewState)
         ui.horizontal_top(|ui| {
             ui.add_space(pad);
             ui.vertical(|ui| {
-                ui.set_max_width((ui.available_width() - pad).min(MAX_W).max(120.0));
+                ui.set_max_width((ui.available_width() - pad).clamp(120.0, MAX_W));
                 ui.spacing_mut().item_spacing = Vec2::new(0.0, 0.0);
                 let mut first = true;
                 for b in &doc.blocks {
@@ -459,6 +459,14 @@ struct Fmt {
     link: bool,
 }
 
+/// What a run of text starts from: its size, its colour, and whether all of it is bold (a heading).
+#[derive(Clone, Copy)]
+struct Base {
+    size: f32,
+    color: Color32,
+    bold: bool,
+}
+
 struct JobOut {
     job: LayoutJob,
     /// Char ranges of the links in the text, and where they go.
@@ -466,9 +474,10 @@ struct JobOut {
     chars: usize,
 }
 
-fn format_for(cx: &Cx, size: f32, color: Color32, f: &Fmt, bold_base: bool) -> egui::TextFormat {
+fn format_for(cx: &Cx, base: Base, f: &Fmt) -> egui::TextFormat {
     let pal = cx.env.pal;
-    let bold = f.bold || bold_base;
+    let Base { size, color, .. } = base;
+    let bold = f.bold || base.bold;
     let mut tf = egui::TextFormat {
         font_id: if f.code { FontId::monospace((size * 0.92).round()) } else if bold { fonts::semibold(size) } else { fonts::ui(size) },
         color,
@@ -490,32 +499,32 @@ fn format_for(cx: &Cx, size: f32, color: Color32, f: &Fmt, bold_base: bool) -> e
     tf
 }
 
-fn push_inlines(cx: &Cx, out: &mut JobOut, inlines: &[Inline], size: f32, color: Color32, bold_base: bool, f: &Fmt, link: Option<(&str, &str)>) {
+fn push_inlines(cx: &Cx, out: &mut JobOut, inlines: &[Inline], base: Base, f: &Fmt, link: Option<(&str, &str)>) {
     for i in inlines {
         match i {
-            Inline::Text(t) => append(cx, out, t, size, color, bold_base, f, link),
-            Inline::Code(t) => append(cx, out, t, size, color, bold_base, &Fmt { code: true, ..f.clone() }, link),
-            Inline::Emph(c) => push_inlines(cx, out, c, size, color, bold_base, &Fmt { italic: true, ..f.clone() }, link),
-            Inline::Strong(c) => push_inlines(cx, out, c, size, color, bold_base, &Fmt { bold: true, ..f.clone() }, link),
-            Inline::Strike(c) => push_inlines(cx, out, c, size, color, bold_base, &Fmt { strike: true, ..f.clone() }, link),
-            Inline::Link { url, title, children } => push_inlines(cx, out, children, size, color, bold_base, &Fmt { link: true, ..f.clone() }, Some((url, title))),
+            Inline::Text(t) => append(cx, out, t, base, f, link),
+            Inline::Code(t) => append(cx, out, t, base, &Fmt { code: true, ..f.clone() }, link),
+            Inline::Emph(c) => push_inlines(cx, out, c, base, &Fmt { italic: true, ..f.clone() }, link),
+            Inline::Strong(c) => push_inlines(cx, out, c, base, &Fmt { bold: true, ..f.clone() }, link),
+            Inline::Strike(c) => push_inlines(cx, out, c, base, &Fmt { strike: true, ..f.clone() }, link),
+            Inline::Link { url, title, children } => push_inlines(cx, out, children, base, &Fmt { link: true, ..f.clone() }, Some((url, title))),
             Inline::Image { alt, src, .. } => {
                 // an image in running text: its description, as a link to it
                 let shown = if alt.is_empty() { src.rsplit('/').next().unwrap_or(src).to_string() } else { alt.clone() };
-                append(cx, out, &format!("[{shown}]"), size, color, bold_base, f, link);
+                append(cx, out, &format!("[{shown}]"), base, f, link);
             }
-            Inline::SoftBreak => append(cx, out, " ", size, color, bold_base, f, link),
-            Inline::HardBreak => append(cx, out, "\n", size, color, bold_base, f, link),
+            Inline::SoftBreak => append(cx, out, " ", base, f, link),
+            Inline::HardBreak => append(cx, out, "\n", base, f, link),
         }
     }
 }
 
-fn append(cx: &Cx, out: &mut JobOut, t: &str, size: f32, color: Color32, bold_base: bool, f: &Fmt, link: Option<(&str, &str)>) {
+fn append(cx: &Cx, out: &mut JobOut, t: &str, base: Base, f: &Fmt, link: Option<(&str, &str)>) {
     if t.is_empty() {
         return;
     }
     let n = t.chars().count();
-    out.job.append(t, 0.0, format_for(cx, size, color, f, bold_base));
+    out.job.append(t, 0.0, format_for(cx, base, f));
     if let Some((url, title)) = link {
         match out.links.last_mut() {
             Some(l) if l.1 == out.chars && l.2 == url => l.1 += n,
@@ -528,7 +537,7 @@ fn append(cx: &Cx, out: &mut JobOut, t: &str, size: f32, color: Color32, bold_ba
 /// A run of inlines as wrapped, selectable text; clicks on links go to `cx.out.link`.
 fn text(ui: &mut egui::Ui, cx: &mut Cx, inlines: &[Inline], size: f32, color: Color32, bold: bool) {
     let mut out = JobOut { job: LayoutJob::default(), links: vec![], chars: 0 };
-    push_inlines(cx, &mut out, inlines, size, color, bold, &Fmt::default(), None);
+    push_inlines(cx, &mut out, inlines, Base { size, color, bold }, &Fmt::default(), None);
     if out.job.is_empty() {
         return;
     }
@@ -613,7 +622,7 @@ pub fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%'
-            && i + 2 < b.len() + 0
+            && i + 2 < b.len()
             && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
         {
             out.push(v);

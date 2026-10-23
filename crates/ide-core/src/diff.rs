@@ -32,8 +32,8 @@ pub fn diff_lines(old: &str, new: &str) -> Vec<DiffLine> {
     let am = &a[pre..a.len() - suf];
     let bm = &b[pre..b.len() - suf];
     let mut out = Vec::with_capacity(a.len().max(b.len()));
-    for i in 0..pre {
-        out.push(DiffLine { kind: LineKind::Same, old_no: Some(i + 1), new_no: Some(i + 1), text: a[i].to_string() });
+    for (i, l) in a[..pre].iter().enumerate() {
+        out.push(DiffLine { kind: LineKind::Same, old_no: Some(i + 1), new_no: Some(i + 1), text: l.to_string() });
     }
     let (n, m) = (am.len(), bm.len());
     if n * m > 6_000_000 {
@@ -158,8 +158,11 @@ pub struct SideBySide {
     pub removed: usize,
 }
 
+/// The `[start, end)` character range of a line that differs from the other side's, if any.
+type Span = Option<(usize, usize)>;
+
 /// Longest common character prefix and suffix of two lines, as the differing middle ranges.
-fn changed_span(a: &str, b: &str) -> (Option<(usize, usize)>, Option<(usize, usize)>) {
+fn changed_span(a: &str, b: &str) -> (Span, Span) {
     let (ac, bc): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     let mut pre = 0;
     while pre < ac.len() && pre < bc.len() && ac[pre] == bc[pre] {

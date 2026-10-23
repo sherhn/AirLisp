@@ -16,12 +16,15 @@ use crate::app::App;
 use crate::input;
 use crate::state::*;
 
+/// Where the screenshot of a frame lands once egui has taken it.
+type ShotSlot = Arc<Mutex<Option<Arc<egui::ColorImage>>>>;
+
 pub struct Script {
     steps: VecDeque<Value>,
     pending: Vec<Event>,
     wait_frames: u32,
     wait_cond: Option<(Value, f64)>,
-    shot: Option<(PathBuf, Arc<Mutex<Option<Arc<egui::ColorImage>>>>)>,
+    shot: Option<(PathBuf, ShotSlot)>,
     pub failures: Vec<String>,
     total: usize,
     done: bool,
@@ -48,9 +51,10 @@ pub fn save_png(path: &Path, img: &egui::ColorImage) -> Result<(), String> {
 impl App {
     pub fn script_inject(&mut self, raw: &mut egui::RawInput) {
         if let Some(s) = self.script.as_mut()
-            && !s.pending.is_empty() {
-                raw.events.append(&mut s.pending);
-            }
+            && !s.pending.is_empty()
+        {
+            raw.events.append(&mut s.pending);
+        }
     }
 
     fn cond_met(&self, cond: &Value) -> bool {
@@ -497,7 +501,7 @@ impl App {
                 }
             }
             "screenshot" => {
-                let slot: Arc<Mutex<Option<Arc<egui::ColorImage>>>> = Arc::new(Mutex::new(None));
+                let slot: ShotSlot = Arc::new(Mutex::new(None));
                 let s2 = slot.clone();
                 ctx.request_screenshot(move |img| {
                     *s2.lock().unwrap() = Some(img);
@@ -782,7 +786,7 @@ impl App {
             }
             "assert_project_file" => {
                 let want = step["present"].as_bool().unwrap_or(true);
-                let got = self.project.as_ref().is_some_and(|p| p.files_rel.iter().any(|f| *f == sval));
+                let got = self.project.as_ref().is_some_and(|p| p.files_rel.contains(&sval));
                 if got != want {
                     self.fail(format!("assert_project_file: {sval} expected present={want}, got {got}"));
                 }
@@ -1418,15 +1422,15 @@ impl App {
                 if layout != sval {
                     self.fail(format!("assert_split: expected layout {sval}, got {layout}"));
                 }
-                if let Some(f) = step["focus"].as_str() {
-                    if focus != f {
-                        self.fail(format!("assert_split: expected the {f} pane focused, got {focus}"));
-                    }
+                if let Some(f) = step["focus"].as_str()
+                    && focus != f
+                {
+                    self.fail(format!("assert_split: expected the {f} pane focused, got {focus}"));
                 }
-                if let Some(o) = step["other"].as_str() {
-                    if other.as_deref() != Some(o) {
-                        self.fail(format!("assert_split: expected {o} in the other pane, got {other:?}"));
-                    }
+                if let Some(o) = step["other"].as_str()
+                    && other.as_deref() != Some(o)
+                {
+                    self.fail(format!("assert_split: expected {o} in the other pane, got {other:?}"));
                 }
             }
             "pane_click" => {
@@ -1478,35 +1482,35 @@ impl App {
                 match t {
                     None => self.fail("assert_diff: the active tab is not a diff tab".to_string()),
                     Some((rel, hunks, cur, unified, old, new, added, removed)) => {
-                        if let Some(f) = step["file"].as_str() {
-                            if rel != f {
-                                self.fail(format!("assert_diff: expected file {f}, got {rel}"));
-                            }
+                        if let Some(f) = step["file"].as_str()
+                            && rel != f
+                        {
+                            self.fail(format!("assert_diff: expected file {f}, got {rel}"));
                         }
-                        if let Some(n) = step["hunks"].as_u64() {
-                            if hunks != n as usize {
-                                self.fail(format!("assert_diff: expected {n} differences, got {hunks}"));
-                            }
+                        if let Some(n) = step["hunks"].as_u64()
+                            && hunks != n as usize
+                        {
+                            self.fail(format!("assert_diff: expected {n} differences, got {hunks}"));
                         }
-                        if let Some(n) = step["current"].as_u64() {
-                            if cur != Some(n as usize) {
-                                self.fail(format!("assert_diff: expected current difference {n}, got {cur:?}"));
-                            }
+                        if let Some(n) = step["current"].as_u64()
+                            && cur != Some(n as usize)
+                        {
+                            self.fail(format!("assert_diff: expected current difference {n}, got {cur:?}"));
                         }
-                        if let Some(m) = step["mode"].as_str() {
-                            if unified != (m == "unified") {
-                                self.fail(format!("assert_diff: expected mode {m}, unified={unified}"));
-                            }
+                        if let Some(m) = step["mode"].as_str()
+                            && unified != (m == "unified")
+                        {
+                            self.fail(format!("assert_diff: expected mode {m}, unified={unified}"));
                         }
-                        if let Some(n) = step["added"].as_u64() {
-                            if added != n as usize {
-                                self.fail(format!("assert_diff: expected {n} added lines, got {added}"));
-                            }
+                        if let Some(n) = step["added"].as_u64()
+                            && added != n as usize
+                        {
+                            self.fail(format!("assert_diff: expected {n} added lines, got {added}"));
                         }
-                        if let Some(n) = step["removed"].as_u64() {
-                            if removed != n as usize {
-                                self.fail(format!("assert_diff: expected {n} removed lines, got {removed}"));
-                            }
+                        if let Some(n) = step["removed"].as_u64()
+                            && removed != n as usize
+                        {
+                            self.fail(format!("assert_diff: expected {n} removed lines, got {removed}"));
                         }
                         // `\n` written out in the script is a line break, as in `set_text`
                         if let Some(s) = step["old_contains"].as_str()

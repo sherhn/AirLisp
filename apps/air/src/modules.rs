@@ -40,7 +40,8 @@ enum Event {
     /// All the covers have been fetched.
     CoversDone,
     Progress { id: String, done: usize, total: usize, file: String },
-    Finished { id: String, removed: bool, result: Result<Manifest, String> },
+    /// A module was installed or removed (boxed: a manifest is much bigger than the other events).
+    Finished { id: String, removed: bool, result: Box<Result<Manifest, String>> },
 }
 
 pub struct ModulesState {
@@ -356,7 +357,7 @@ impl App {
             let result = store.install(&entry, &source, &mut |done, total, file| {
                 let _ = progress_tx.send(Event::Progress { id: pid.clone(), done, total, file: file.to_string() });
             });
-            let _ = tx.send(Event::Finished { id, removed: false, result });
+            let _ = tx.send(Event::Finished { id, removed: false, result: Box::new(result) });
         });
     }
 
@@ -378,7 +379,7 @@ impl App {
         let (dir, tx, id) = (store.dir().to_path_buf(), self.mods.tx.clone(), id.to_string());
         std::thread::spawn(move || {
             let result = ModuleStore::at(dir).remove(&id).map(|_| Manifest::default());
-            let _ = tx.send(Event::Finished { id, removed: true, result });
+            let _ = tx.send(Event::Finished { id, removed: true, result: Box::new(result) });
         });
     }
 
@@ -422,7 +423,7 @@ impl App {
                     self.mods.busy.remove(&id);
                     self.mods.covers.remove(&id);
                     let name = self.mods.index.as_ref().and_then(|i| i.entry(&id)).map_or(id.clone(), |e| e.name.clone());
-                    match result {
+                    match *result {
                         Ok(_) if removed => self.toast(i18n::fmt("{} is removed", &[&name]), Sev::Weak),
                         Ok(m) => self.toast(i18n::fmt("{0} {1} is installed", &[&m.name, &m.version]), Sev::Weak),
                         Err(e) => self.toast(i18n::fmt("Cannot install {0}: {1}", &[&name, &e]), Sev::Error),

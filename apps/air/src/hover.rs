@@ -252,7 +252,7 @@ impl App {
             return;
         };
         let lisp = d.ed.is_lisp();
-        let lang_ok = lisp || d.ed.language().is_some_and(|l| !l.is_plain() && crate::preview::markup_of(&l).is_none());
+        let lang_ok = lisp || d.ed.language().is_some_and(|l| !l.is_plain() && crate::preview::markup_of(l).is_none());
         if !lang_ok {
             self.hide_hover();
             return;

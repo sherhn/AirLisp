@@ -103,7 +103,7 @@ impl ModuleStore {
                 Err(e) => bad.push(format!("{id}: {e}")),
             }
         }
-        ok.sort_by(|a, b| a.manifest.name.to_lowercase().cmp(&b.manifest.name.to_lowercase()));
+        ok.sort_by_key(|a| a.manifest.name.to_lowercase());
         (ok, bad)
     }
 

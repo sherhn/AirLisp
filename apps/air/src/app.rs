@@ -1601,7 +1601,7 @@ impl App {
                         scored.push((m.score, f, rel, m));
                     }
                 }
-                scored.sort_by(|a, b| b.0.cmp(&a.0));
+                scored.sort_by_key(|s| std::cmp::Reverse(s.0));
                 for (_, f, rel, m) in scored.into_iter().take(limit) {
                     let name = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                     let ni = rel.chars().count() - name.chars().count();

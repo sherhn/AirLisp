@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn broken_manifests_say_why() {
-        let err = |j: &str| Manifest::parse(j).err().expect("must fail");
+        let err = |j: &str| Manifest::parse(j).expect_err("must fail");
         assert!(err("not json").contains("module.json"));
         assert!(err(r#"{"id":"Py Thon","name":"x","version":"1.0.0"}"#).contains("module id"));
         assert!(err(r#"{"id":"x","name":" ","version":"1.0.0"}"#).contains("no name"));

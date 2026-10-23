@@ -46,7 +46,7 @@ impl App {
     /// The markup of the document in tab `idx` when it has a preview.
     pub fn doc_markup(&self, idx: usize) -> Option<Markup> {
         let d = self.docs.get(idx).filter(|d| d.diff.is_none())?;
-        d.ed.language().and_then(|l| preview::markup_of(&l))
+        d.ed.language().and_then(|l| preview::markup_of(l))
     }
 
     pub fn default_preview_mode(&self) -> PreviewMode {

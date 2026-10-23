@@ -6,7 +6,7 @@ use ide_core::changes::Check;
 use lisp_runtime::wsl::{self, ToolGroup};
 
 use crate::app::App;
-use crate::app_wsl::ToolDraft;
+use crate::app_wsl::{ToolDraft, ToolsFound};
 use crate::fonts;
 use crate::i18n::{self, tr};
 use crate::icons::Icon;
@@ -17,7 +17,7 @@ use crate::widgets::{self, TextField};
 impl App {
     /// The rows of the developer tools of `selected` (what the check `tools` found there). Returns whether the user
     /// asked to install what is chosen.
-    pub(crate) fn draw_tool_rows(&mut self, ui: &mut egui::Ui, rows: &mut Rows, selected: &str, busy_task: bool, tools: &Option<Result<Vec<(String, bool)>, String>>, checking: bool) -> bool {
+    pub(crate) fn draw_tool_rows(&mut self, ui: &mut egui::Ui, rows: &mut Rows, selected: &str, busy_task: bool, tools: &Option<ToolsFound>, checking: bool) -> bool {
         let pal = self.pal;
         let mut install = false;
         let groups = self.tool_groups();

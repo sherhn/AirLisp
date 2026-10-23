@@ -217,15 +217,15 @@ fn scan(chars: &[char], defs: &Defs) -> Vec<Inline> {
                 while k < n && (chars[k].is_alphanumeric() || "-_.+".contains(chars[k]) || (chars[k] == ':' && chars.get(k + 1) != Some(&'`'))) {
                     k += 1;
                 }
-                if k < n && chars[k] == ':' && chars.get(k + 1) == Some(&'`') {
-                    if let Some(e) = find_end(chars, k + 2, "`") {
-                        flush!();
-                        let role: String = chars[i + 1..k].iter().collect();
-                        let body: String = chars[k + 2..e].iter().collect();
-                        out.push(role_node(&role, &body, defs));
-                        i = e + 1;
-                        continue;
-                    }
+                if k < n && chars[k] == ':' && chars.get(k + 1) == Some(&'`')
+                    && let Some(e) = find_end(chars, k + 2, "`")
+                {
+                    flush!();
+                    let role: String = chars[i + 1..k].iter().collect();
+                    let body: String = chars[k + 2..e].iter().collect();
+                    out.push(role_node(&role, &body, defs));
+                    i = e + 1;
+                    continue;
                 }
                 text.push(c);
                 i += 1;
