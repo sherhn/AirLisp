@@ -1,3 +1,4 @@
 /target
 /scratch
 *.png.tmp
+__pycache__/
