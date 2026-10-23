@@ -5,8 +5,9 @@ the app, the CLI, a bundled SBCL (REPL, compiler, ASDF), the registry of modules
 Usage:
   python tools/package.py [--sbcl-dir DIR] [--no-zip] [--skip-build]
 
---sbcl-dir  folder with sbcl[.exe], sbcl.core and contrib/ (default: auto-detected installation).
-Result: target/dist/Air-<version>-<os>-<arch>[.zip]
+--sbcl-dir  folder with sbcl[.exe], sbcl.core and contrib/, or an SBCL install prefix (bin/, lib/sbcl/);
+            default: the sbcl found on PATH.
+Result: target/dist/Air-<version>-<os>-<arch>[.zip on Windows, .tar.gz elsewhere]
 """
 import argparse
 import json
@@ -17,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -28,18 +30,39 @@ def version():
     return m.group(1) if m else "0.0.0"
 
 
-def find_sbcl_dir(explicit):
-    cands = []
-    if explicit:
-        cands.append(pathlib.Path(explicit))
+def sbcl_parts(d):
+    """(runtime, core, contrib) of an SBCL laid out as one folder (the Windows installer) or as a prefix (bin/, lib/sbcl/)."""
+    for exe, home in ((d / f"sbcl{EXE}", d), (d / "bin" / f"sbcl{EXE}", d / "lib" / "sbcl")):
+        if exe.is_file() and (home / "sbcl.core").is_file() and (home / "contrib").is_dir():
+            return exe, home / "sbcl.core", home / "contrib"
+    return None
+
+
+def sbcl_from_running(exe):
+    """Ask an SBCL where its runtime, core and contribs are: apt and Homebrew keep them in different folders."""
+    expr = '(format t "~a~%~a~%~a" (sb-ext:native-namestring sb-ext:*runtime-pathname*) (sb-ext:native-namestring sb-ext:*core-pathname*) (sb-ext:native-namestring (sb-int:sbcl-homedir-pathname)))'
+    out = subprocess.run([exe, "--noinform", "--no-sysinit", "--no-userinit", "--non-interactive", "--eval", expr], capture_output=True, text=True).stdout.splitlines()
+    if len(out) == 3:
+        runtime, core, home = pathlib.Path(out[0]), pathlib.Path(out[1]), pathlib.Path(out[2])
+        if runtime.is_file() and core.is_file() and (home / "contrib").is_dir():
+            return runtime, core, home / "contrib"
+    return None
+
+
+def find_sbcl(explicit):
+    dirs = [pathlib.Path(explicit)] if explicit else []
     exe = shutil.which("sbcl")
     if exe:
-        cands.append(pathlib.Path(exe).resolve().parent)
-    cands += [pathlib.Path(p) for p in (r"C:\Program Files\Steel Bank Common Lisp", "/usr/local/lib/sbcl", "/usr/lib/sbcl")]
-    for c in cands:
-        if (c / f"sbcl{EXE}").is_file() and (c / "sbcl.core").is_file() and (c / "contrib").is_dir():
-            return c
-    sys.exit("No relocatable SBCL found (need sbcl, sbcl.core and contrib/ in one folder). Pass --sbcl-dir.")
+        dirs.append(pathlib.Path(exe).resolve().parent)
+    dirs.append(pathlib.Path(r"C:\Program Files\Steel Bank Common Lisp"))
+    for d in dirs:
+        found = sbcl_parts(d)
+        if found:
+            return found
+    found = exe and sbcl_from_running(exe)
+    if found:
+        return found
+    sys.exit("No SBCL with sbcl, sbcl.core and contrib/ found. Install one or pass --sbcl-dir.")
 
 
 def crate_licenses():
@@ -81,10 +104,10 @@ def main():
 
     if not a.skip_build:
         subprocess.run(["cargo", "build", "--release", "-p", "air", "-p", "air-cli"], cwd=ROOT, check=True)
-    sbcl = find_sbcl_dir(a.sbcl_dir)
+    sbcl_exe, sbcl_core, sbcl_contrib = find_sbcl(a.sbcl_dir)
     ver = version()
-    arch = platform.machine().lower().replace("amd64", "x64").replace("x86_64", "x64")
-    name = f"Air-{ver}-{platform.system().lower()}-{arch}"
+    arch = {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64"}.get(platform.machine().lower(), platform.machine().lower())
+    name = f"Air-{ver}-{'macos' if platform.system() == 'Darwin' else platform.system().lower()}-{arch}"
     dist = ROOT / "target" / "dist" / name
     if dist.exists():
         shutil.rmtree(dist)
@@ -97,10 +120,10 @@ def main():
             sys.exit(f"missing {src}; build first")
         shutil.copy2(src, dist / src.name)
 
-    shutil.copy2(sbcl / f"sbcl{EXE}", dist / "lisp")
-    shutil.copy2(sbcl / "sbcl.core", dist / "lisp")
-    shutil.copytree(sbcl / "contrib", dist / "lisp" / "contrib")
-    sbcl_ver = subprocess.run([str(sbcl / f"sbcl{EXE}"), "--version"], capture_output=True, text=True).stdout.strip() or "unknown"
+    shutil.copy2(sbcl_exe, dist / "lisp" / f"sbcl{EXE}")
+    shutil.copy2(sbcl_core, dist / "lisp" / "sbcl.core")
+    shutil.copytree(sbcl_contrib, dist / "lisp" / "contrib")
+    sbcl_ver = subprocess.run([str(sbcl_exe), "--version"], capture_output=True, text=True).stdout.strip() or "unknown"
 
     for f in (ROOT / "assets" / "licenses").glob("*"):
         shutil.copy2(f, dist / "licenses" / f.name)
@@ -114,28 +137,44 @@ def main():
         sys.exit("no registry/index.json: run `python tools/build_registry.py --covers` first")
     shutil.copytree(registry, dist / "registry")
     (dist / "START_HERE.txt").write_text(
-        "Air - an IDE made of modules\n\n"
+        "Air - an IDE written in Rust\n\n"
         f"Run {'air.exe' if os.name == 'nt' else './air'}. Nothing else has to be installed:\n"
         "the languages come as modules - open the Modules tab (Ctrl+Alt+P) and install what you work with\n"
         "(Lisp, Python, C/C++, Assembler, Markdown, reStructuredText, Shell and make). The folder 'registry'\n"
         "holds them, so this works offline too; the list is also read from the published registry.\n"
         "The Lisp module's REPL, compiler and ASDF come from the bundled SBCL in the 'lisp' folder.\n"
         "Git features and 'Get from Version Control' use the git on your PATH (https://git-scm.com).\n\n"
-        f"{sbcl_ver} is bundled; its licence is in licenses/SBCL-COPYING.txt.\n",
+        f"{sbcl_ver} is bundled; its licence is in licenses/SBCL-COPYING.txt.\n"
+        + (
+            "\nThe build is not signed. If macOS refuses to open it, run once in this folder:\n"
+            "  xattr -dr com.apple.quarantine .\n"
+            if platform.system() == "Darwin"
+            else ""
+        ),
         encoding="utf-8",
     )
 
     size = sum(f.stat().st_size for f in dist.rglob("*") if f.is_file()) / 1e6
     print(f"built {dist}  ({size:.0f} MB, {sbcl_ver})")
     if not a.no_zip:
-        zpath = dist.parent / f"{name}.zip"
-        if zpath.exists():
-            zpath.unlink()
-        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-            for f in sorted(dist.rglob("*")):
-                if f.is_file():
-                    z.write(f, pathlib.Path(name) / f.relative_to(dist))
-        print(f"zip: {zpath}  ({zpath.stat().st_size / 1e6:.0f} MB)")
+        # a zip for Windows; a tarball elsewhere, since it keeps the executable bits
+        archive = dist.parent / (f"{name}.zip" if os.name == "nt" else f"{name}.tar.gz")
+        if archive.exists():
+            archive.unlink()
+        if os.name == "nt":
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+                for f in sorted(dist.rglob("*")):
+                    if f.is_file():
+                        z.write(f, pathlib.Path(name) / f.relative_to(dist))
+        else:
+            def anonymous(info):
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                return info
+
+            with tarfile.open(archive, "w:gz", compresslevel=9) as t:
+                t.add(dist, arcname=name, filter=anonymous)
+        print(f"archive: {archive}  ({archive.stat().st_size / 1e6:.0f} MB)")
 
 
 if __name__ == "__main__":
