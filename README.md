@@ -114,6 +114,13 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
 * **Modern look** - a black ground with soft green and blue glows, "liquid glass" cards and dialogs (translucent, with a light
   rim and a sheen), a green in the spirit of Sber's as the accent and a blue as its partner. Lucide icons (ISC), a sidebar
   Settings dialog, dark/light themes, custom window frame (no OS title bar), Inter + JetBrains Mono fonts.
+* **Your own theme** - Settings > Appearance > *Custom* is a third theme that starts from the dark or the light palette and lets
+  you change every color of it: windows and panels, the glass and the glow, the editor (caret, selection, search hits, marker
+  comments), messages and Git, the colors of the syntax and the six of the rainbow brackets. Each color has a swatch that opens
+  a color picker, a field for its hex code (`#RRGGBB`, or `#RRGGBBAA` for the translucent ones; a valid code is taken as you type)
+  and a button that gives the palette's own color back; a sample of code shows the result, and so does the whole window. The
+  colors changed are kept in `settings.json` (`custom_theme`) and stay when you switch to another theme and back; View >
+  *Toggle Dark/Light Theme* leaves the custom theme for the opposite of the palette it is made from.
 * **Keymap** - IntelliJ-style. All key bindings come from one registry (`crates/ide-core/src/commands.rs`); see Settings > Keymap.
 
 ## GitHub: your repositories in "Get from Version Control"
@@ -235,6 +242,13 @@ Air - IDE из модулей, написанная на Rust. Ядро: ред�
 ассемблер, Markdown, reStructuredText, shell и make. Модуль Lisp самый полный: структурное редактирование, живой REPL
 на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация, рефакторинг (rename). Вид: чёрный фон с зелёным
 (в духе Сбера) и синим свечением и «жидкое стекло»; тёмная и светлая темы, раскладка клавиш IntelliJ.
+**Своя тема.** Настройки > Внешний вид > «Своя» — третья тема: она берёт за основу тёмную или светлую палитру и даёт
+изменить любой её цвет: окна и панели, стекло и свечение, редактор (курсор, выделение, найденное, комментарии-маркеры),
+сообщения и Git, цвета синтаксиса и шесть цветов радужных скобок. У каждого цвета есть образец, открывающий палитру, поле
+с hex-кодом (`#RRGGBB`, у полупрозрачных `#RRGGBBAA`; верный код применяется сразу при вводе) и кнопка, возвращающая цвет
+палитры; результат виден на образце кода и во всём окне. Изменённые цвета хранятся в `settings.json` (`custom_theme`) и
+остаются при переключении на другую тему и обратно; View > «Переключить тёмную/светлую тему» уходит из своей темы на
+противоположную её основе палитру.
 Сборка: `cargo run --release -p air`. Для REPL нужен SBCL в `PATH` (в сборке `tools/package.py` он уже есть).
 
 **Модули.** Модуль — папка с `module.json` и обложкой: языки (грамматика данными: подсветка, структура, сворачивание,

@@ -29,6 +29,17 @@ impl Rows {
     /// One settings row: title + description on the left, `control` right-aligned and vertically centred.
     /// `ctrl_w` is the width reserved for the control (the texts wrap before it).
     pub(crate) fn row(&mut self, ui: &mut egui::Ui, pal: &Palette, title: &str, desc: &str, ctrl_w: f32, control: impl FnOnce(&mut egui::Ui)) {
+        self.row_sized(ui, pal, title, desc, ctrl_w, (56.0, 28.0), control);
+    }
+
+    /// A row of a list of many (the colors of a theme): lower than [`Rows::row`].
+    pub(crate) fn slim(&mut self, ui: &mut egui::Ui, pal: &Palette, title: &str, ctrl_w: f32, control: impl FnOnce(&mut egui::Ui)) {
+        self.row_sized(ui, pal, title, "", ctrl_w, (44.0, 14.0), control);
+    }
+
+    /// `height`: the least height of the row and the space added around its texts.
+    #[allow(clippy::too_many_arguments)]
+    fn row_sized(&mut self, ui: &mut egui::Ui, pal: &Palette, title: &str, desc: &str, ctrl_w: f32, height: (f32, f32), control: impl FnOnce(&mut egui::Ui)) {
         let w = ui.available_width();
         if self.n > 0 {
             let y = ui.cursor().min.y;
@@ -39,7 +50,7 @@ impl Rows {
         let tg = ui.painter().layout(title.to_string(), fonts::ui(13.5), pal.text, text_w);
         let dg = (!desc.is_empty()).then(|| ui.painter().layout(desc.to_string(), fonts::ui(11.5), pal.text_dim, text_w));
         let content_h = tg.size().y + dg.as_ref().map_or(0.0, |g| 3.0 + g.size().y);
-        let h = (content_h + 28.0).max(56.0);
+        let h = (content_h + height.1).max(height.0);
         let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
         let top = rect.min.y + (h - content_h) / 2.0;
         let th = tg.size().y;
@@ -116,14 +127,26 @@ impl App {
                     match page {
                         0 => {
                             group(ui, &pal, tr("Theme"), |ui, rows| {
-                                rows.row(ui, &pal, tr("Color theme"), tr("Switch between the dark and light look"), 190.0, |ui| {
-                                    let cur = if self.settings.theme == Theme::Dark { 0 } else { 1 };
-                                    if let Some(i) = widgets::segmented(ui, &pal, &[tr("Dark"), tr("Light")], cur) {
-                                        self.settings.theme = if i == 0 { Theme::Dark } else { Theme::Light };
+                                rows.row(ui, &pal, tr("Color theme"), tr("Dark, light, or your own with every color set by hand"), 280.0, |ui| {
+                                    let cur = match self.settings.theme {
+                                        Theme::Dark => 0,
+                                        Theme::Light => 1,
+                                        Theme::Custom => 2,
+                                    };
+                                    if let Some(i) = widgets::segmented(ui, &pal, &[tr("Dark"), tr("Light"), tr("Custom")], cur) {
+                                        let before = self.settings.theme;
+                                        self.settings.theme = [Theme::Dark, Theme::Light, Theme::Custom][i];
+                                        // the first time, your theme starts from the look that is on screen
+                                        if self.settings.theme == Theme::Custom && self.settings.custom_theme.colors.is_empty() {
+                                            self.settings.custom_theme.dark = before != Theme::Light;
+                                        }
                                         changed_theme = true;
                                     }
                                 });
                             });
+                            if self.settings.theme == Theme::Custom && crate::ui_theme::theme_editor(ui, &pal, &mut self.settings.custom_theme) {
+                                changed_theme = true;
+                            }
                             group(ui, &pal, tr("Language"), |ui, rows| {
                                 rows.row(ui, &pal, tr("Interface language"), tr("Menus, dialogs and messages"), 220.0, |ui| {
                                     let labels: Vec<&str> = i18n::LANGUAGES.iter().map(|(_, n)| *n).collect();

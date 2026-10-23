@@ -927,6 +927,65 @@ impl App {
                     self.fail(format!("assert_toast: {sval:?} not in {all:?}"));
                 }
             }
+            // the theme: `value` is dark, light or custom; for custom, `dark` picks the palette it starts from, `set` is
+            // a map of colour keys to hex codes and `reset` a list of keys (or `true`: all) to give back
+            "theme" => {
+                use ide_core::settings::{Theme, parse_color};
+                self.settings.theme = match sval.as_str() {
+                    "dark" => Theme::Dark,
+                    "light" => Theme::Light,
+                    "custom" => Theme::Custom,
+                    other => {
+                        self.fail(format!("theme: unknown theme {other}"));
+                        return;
+                    }
+                };
+                if let Some(d) = step["dark"].as_bool() {
+                    self.settings.custom_theme.dark = d;
+                }
+                if step["reset"].as_bool() == Some(true) {
+                    self.settings.custom_theme.reset_all();
+                }
+                for k in step["reset"].as_array().into_iter().flatten().filter_map(|k| k.as_str()) {
+                    self.settings.custom_theme.reset(k);
+                }
+                for (k, v) in step["set"].as_object().into_iter().flatten() {
+                    match v.as_str().and_then(parse_color) {
+                        Some(c) if self.pal.color(k).is_some() => self.settings.custom_theme.set(k, c),
+                        _ => self.fail(format!("theme: cannot set {k} to {v}")),
+                    }
+                }
+                self.theme_changed();
+                self.pal.apply(ctx);
+            }
+            // `value`: the theme in use (dark, light, custom); `dark`: whether the palette on screen is dark; `colors`: a map
+            // of colour keys to the hex codes the palette has now
+            "assert_theme" => {
+                use ide_core::settings::{Theme, format_color};
+                let got = match self.settings.theme {
+                    Theme::Dark => "dark",
+                    Theme::Light => "light",
+                    Theme::Custom => "custom",
+                };
+                let mut errors = vec![];
+                if !sval.is_empty() && got != sval {
+                    errors.push(format!("theme {got}, expected {sval}"));
+                }
+                if let Some(d) = step["dark"].as_bool()
+                    && d != self.pal.dark
+                {
+                    errors.push(format!("dark palette {}, expected {d}", self.pal.dark));
+                }
+                for (k, v) in step["colors"].as_object().into_iter().flatten() {
+                    let now = self.pal.color(k).map(|c| format_color(c.to_srgba_unmultiplied()));
+                    if now.as_deref() != v.as_str() {
+                        errors.push(format!("{k} is {now:?}, expected {v}"));
+                    }
+                }
+                if !errors.is_empty() {
+                    self.fail(format!("assert_theme: {}", errors.join("; ")));
+                }
+            }
             "language" => {
                 let l = if sval.eq_ignore_ascii_case("ru") { ide_core::settings::Language::Russian } else { ide_core::settings::Language::English };
                 self.settings.language = l;

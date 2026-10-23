@@ -1,5 +1,6 @@
 //! Persistent IDE settings (JSON in the platform config directory).
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,15 +14,68 @@ pub enum Theme {
     #[serde(alias = "Darcula")]
     Dark,
     Light,
+    /// One of the two palettes with the colours the user changed (see [`CustomTheme`]).
+    Custom,
 }
 
 impl Theme {
     pub fn toggled(self) -> Theme {
         match self {
-            Theme::Dark => Theme::Light,
+            Theme::Dark | Theme::Custom => Theme::Light,
             Theme::Light => Theme::Dark,
         }
     }
+}
+
+/// The user's own theme: the dark or the light palette with some colours changed. A colour is named by the key of its
+/// slot in the palette (`accent`, `comment`, ...) and written as `#RRGGBB`, or `#RRGGBBAA` when it is translucent.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CustomTheme {
+    /// Start from the dark palette (`true`) or from the light one.
+    pub dark: bool,
+    pub colors: BTreeMap<String, String>,
+}
+
+impl Default for CustomTheme {
+    fn default() -> Self {
+        CustomTheme { dark: true, colors: BTreeMap::new() }
+    }
+}
+
+impl CustomTheme {
+    /// The colour changed for `key`, if it was (and is written in a form [`parse_color`] reads).
+    pub fn get(&self, key: &str) -> Option<[u8; 4]> {
+        self.colors.get(key).and_then(|s| parse_color(s))
+    }
+
+    pub fn set(&mut self, key: &str, rgba: [u8; 4]) {
+        self.colors.insert(key.to_string(), format_color(rgba));
+    }
+
+    /// Back to the palette's own colour.
+    pub fn reset(&mut self, key: &str) {
+        self.colors.remove(key);
+    }
+
+    pub fn reset_all(&mut self) {
+        self.colors.clear();
+    }
+}
+
+/// Read `#RRGGBB` or `#RRGGBBAA` (the `#` is optional, upper or lower case) as unmultiplied red, green, blue, alpha.
+pub fn parse_color(s: &str) -> Option<[u8; 4]> {
+    let h = s.trim().trim_start_matches('#');
+    if !(h.len() == 6 || h.len() == 8) || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let byte = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([byte(0)?, byte(2)?, byte(4)?, if h.len() == 8 { byte(6)? } else { 255 }])
+}
+
+/// `#RRGGBB` for an opaque colour, `#RRGGBBAA` for a translucent one.
+pub fn format_color([r, g, b, a]: [u8; 4]) -> String {
+    if a == 255 { format!("#{r:02X}{g:02X}{b:02X}") } else { format!("#{r:02X}{g:02X}{b:02X}{a:02X}") }
 }
 
 /// Language of the user interface.
@@ -45,6 +99,8 @@ pub enum RunEnv {
 #[serde(default)]
 pub struct Settings {
     pub theme: Theme,
+    /// The colours of [`Theme::Custom`].
+    pub custom_theme: CustomTheme,
     pub language: Language,
     pub font_size: f32,
     pub show_line_numbers: bool,
@@ -87,6 +143,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: Theme::Dark,
+            custom_theme: CustomTheme::default(),
             language: Language::English,
             font_size: 14.0,
             show_line_numbers: true,
@@ -179,6 +236,16 @@ impl Settings {
     pub fn zoom(&mut self, delta: f32) {
         self.font_size = (self.font_size + delta).clamp(MIN_FONT, MAX_FONT);
     }
+
+    /// What the dark/light switch goes to: the other of the two, and from the user's own theme to the opposite of the
+    /// palette it is made from.
+    pub fn toggled_theme(&self) -> Theme {
+        match self.theme {
+            Theme::Custom if self.custom_theme.dark => Theme::Light,
+            Theme::Custom => Theme::Dark,
+            t => t.toggled(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -232,6 +299,67 @@ mod tests {
         assert_eq!(s.recent_projects.len(), 10);
         assert_eq!(s.recent_projects[0], "p5");
         assert_eq!(s.recent_projects.iter().filter(|p| *p == "p5").count(), 1);
+    }
+
+    #[test]
+    fn colours_are_read_and_written_as_hex() {
+        assert_eq!(parse_color("#2DBE60"), Some([0x2D, 0xBE, 0x60, 255]));
+        assert_eq!(parse_color("  2dbe60 "), Some([0x2D, 0xBE, 0x60, 255]));
+        assert_eq!(parse_color("#2DBE6034"), Some([0x2D, 0xBE, 0x60, 0x34]));
+        for bad in ["", "#", "#2DBE6", "#2DBE60F", "#GGGGGG", "red", "#2DBE60 34"] {
+            assert_eq!(parse_color(bad), None, "{bad:?}");
+        }
+        assert_eq!(format_color([0x2D, 0xBE, 0x60, 255]), "#2DBE60");
+        assert_eq!(format_color([1, 2, 3, 4]), "#01020304");
+        for c in [[0, 0, 0, 0], [255, 255, 255, 255], [12, 200, 7, 99]] {
+            assert_eq!(parse_color(&format_color(c)), Some(c));
+        }
+    }
+
+    #[test]
+    fn custom_theme_survives_a_roundtrip_and_older_files_have_none() {
+        let d = TempDir::new("settings4");
+        let f = d.path().join("s.json");
+        fs::write(&f, r#"{"theme":"Light"}"#).unwrap();
+        let s = Settings::load_from(&f);
+        assert!(s.custom_theme.dark && s.custom_theme.colors.is_empty(), "no custom colours in an older file");
+        let mut s = Settings { theme: Theme::Custom, ..Settings::default() };
+        s.custom_theme.dark = false;
+        s.custom_theme.set("accent", [1, 2, 3, 255]);
+        s.custom_theme.set("hover", [9, 8, 7, 20]);
+        s.save_to(&f).unwrap();
+        let back = Settings::load_from(&f);
+        assert_eq!(back, s);
+        assert_eq!(back.custom_theme.get("accent"), Some([1, 2, 3, 255]));
+        assert_eq!(back.custom_theme.get("hover"), Some([9, 8, 7, 20]));
+        let mut c = back.custom_theme;
+        c.reset("accent");
+        assert_eq!(c.get("accent"), None);
+        c.reset_all();
+        assert!(c.colors.is_empty());
+    }
+
+    #[test]
+    fn a_broken_colour_in_the_file_is_ignored() {
+        let d = TempDir::new("settings5");
+        let f = d.path().join("s.json");
+        fs::write(&f, r##"{"theme":"Custom","custom_theme":{"dark":false,"colors":{"accent":"nonsense","text":"#102030"}}}"##).unwrap();
+        let s = Settings::load_from(&f);
+        assert_eq!(s.theme, Theme::Custom);
+        assert_eq!(s.custom_theme.get("accent"), None);
+        assert_eq!(s.custom_theme.get("text"), Some([0x10, 0x20, 0x30, 255]));
+    }
+
+    #[test]
+    fn the_theme_switch_leaves_the_custom_theme_for_the_opposite_palette() {
+        let mut s = Settings::default();
+        assert_eq!(s.toggled_theme(), Theme::Light);
+        s.theme = Theme::Light;
+        assert_eq!(s.toggled_theme(), Theme::Dark);
+        s.theme = Theme::Custom;
+        assert_eq!(s.toggled_theme(), Theme::Light, "a dark custom theme");
+        s.custom_theme.dark = false;
+        assert_eq!(s.toggled_theme(), Theme::Dark, "a light custom theme");
     }
 
     #[test]

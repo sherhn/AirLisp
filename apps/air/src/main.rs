@@ -44,6 +44,7 @@ mod widgets;
 mod ui_popups;
 mod ui_split;
 mod ui_settings;
+mod ui_theme;
 mod ui_clone;
 mod ui_github;
 mod ui_commit;

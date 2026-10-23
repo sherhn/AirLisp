@@ -562,7 +562,7 @@ impl App {
                 }
             }
             "view.toggle_theme" => {
-                self.settings.theme = self.settings.theme.toggled();
+                self.settings.theme = self.settings.toggled_theme();
                 self.theme_changed();
                 self.pal.apply(ctx);
             }

@@ -442,6 +442,8 @@ pub fn toggle(ui: &mut egui::Ui, pal: &Palette, on: &mut bool) -> egui::Response
 pub fn segmented(ui: &mut egui::Ui, pal: &Palette, options: &[&str], selected: usize) -> Option<usize> {
     let mut chosen = None;
     let font = fonts::ui(13.0);
+    // two controls with the same labels in one page (the dark/light choice of the theme and of your own theme) must not share ids
+    let base = ui.next_auto_id();
     let widths: Vec<f32> = options.iter().map(|o| ui.painter().layout_no_wrap(o.to_string(), font.clone(), pal.text).size().x + 28.0).collect();
     let total: f32 = widths.iter().sum::<f32>() + 8.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(total, FIELD_H - 2.0), Sense::hover());
@@ -449,7 +451,7 @@ pub fn segmented(ui: &mut egui::Ui, pal: &Palette, options: &[&str], selected: u
     let mut x = rect.min.x + 4.0;
     for (i, o) in options.iter().enumerate() {
         let r = Rect::from_min_size(Pos2::new(x, rect.min.y + 4.0), Vec2::new(widths[i], rect.height() - 8.0));
-        let resp = ui.interact(r, ui.id().with(("seg", i, *o)), Sense::click());
+        let resp = ui.interact(r, base.with(("seg", i, *o)), Sense::click());
         if i == selected {
             ui.painter().rect_filled(r, CornerRadius::same(9), pal.tab_active_bg);
         } else if resp.hovered() {

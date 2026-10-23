@@ -123,7 +123,7 @@ pub fn lisp_dialect_of(p: &Path) -> lisp_syntax::Dialect {
 
 impl App {
     pub fn new(settings: Settings) -> App {
-        let pal = Palette::for_theme(settings.theme);
+        let pal = Palette::for_settings(&settings);
         crate::i18n::set(settings.language);
         let lisp = crate::app_wsl::resolve_lisp(&settings);
         let mut app = App {
@@ -221,7 +221,7 @@ impl App {
     }
 
     pub fn theme_changed(&mut self) {
-        self.pal = Palette::for_theme(self.settings.theme);
+        self.pal = Palette::for_settings(&self.settings);
     }
 
     pub fn save_settings(&mut self) {

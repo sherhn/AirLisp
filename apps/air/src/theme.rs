@@ -2,8 +2,10 @@
 //! light rim over a dark ground that glows green in one corner and blue in the other. A dark scheme ("Night") and a
 //! light one ("Day") with the same hues.
 
+use std::sync::LazyLock;
+
 use eframe::egui::{self, Color32};
-use ide_core::settings::Theme;
+use ide_core::settings::{CustomTheme, Settings, Theme};
 use lisp_syntax::highlight::Class;
 
 #[derive(Clone, Copy, Debug)]
@@ -82,6 +84,131 @@ pub struct Palette {
 
 const fn c(hex: u32) -> Color32 {
     Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+}
+
+/// One colour of the palette that the user's own theme can change: the key it is stored under (the name of the
+/// field), the group and the name shown in Settings, and whether it is meant to be translucent.
+#[derive(Clone, Copy, Debug)]
+pub struct Slot {
+    pub key: &'static str,
+    pub group: &'static str,
+    pub label: &'static str,
+    pub translucent: bool,
+}
+
+/// Lists the colours of the palette once: the table of [`SLOTS`] and the lookup by key come from the same lines.
+macro_rules! palette_slots {
+    ($($group:literal { $($field:ident $label:literal $alpha:literal),* $(,)? })*) => {
+        const FIELD_SLOTS: &[Slot] = &[$($(Slot { key: stringify!($field), group: $group, label: $label, translucent: $alpha != 0 }),*),*];
+
+        impl Palette {
+            fn field(&self, key: &str) -> Option<Color32> {
+                match key {
+                    $($(stringify!($field) => Some(self.$field),)*)*
+                    _ => None,
+                }
+            }
+
+            fn set_field(&mut self, key: &str, color: Color32) -> bool {
+                match key {
+                    $($(stringify!($field) => self.$field = color,)*)*
+                    _ => return false,
+                }
+                true
+            }
+        }
+    };
+}
+
+palette_slots! {
+    "Window and panels" {
+        window_bg "Window background" 0,
+        panel_bg "Side panels" 1,
+        editor_bg "Editor background" 0,
+        gutter_bg "Gutter" 0,
+        popup_bg "Popups and menus" 0,
+        input_bg "Input fields" 0,
+        tab_active_bg "Active tab" 1,
+        border "Borders" 1,
+        hover "Hover highlight" 1,
+        selected "Selected row" 1,
+        accent "Accent" 0,
+        text_on_accent "Text on accent" 0,
+        text "Text" 0,
+        text_dim "Secondary text" 0,
+        blue "Second brand color (links, information)" 0,
+    }
+    "Glass and glow" {
+        base_top "Background, top" 0,
+        base_bottom "Background, bottom" 0,
+        glass "Glass cards" 1,
+        sheen "Glass sheen" 1,
+        glow_a "Glow, top left" 0,
+        glow_b "Glow, bottom right" 0,
+    }
+    "Editor" {
+        caret "Caret" 0,
+        line_number "Line numbers" 0,
+        line_number_active "Current line number" 0,
+        current_line "Current line" 1,
+        selection "Selection" 1,
+        match_bracket "Matching bracket" 1,
+        find_match "Search match" 0,
+        find_current "Current search match" 0,
+        indent_guide "Indent guides" 1,
+        whitespace "Whitespace marks" 1,
+        todo "TODO, INFO, NOTE markers" 0,
+        alert "FIXME, ALERT, HACK markers" 0,
+    }
+    "Messages and status" {
+        error "Error" 0,
+        warning "Warning" 0,
+        weak_warning "Weak warning" 0,
+        ok "Success" 0,
+        modified "Modified file" 0,
+        git_modified "Git: modified" 0,
+        git_added "Git: added" 0,
+        git_untracked "Git: untracked" 0,
+    }
+    "Syntax" {
+        plain "Plain text" 0,
+        comment "Comments" 0,
+        string "Strings" 0,
+        number "Numbers" 0,
+        keyword_form "Special forms and control keywords" 0,
+        keyword_arg "Keywords (:key)" 0,
+        builtin "Built-in functions" 0,
+        definition "Definitions" 0,
+        constant "Constants" 0,
+        special_var "Special variables" 0,
+        prefix "Prefixes and reader macros" 0,
+        type_name "Types" 0,
+        preproc "Preprocessor" 0,
+        heading "Headings" 0,
+        strong "Bold" 0,
+        emphasis "Italic" 0,
+        code "Inline code" 0,
+        link "Links" 0,
+        quote "Quotes" 0,
+    }
+}
+
+/// The six colours of nested brackets are slots of their own, `rainbow1` to `rainbow6`.
+const RAINBOW_SLOTS: [Slot; 6] = [
+    Slot { key: "rainbow1", group: "Rainbow brackets", label: "Nesting level 1", translucent: false },
+    Slot { key: "rainbow2", group: "Rainbow brackets", label: "Nesting level 2", translucent: false },
+    Slot { key: "rainbow3", group: "Rainbow brackets", label: "Nesting level 3", translucent: false },
+    Slot { key: "rainbow4", group: "Rainbow brackets", label: "Nesting level 4", translucent: false },
+    Slot { key: "rainbow5", group: "Rainbow brackets", label: "Nesting level 5", translucent: false },
+    Slot { key: "rainbow6", group: "Rainbow brackets", label: "Nesting level 6", translucent: false },
+];
+
+/// Every colour a custom theme can change, grouped as Settings shows them.
+pub static SLOTS: LazyLock<Vec<Slot>> = LazyLock::new(|| FIELD_SLOTS.iter().chain(RAINBOW_SLOTS.iter()).copied().collect());
+
+/// Which of the rainbow colours `key` names.
+fn rainbow_index(key: &str) -> Option<usize> {
+    key.strip_prefix("rainbow").and_then(|n| n.parse::<usize>().ok()).filter(|n| (1..=6).contains(n)).map(|n| n - 1)
 }
 
 impl Palette {
@@ -222,8 +349,47 @@ impl Palette {
 
     pub fn for_theme(t: Theme) -> Palette {
         match t {
-            Theme::Dark => Palette::dark(),
+            Theme::Dark | Theme::Custom => Palette::dark(),
             Theme::Light => Palette::light(),
+        }
+    }
+
+    /// The palette the settings ask for, the user's own theme included.
+    pub fn for_settings(s: &Settings) -> Palette {
+        match s.theme {
+            Theme::Custom => Palette::custom(&s.custom_theme),
+            t => Palette::for_theme(t),
+        }
+    }
+
+    /// The palette `theme` starts from, with the colours it changed put over it (a colour that is not a hex code, or a
+    /// key no slot has, is ignored).
+    pub fn custom(theme: &CustomTheme) -> Palette {
+        let mut p = if theme.dark { Palette::dark() } else { Palette::light() };
+        for key in theme.colors.keys() {
+            if let Some([r, g, b, a]) = theme.get(key) {
+                p.set_color(key, Color32::from_rgba_unmultiplied(r, g, b, a));
+            }
+        }
+        p
+    }
+
+    /// The colour of the slot `key` (see [`SLOTS`]).
+    pub fn color(&self, key: &str) -> Option<Color32> {
+        match rainbow_index(key) {
+            Some(i) => Some(self.rainbow[i]),
+            None => self.field(key),
+        }
+    }
+
+    /// Change the colour of the slot `key`; `false`: there is no such slot.
+    pub fn set_color(&mut self, key: &str, color: Color32) -> bool {
+        match rainbow_index(key) {
+            Some(i) => {
+                self.rainbow[i] = color;
+                true
+            }
+            None => self.set_field(key, color),
         }
     }
 
@@ -330,6 +496,64 @@ mod tests {
             assert!((lum(p.text) - lum(p.panel_bg)).abs() > 100.0);
             assert!((lum(p.comment) - lum(p.editor_bg)).abs() > 40.0);
         }
+    }
+
+    #[test]
+    fn every_colour_of_the_palette_is_a_slot_of_the_custom_theme() {
+        // the field names come from the derived Debug output, so a colour added to `Palette` and forgotten in the
+        // table of slots fails here
+        let dump = format!("{:?}", Palette::dark());
+        let fields: Vec<&str> = dump.split(", ").filter_map(|part| part.split_once(": ")).filter_map(|(name, _)| name.rsplit(' ').next()).filter(|f| !matches!(*f, "dark" | "rainbow")).collect();
+        assert!(fields.len() > 50, "the field names were not found in {dump}");
+        for f in &fields {
+            assert!(SLOTS.iter().any(|s| s.key == *f), "the colour {f} has no slot");
+        }
+        assert_eq!(FIELD_SLOTS.len(), fields.len(), "a slot for a colour the palette does not have");
+        assert_eq!(SLOTS.len(), fields.len() + 6, "and the six colours of the rainbow brackets");
+        let mut seen = std::collections::HashSet::new();
+        for s in SLOTS.iter() {
+            assert!(seen.insert(s.key), "slot {} twice", s.key);
+            for p in [Palette::dark(), Palette::light()] {
+                assert!(p.color(s.key).is_some(), "slot {} names no colour", s.key);
+            }
+        }
+        assert_eq!(Palette::dark().color("nonsense"), None);
+    }
+
+    #[test]
+    fn a_custom_theme_changes_only_what_it_names() {
+        let base = Palette::dark();
+        let mut theme = CustomTheme::default();
+        assert_eq!(format!("{:?}", Palette::custom(&theme)), format!("{base:?}"), "nothing changed, nothing differs");
+        theme.set("accent", [1, 2, 3, 255]);
+        theme.set("hover", [10, 20, 30, 40]);
+        theme.set("rainbow3", [9, 9, 9, 255]);
+        theme.colors.insert("selection".into(), "nonsense".into());
+        theme.colors.insert("no_such_slot".into(), "#FFFFFF".into());
+        let p = Palette::custom(&theme);
+        assert_eq!(p.accent, Color32::from_rgb(1, 2, 3));
+        assert_eq!(p.hover, Color32::from_rgba_unmultiplied(10, 20, 30, 40));
+        assert_eq!(p.rainbow[2], Color32::from_rgb(9, 9, 9));
+        assert_eq!(p.selection, base.selection, "a broken colour is left alone");
+        assert_eq!(p.text, base.text);
+        assert!(p.dark);
+        // the light palette as the starting point
+        theme.dark = false;
+        let l = Palette::custom(&theme);
+        assert!(!l.dark);
+        assert_eq!(l.text, Palette::light().text);
+        assert_eq!(l.accent, Color32::from_rgb(1, 2, 3));
+    }
+
+    #[test]
+    fn colours_of_slots_read_back_as_written() {
+        let mut p = Palette::dark();
+        for (i, s) in SLOTS.iter().enumerate() {
+            let c = Color32::from_rgb(i as u8, 100, 200);
+            assert!(p.set_color(s.key, c));
+            assert_eq!(p.color(s.key), Some(c), "{}", s.key);
+        }
+        assert!(!p.set_color("rainbow7", Color32::RED));
     }
 
     #[test]
