@@ -2,7 +2,7 @@
 
 <img src="assets/icon/air-128.png" width="96" align="right" alt="Air icon">
 
-An IDE made of modules, written in Rust (egui) and built the PhotoCraft way:
+Air is a shovel; the gold is yours to find. An IDE written in Rust (egui) and built the PhotoCraft way:
 a UI-independent engine, one command registry that drives menus, palettes and key bindings,
 a headless CLI, and end-to-end tests that drive the real window.
 
@@ -249,7 +249,7 @@ Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `pn
 
 ## Русский
 
-Air - IDE из модулей, написанная на Rust. Ядро: редактор, проекты, git, терминал, поиск и Linux через WSL. Языки
+Air - лопата, золото вы найдёте сами. IDE, написанная на Rust. Ядро: редактор, проекты, git, терминал, поиск и Linux через WSL. Языки
 подключаются модулями, которые скачиваются прямо из IDE (вкладка «Модули», Ctrl+Alt+P): Lisp, Python, C и C++,
 ассемблер, Markdown, reStructuredText, shell и make. Модуль Lisp самый полный: структурное редактирование, живой REPL
 на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация, рефакторинг (rename). Вид: чёрный фон с зелёным

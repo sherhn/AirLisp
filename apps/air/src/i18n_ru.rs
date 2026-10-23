@@ -803,7 +803,7 @@ pub const RU: &[(&str, &str)] = &[
     // modules
     ("A module cannot be used: {}", "Модуль нельзя использовать: {}"),
     ("Air is an editor, projects, git, a terminal and Linux through WSL. Languages and their tools come as modules: download what you work with.", "Air — это редактор, проекты, git, терминал и Linux через WSL. Языки и их инструменты подключаются модулями: скачайте то, с чем работаете."),
-    ("An IDE made of modules", "IDE из модулей"),
+    ("A shovel; the gold is yours to find", "Лопата, золото вы найдёте сами"),
     ("Cannot install {0}: {1}", "Не удалось установить {0}: {1}"),
     ("Cannot load the list of modules: {}", "Не удалось загрузить список модулей: {}"),
     ("Cannot set up the Lisp module: {}", "Не удалось подготовить модуль Lisp: {}"),

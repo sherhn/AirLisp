@@ -970,7 +970,7 @@ impl App {
                 ui.vertical(|ui| {
                     ui.add_space(6.0);
                     ui.label(RichText::new("Air").font(fonts::semibold(26.0)));
-                    ui.label(RichText::new(tr("An IDE made of modules")).color(pal.text_dim));
+                    ui.label(RichText::new(tr("A shovel; the gold is yours to find")).color(pal.text_dim));
                 });
             });
             ui.add_space(28.0);
