@@ -23,5 +23,5 @@ jobs:
             Windows) choco install sbcl -y ;;
           esac
       - run: cargo clippy --workspace --all-targets
-      - run: cargo test --workspace
+      - run: cargo test --workspace --no-fail-fast
       - run: cargo build --release --workspace
