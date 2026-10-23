@@ -35,12 +35,8 @@ fn kind_of_class(class: Class) -> &'static str {
     }
 }
 
-fn is_ident(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
 /// The identifiers of `text` that start with `low` (lower case), in the order they come, except the one ending at `caret`.
-fn identifiers(text: &str, low: &str, caret: usize) -> Vec<String> {
+fn identifiers(text: &str, low: &str, caret: usize, lang: &air_lang::Language) -> Vec<String> {
     let (lo, hi) = if text.len() > BIG_FILE {
         let a = caret.saturating_sub(100_000);
         let b = (caret + 100_000).min(text.len());
@@ -51,7 +47,7 @@ fn identifiers(text: &str, low: &str, caret: usize) -> Vec<String> {
     let mut out = vec![];
     let mut start: Option<usize> = None;
     for (i, c) in text[lo..hi].char_indices().map(|(i, c)| (i + lo, c)).chain(std::iter::once((hi, ' '))) {
-        match (start, is_ident(c)) {
+        match (start, lang.is_identifier_char(c)) {
             (None, true) => start = Some(i),
             (Some(s), false) => {
                 start = None;
@@ -145,7 +141,7 @@ impl App {
             }
         }
         // the identifiers of this file
-        for w in identifiers(&text, &low, caret) {
+        for w in identifiers(&text, &low, caret, &lang) {
             push(w, "s", 2, &mut items);
         }
         for (name, kind, lang) in all {
@@ -168,11 +164,12 @@ mod tests {
 
     #[test]
     fn identifiers_are_taken_from_the_text() {
+        let lang = air_lang::Language::plain();
         let t = "int count = counter + 2; // count again\nvoid cnt(void);";
-        assert_eq!(identifiers(t, "co", 0), vec!["count", "counter", "count"]);
+        assert_eq!(identifiers(t, "co", 0, &lang), vec!["count", "counter", "count"]);
         // the word being typed is not offered to itself
-        assert_eq!(identifiers("cou cou", "co", 3), vec!["cou"]);
-        assert_eq!(identifiers("x1 1x _y", "", 99), vec!["x1", "_y"]);
+        assert_eq!(identifiers("cou cou", "co", 3, &lang), vec!["cou"]);
+        assert_eq!(identifiers("x1 1x _y", "", 99, &lang), vec!["x1", "_y"]);
     }
 
     #[test]

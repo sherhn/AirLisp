@@ -46,7 +46,10 @@ run line for C), **Linux tool groups** for the project's WSL distribution (`gcc`
   distribution works offline too. Downloads go through `curl`.
 * **Write your own.** Add `tools/registry_src/<name>.py` (see `python.py`), list it in `tools/build_registry.py` and run
   `python tools/build_registry.py [--covers]`: it writes `registry/` (manifests, covers, the checksummed index). The
-  grammar rules (`match`, `words`, `region`, `captures`, outline patterns) are the `air-lang` crate's JSON format; the
+  grammar rules (`match`, `words`, `region`, `captures`, outline patterns) are the `air-lang` crate's JSON format.
+  A `match` can contain a nested `grammar`, applied only inside that match (HTML attributes, CSS values), preserving
+  bracket pairs and completion words. `identifier_chars` adds characters such as `-` to identifiers; `void_tags`
+  lists elements without closing tags for `tags` indentation and folding. The
   tests of `crates/ide-core/tests/registry.rs` check every shipped module against real code samples. A language with `"preview": "markdown"` or `"rst"` gives its
   files the preview; `"check": ["brackets"]` asks for the bracket
   check, and `check` entries of the module (a command with the same placeholders as a run command and a `pattern` with the groups

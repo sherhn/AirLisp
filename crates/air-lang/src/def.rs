@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct IndentDef {
     /// `keep` (as the line above), `braces` (one level more after `{`, `(` or `[`), `python` (after a `:` too) or
-    /// `markup` (as `keep`, and Enter continues a list or a quotation).
+    /// `markup` (as `keep`, and Enter continues a list or a quotation), or `tags` (after opening markup tags).
     pub mode: String,
     pub size: usize,
 }
@@ -25,7 +25,7 @@ impl Default for IndentDef {
 ///
 /// * `match`: a regular expression for one token; `class` colours all of it, or `captures` colour its groups
 ///   (`{"1": "keyword", "2": "function"}`) and leave the rest plain.
-/// * `words`: a list of words (letters, digits and `_` only), whole words, coloured with `class`.
+/// * `words`: a list of words (letters, digits, `_` and internal hyphens), whole words, coloured with `class`.
 /// * `begin`/`end`: a region that may span lines (block comments, triple-quoted strings, fenced code); without an
 ///   `end` it runs to the end of the file.
 ///
@@ -44,6 +44,9 @@ pub struct RuleDef {
     /// name followed by `(` is matched as a pattern with the name in group 1 and `consume` 1, so the bracket is left to the bracket rule.
     pub consume: usize,
     pub ignore_case: bool,
+    /// Optional rules applied only inside this `match` (for example, attributes and strings inside an HTML tag).
+    /// The outer rule claims the whole match; inner spans are translated back to document offsets.
+    pub grammar: Vec<RuleDef>,
 }
 
 /// A pattern that finds the entries of the Structure tool window (functions, classes, headings, ...). It is run over
@@ -87,8 +90,12 @@ pub struct LangDef {
     pub block_comment: Vec<String>,
     /// Bracket pairs that match each other and are coloured by depth: `["()", "[]", "{}"]`.
     pub brackets: Vec<String>,
+    /// Extra characters allowed in identifiers, e.g. `-` for CSS properties and HTML attributes.
+    pub identifier_chars: String,
+    /// Elements without closing tags, used by `tags` indentation and folding (case insensitive).
+    pub void_tags: Vec<String>,
     pub indent: IndentDef,
-    /// What can be folded: `none`, `braces`, `indent` or `headings`.
+    /// What can be folded: `none`, `braces`, `indent`, `headings` or `tags`.
     pub fold: String,
     /// The markup a rendered preview can show for files of this language: `markdown` or `rst` (empty: none).
     pub preview: String,

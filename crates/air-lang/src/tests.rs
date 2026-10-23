@@ -89,6 +89,38 @@ fn rules_are_tried_by_position_then_order() {
 }
 
 #[test]
+fn scoped_grammars_keep_offsets_bracket_depth_and_vocabulary() {
+    let l = lang(r#"{"id":"scoped","brackets":["{}","()"],"identifier_chars":"-",
+        "grammar":[{"match":"value:(?:\"[^\"]*\"|[^;}\"])+","class":"plain","grammar":[
+            {"match":"\"[^\"]*\"","class":"string"},
+            {"words":["background-color"],"class":"argument"}
+        ]}]}"#);
+    let src = "{ value:(background-color \"}\"); background-color }";
+    let sp = l.highlight(src);
+    assert_eq!(sp.iter().filter(|s| s.class == Class::Keyword).count(), 1, "outside the scope is plain");
+    assert_eq!(sp.iter().filter(|s| s.class == Class::Bracket).map(|s| s.depth).collect::<Vec<_>>(), [0, 1, 1, 0]);
+    assert_eq!(l.matching_bracket(src, &sp, 0), Some((0, src.len() - 1)));
+    assert_eq!(l.words(), &[("background-color".to_string(), Class::Keyword)]);
+    assert!(l.is_identifier_char('-') && !Language::plain().is_identifier_char('-'));
+    for s in &sp {
+        assert!(src.is_char_boundary(s.start) && src.is_char_boundary(s.end));
+    }
+    assert!(sp.windows(2).all(|w| w[0].end <= w[1].start));
+}
+
+#[test]
+fn scoped_grammar_errors_are_reported_at_the_outer_rule() {
+    for json in [
+        r#"{"grammar":[{"begin":"<","end":">","class":"plain","grammar":[{"words":["x"],"class":"keyword"}]}]}"#,
+        r#"{"grammar":[{"match":"x","grammar":[{"match":"(","class":"string"}]}]}"#,
+        r#"{"grammar":[{"match":"x","consume":1,"grammar":[{"words":["x"],"class":"keyword"}]}]}"#,
+    ] {
+        let err = Language::new(serde_json::from_str(json).unwrap()).err().expect("invalid grammar");
+        assert!(err.contains("rule 1"), "{err}");
+    }
+}
+
+#[test]
 fn regions_span_lines_and_may_be_unterminated() {
     let py = lang(PY);
     let src = "a = \"\"\"one\ntwo\n\"\"\"\nb = 1\n";
@@ -230,7 +262,7 @@ fn bad_grammars_are_refused_with_a_reason() {
     assert!(err(r#"{"id":"x","grammar":[{"match":"(","class":"comment"}]}"#).contains("rule 1"));
     assert!(err(r#"{"id":"x","grammar":[{"match":"a*","class":"comment"}]}"#).contains("empty string"));
     assert!(err(r#"{"id":"x","grammar":[{"match":"a","class":"sparkles"}]}"#).contains("unknown class"));
-    assert!(err(r#"{"id":"x","grammar":[{"words":["a-b"],"class":"keyword"}]}"#).contains("letters"));
+    assert!(err(r#"{"id":"x","grammar":[{"words":["a.b"],"class":"keyword"}]}"#).contains("letters"));
     assert!(err(r#"{"id":"x","grammar":[{"match":"a(b)","captures":{"2":"keyword"}}]}"#).contains("no group 2"));
     assert!(err(r#"{"id":"x","grammar":[{"class":"keyword"}]}"#).contains("none of"));
     assert!(err(r#"{"id":"x","brackets":["("]}"#).contains("two characters"));

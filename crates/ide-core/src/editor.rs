@@ -597,9 +597,9 @@ impl Editor {
         (s, e)
     }
 
-    /// The identifier (letters, digits and `_`) that contains `offset` or ends at it: what a name of another language is.
+    /// The identifier that contains `offset` or ends at it, including extra characters named by the module.
     pub fn identifier_range_at(&self, offset: usize) -> (usize, usize) {
-        let is_id = |c: char| c.is_alphanumeric() || c == '_';
+        let is_id = |c: char| self.other.as_ref().map_or(c.is_alphanumeric() || c == '_', |lang| lang.is_identifier_char(c));
         let mut s = offset;
         let mut e = offset;
         while let Some(c) = self.char_before(s) {
@@ -900,8 +900,12 @@ impl Editor {
                     return;
                 }
             }
-            if ed.other.as_ref().is_some_and(|l| l.braces()) && ed.char_before(c) == Some('{') && ed.char_after(c) == Some('}') {
-                // `{|}` + Enter: the closing brace gets a line of its own, the caret an indented one
+            let split_pair = ed.other.as_ref().is_some_and(|l| {
+                (l.braces() && ed.char_before(c) == Some('{') && ed.char_after(c) == Some('}'))
+                    || l.split_tag_pair(&ed.text[ed.line_start_of(c)..c], &ed.text[c..ed.line_end_of(c)])
+            });
+            if split_pair {
+                // `{|}` or `<div>|</div>` + Enter: the closer gets its own line, the caret an indented one.
                 ed.splice(c, c, "\n\n");
                 ed.indent_line_at(c + 2);
                 ed.indent_line_at(c + 1);

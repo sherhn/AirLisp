@@ -15,6 +15,7 @@ pub enum IndentMode {
     Braces,
     Python,
     Markup,
+    Tags,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,6 +24,7 @@ pub enum FoldKind {
     Braces,
     Indent,
     Headings,
+    Tags,
 }
 
 /// The class a grammar names (`"keyword"`, `"string"`, ...).
@@ -79,6 +81,7 @@ fn build(pattern: &str) -> Result<Regex, String> {
 }
 
 enum Kind {
+    Scoped { re: Regex, language: Box<Language> },
     Match { re: Regex, captures: Vec<(usize, Class)>, class: Option<Class>, consume: usize },
     Region { begin: Regex, end: Option<Regex>, class: Class },
     Brackets { re: Regex },
@@ -104,7 +107,7 @@ impl Kind {
                 let end = if *consume > 0 { c.get(*consume).map_or(m.end(), |g| g.end()).max(m.start() + 1) } else { m.end() };
                 Some(Hit { start: m.start(), end, groups })
             }
-            Kind::Match { re, .. } | Kind::Brackets { re } => re.find_at(text, from).map(|m| Hit { start: m.start(), end: m.end(), groups: vec![] }),
+            Kind::Scoped { re, .. } | Kind::Match { re, .. } | Kind::Brackets { re } => re.find_at(text, from).map(|m| Hit { start: m.start(), end: m.end(), groups: vec![] }),
             Kind::Region { begin, end, .. } => {
                 let b = begin.find_at(text, from)?;
                 let stop = end.as_ref().and_then(|e| e.find_at(text, b.end())).map_or(text.len(), |m| m.end());
@@ -163,6 +166,7 @@ fn parse_mode(m: &str) -> Result<IndentMode, String> {
         "braces" => IndentMode::Braces,
         "python" => IndentMode::Python,
         "markup" => IndentMode::Markup,
+        "tags" => IndentMode::Tags,
         other => return Err(format!("unknown indent mode {other:?}")),
     })
 }
@@ -173,6 +177,7 @@ fn parse_fold(m: &str) -> Result<FoldKind, String> {
         "braces" => FoldKind::Braces,
         "indent" => FoldKind::Indent,
         "headings" => FoldKind::Headings,
+        "tags" => FoldKind::Tags,
         other => return Err(format!("unknown fold kind {other:?}")),
     })
 }
@@ -181,16 +186,25 @@ fn class_of(name: &str, what: &str) -> Result<Class, String> {
     class_named(name).ok_or_else(|| format!("{what}: unknown class {name:?}"))
 }
 
-fn compile_rule(r: &RuleDef, i: usize) -> Result<Rule, String> {
+fn compile_rule(r: &RuleDef, i: usize, brackets: &[String]) -> Result<Rule, String> {
     let at = |e: String| format!("rule {}: {e}", i + 1);
-    let kind = if !r.begin.is_empty() {
+    let kind = if !r.grammar.is_empty() {
+        if r.pattern.is_empty() || !r.begin.is_empty() || !r.words.is_empty() || !r.captures.is_empty() || r.consume != 0 {
+            return Err(at("a scoped grammar needs a `match` without begin, words, captures or consume".into()));
+        }
+        if !r.class.is_empty() {
+            class_of(&r.class, &format!("rule {}", i + 1))?;
+        }
+        let language = Language::new(LangDef { id: format!("rule {}", i + 1), grammar: r.grammar.clone(), brackets: brackets.to_vec(), ..LangDef::default() }).map_err(at)?;
+        Kind::Scoped { re: build(&r.pattern).map_err(at)?, language: Box::new(language) }
+    } else if !r.begin.is_empty() {
         let begin = build(&r.begin).map_err(at)?;
         let end = if r.end.is_empty() { None } else { Some(RegexBuilder::new(&r.end).multi_line(true).build().map_err(|e| at(format!("end {:?}: {e}", r.end)))?) };
         Kind::Region { begin, end, class: class_of(&r.class, &format!("rule {}", i + 1))? }
     } else if !r.words.is_empty() {
         for w in &r.words {
-            if w.is_empty() || !w.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                return Err(at(format!("word {w:?} must be letters, digits and _ (use a `match` rule for anything else)")));
+            if w.is_empty() || !w.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') || w.starts_with('-') || w.ends_with('-') {
+                return Err(at(format!("word {w:?} must be letters, digits, _ and internal hyphens (use a `match` rule for anything else)")));
             }
         }
         let mut words: Vec<&String> = r.words.iter().collect();
@@ -228,7 +242,7 @@ impl Language {
     pub fn new(def: LangDef) -> Result<Language, String> {
         let mut rules = Vec::with_capacity(def.grammar.len() + 1);
         for (i, r) in def.grammar.iter().enumerate() {
-            rules.push(compile_rule(r, i).map_err(|e| format!("{}: {e}", def.id))?);
+            rules.push(compile_rule(r, i, &def.brackets).map_err(|e| format!("{}: {e}", def.id))?);
         }
         let mut pairs = Vec::new();
         for b in &def.brackets {
@@ -273,6 +287,15 @@ impl Language {
                 }
             }
         }
+        for rule in &rules {
+            if let Kind::Scoped { language, .. } = &rule.kind {
+                for (word, class) in language.words() {
+                    if !words.iter().any(|(w, _)| w == word) {
+                        words.push((word.clone(), *class));
+                    }
+                }
+            }
+        }
         Ok(Language { def, rules, pairs, outline, first_line, indent, fold, list_re, quote_re, words })
     }
 
@@ -292,6 +315,10 @@ impl Language {
     /// The words the grammar lists - keywords, built-in functions, types, constants - and how each is coloured.
     pub fn words(&self) -> &[(String, Class)] {
         &self.words
+    }
+
+    pub fn is_identifier_char(&self, c: char) -> bool {
+        c.is_alphanumeric() || c == '_' || self.def.identifier_chars.contains(c)
     }
 
     /// The markup a preview of this language's files renders (`markdown`, `rst`), if it has one.
@@ -331,6 +358,16 @@ impl Language {
 
     pub fn indent_size(&self) -> usize {
         self.def.indent.size.clamp(1, 16)
+    }
+
+    /// Enter between matching markup tags gives the closing tag its own line.
+    pub fn split_tag_pair(&self, before: &str, after: &str) -> bool {
+        if self.indent != IndentMode::Tags || !before.ends_with('>') || !after.starts_with("</") {
+            return false;
+        }
+        let opens = crate::tags::scan(before, &self.highlight(before), &self.def.void_tags);
+        let closes = crate::tags::scan(after, &self.highlight(after), &self.def.void_tags);
+        matches!((opens.last(), closes.first()), (Some(a), Some(b)) if !a.closing && !a.empty && a.end == before.len() && b.closing && b.start == 0 && a.name == b.name)
     }
 
     pub fn fold_kind(&self) -> FoldKind {
@@ -375,6 +412,24 @@ impl Language {
                 }
             };
             match &self.rules[i].kind {
+                Kind::Scoped { language, .. } => {
+                    for s in language.highlight(&text[h.start..h.end]) {
+                        let d = if s.class == Class::Bracket {
+                            let c = text[h.start + s.start..].chars().next().unwrap_or(' ');
+                            if self.pairs.iter().any(|(o, _)| *o == c) {
+                                let d = depth;
+                                depth += 1;
+                                d
+                            } else {
+                                depth = depth.saturating_sub(1);
+                                depth
+                            }
+                        } else {
+                            s.depth
+                        };
+                        push(h.start + s.start, h.start + s.end, s.class, d);
+                    }
+                }
                 Kind::Match { captures, class, .. } => {
                     if captures.is_empty() {
                         if let Some(c) = class {
@@ -514,6 +569,23 @@ impl Language {
         let mut regions: Vec<(usize, usize)> = Vec::new();
         match self.fold {
             FoldKind::None => {}
+            FoldKind::Tags => {
+                let mut stack: Vec<crate::tags::Tag> = Vec::new();
+                for tag in crate::tags::scan(text, spans, &self.def.void_tags) {
+                    if tag.closing {
+                        if let Some(i) = stack.iter().rposition(|open| open.name == tag.name) {
+                            let open = stack[i].start;
+                            stack.truncate(i);
+                            let (a, b) = (line_of(open), line_of(tag.end - 1));
+                            if b > a {
+                                regions.push((a, b));
+                            }
+                        }
+                    } else if !tag.empty {
+                        stack.push(tag);
+                    }
+                }
+            }
             FoldKind::Braces => {
                 let mut stack = Vec::new();
                 for s in spans.iter().filter(|s| s.class == Class::Bracket) {
@@ -598,6 +670,24 @@ impl Language {
         .trim_end();
         match self.indent {
             IndentMode::Keep | IndentMode::Markup => base,
+            IndentMode::Tags => {
+                let spans = self.highlight(prev);
+                let mut stack: Vec<String> = Vec::new();
+                for tag in crate::tags::scan(prev, &spans, &self.def.void_tags) {
+                    if tag.closing {
+                        if let Some(i) = stack.iter().rposition(|name| *name == tag.name) {
+                            stack.truncate(i);
+                        }
+                    } else if !tag.empty {
+                        stack.push(tag.name);
+                    }
+                }
+                let mut w = base + &unit.repeat(stack.len());
+                if cur.trim_start().starts_with("</") {
+                    w = less(&w);
+                }
+                w
+            }
             IndentMode::Braces => {
                 let mut w = base;
                 if code.ends_with(['{', '(', '[']) {
