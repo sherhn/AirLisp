@@ -55,7 +55,6 @@ fn avatar(ui: &mut egui::Ui, pal: &Palette, login: &str, size: f32) {
 impl App {
     /// Draw the GitHub tab. Returns true when the user asked to clone right away (double click).
     pub fn draw_github_tab(&mut self, ui: &mut egui::Ui, st: &mut CloneState, running: bool) -> bool {
-        let pal = self.pal;
         if self.github.user_input.is_empty() {
             self.github.user_input = self.settings.github_user.clone();
         }

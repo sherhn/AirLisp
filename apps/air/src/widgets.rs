@@ -106,12 +106,11 @@ pub struct Pill<'a> {
     pub filled: bool,
     pub min_w: f32,
     pub height: f32,
-    pub semibold: bool,
 }
 
 impl<'a> Pill<'a> {
     pub fn new(label: &'a str) -> Self {
-        Pill { icon: None, label, chevron: false, filled: false, min_w: 0.0, height: 32.0, semibold: false }
+        Pill { icon: None, label, chevron: false, filled: false, min_w: 0.0, height: 32.0 }
     }
     pub fn icon(mut self, i: Icon, c: Color32) -> Self {
         self.icon = Some((i, c));
@@ -130,12 +129,8 @@ impl<'a> Pill<'a> {
         self.height = h;
         self
     }
-    pub fn semibold(mut self) -> Self {
-        self.semibold = true;
-        self
-    }
     pub fn show(self, ui: &mut egui::Ui, pal: &Palette) -> egui::Response {
-        let font = if self.semibold { fonts::semibold(13.5) } else { fonts::ui(13.5) };
+        let font = fonts::ui(13.5);
         let galley = ui.painter().layout_no_wrap(self.label.to_string(), font.clone(), pal.text);
         let mut w = 14.0 + galley.size().x + 14.0;
         if self.icon.is_some() {
@@ -231,10 +226,6 @@ impl<'a> TextField<'a> {
     }
     pub fn icon(mut self, i: Icon) -> Self {
         self.icon = Some(i);
-        self
-    }
-    pub fn icon_opt(mut self, i: Option<Icon>) -> Self {
-        self.icon = i;
         self
     }
     /// Fixed width (default: the rest of the available width).

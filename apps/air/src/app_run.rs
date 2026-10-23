@@ -157,7 +157,7 @@ impl App {
                     Some(t) => i18n::fmt("in Linux ({0}): {1}", &[&t.distro, &wsl::to_linux(&root, t)]),
                     None => root.display().to_string(),
                 };
-                self.run = RunState { handle: Some(h), title: title.clone(), log: vec![], running: true, exit_code: None, file: None };
+                self.run = RunState { handle: Some(h), title: title.clone(), log: vec![], running: true, exit_code: None };
                 self.run.log.push(LogLine { kind: LogKind::Info, text: format!("{title}   {place}") });
                 self.make_run = Some(MakeRun { root, target: t, label: label.to_string() });
                 self.compiler_problems.retain(|p| p.source != "make");
@@ -284,7 +284,7 @@ impl App {
         match runner::run_asdf(&imp, &root, system, test) {
             Ok(h) => {
                 let verb = if test { tr("Test") } else { tr("Load") };
-                self.run = RunState { handle: Some(h), title: format!("{verb} '{system}'"), log: vec![], running: true, exit_code: None, file: None::<PathBuf> };
+                self.run = RunState { handle: Some(h), title: format!("{verb} '{system}'"), log: vec![], running: true, exit_code: None };
                 self.run.log.push(LogLine { kind: LogKind::Info, text: i18n::fmt("{0} ASDF system '{1}' from {2}", &[&verb, &system, &root.display()]) });
                 self.bottom_tool = Some(BottomTool::Run);
             }

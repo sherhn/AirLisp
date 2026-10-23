@@ -67,7 +67,6 @@ pub struct App {
     pub last_disk_check: f64,
     pub window_focused: bool,
     pub exit_now: bool,
-    pub font_names: (Option<String>, Option<String>),
     pub editor_rect: Option<egui::Rect>,
     pub caret_screen: Option<egui::Pos2>,
     /// The gutter of the active editor (screen coordinates) and the open old-code popup, if any.
@@ -162,7 +161,6 @@ impl App {
             last_disk_check: 0.0,
             window_focused: true,
             exit_now: false,
-            font_names: (None, None),
             editor_rect: None,
             caret_screen: None,
             gutter_rect: None,
@@ -978,7 +976,7 @@ impl App {
         }
         match runner::run_file(&imp, &path, self.project_root()) {
             Ok(h) => {
-                self.run = RunState { handle: Some(h), title: format!("Run '{}'", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()), log: vec![], running: true, exit_code: None, file: Some(path.clone()) };
+                self.run = RunState { handle: Some(h), title: format!("Run '{}'", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()), log: vec![], running: true, exit_code: None };
                 self.run.log.push(LogLine { kind: LogKind::Info, text: format!("{} --non-interactive --load {}", imp.path.display(), path.display()) });
                 self.bottom_tool = Some(BottomTool::Run);
             }
@@ -1213,8 +1211,6 @@ impl App {
         let form = tl.iter().find(|f| p.start_of(**f) == d.def.start)?;
         let open = p.partner.get(form.last).copied().flatten()?;
         let kids = p.children(open);
-        let sig_end = kids.iter().take(3).map(|k| p.end_of(*k)).max()?;
-        let header = text[d.def.start..sig_end].to_string() + ")";
         let is_var = matches!(d.def.operator.to_ascii_lowercase().as_str(), "defvar" | "defparameter" | "defconstant" | "define-constant");
         // (defun name (lambda list) "doc" body...): the string is documentation only when forms follow it
         let doc = kids
@@ -1231,7 +1227,7 @@ impl App {
             if inner.is_empty() { format!("({})", d.def.name) } else { format!("({} {})", d.def.name, inner) }
         };
         let line = text[..d.def.start.min(text.len())].matches('\n').count();
-        Some(DefinitionParts { header, signature, doc, kind: d.def.kind.label().to_string(), path: d.path.clone(), line, name_start: d.def.name_start })
+        Some(DefinitionParts { signature, doc, kind: d.def.kind.label().to_string(), path: d.path.clone(), line, name_start: d.def.name_start })
     }
 
     fn local_definition_text(&self, name: &str) -> Option<String> {
@@ -1442,12 +1438,11 @@ impl App {
         }
         items.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.text.len().cmp(&b.text.len())).then_with(|| a.text.cmp(&b.text)));
         items.truncate(60);
-        let rev = d.ed.revision();
         let started = self.completion.active && self.completion.start == s && self.completion.prefix == prefix;
         self.completion = Completion { active: !items.is_empty() || self.repl.ready, items, selected: if started { self.completion.selected } else { 0 }, start: s, prefix: prefix.clone() };
         if self.repl.ready && !prefix.is_empty() {
             let p2 = prefix.clone();
-            self.repl_request("complete", &p2, Pending::Complete { start: s, prefix, doc_rev: rev });
+            self.repl_request("complete", &p2, Pending::Complete { start: s, prefix });
         }
         if self.completion.items.is_empty() && !self.repl.ready {
             self.completion.active = false;
@@ -1710,8 +1705,6 @@ fn live_len_gt1() -> bool {
 
 /// A definition of the project, taken apart (see `App::local_definition_parts`).
 pub struct DefinitionParts {
-    /// `(defun name (args)` plus the closing bracket, as Quick Documentation shows it.
-    pub header: String,
     /// The call as written: `(name a b)`.
     pub signature: String,
     pub doc: Option<String>,

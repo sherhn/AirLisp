@@ -53,11 +53,7 @@ pub struct LangDefHit {
     /// The name as the definition spells it (it may differ from the call's: `_name` in assembly, `name-x` in Lisp).
     pub name: String,
     pub path: PathBuf,
-    /// 0-based line.
-    pub line: usize,
     pub kind: String,
-    /// The id of the language of the file (`lisp` for Lisp).
-    pub lang: String,
     /// Byte offset of the name in the file.
     pub offset: usize,
     pub doc: docinfo::DocInfo,
@@ -423,7 +419,7 @@ impl App {
             let line_start: usize = text.split_inclusive('\n').take(r.line).map(str::len).sum();
             let col = text[line_start.min(text.len())..].lines().next().and_then(|l| l.find(&r.name)).unwrap_or(0);
             let source = rel(&r.path, r.line);
-            out.push(LangDefHit { name: r.name, path: r.path, line: r.line, kind: r.kind, lang: r.lang, offset: line_start + col, doc, source });
+            out.push(LangDefHit { name: r.name, path: r.path, kind: r.kind, offset: line_start + col, doc, source });
             if out.len() >= 8 {
                 break;
             }
@@ -434,7 +430,7 @@ impl App {
             for v in &variants {
                 if let Some(p) = self.local_definition_parts(v) {
                     let source = rel(&p.path, p.line);
-                    out.push(LangDefHit { name: v.clone(), path: p.path, line: p.line, kind: p.kind, lang: "lisp".into(), offset: p.name_start, doc: docinfo::DocInfo { signature: p.signature, doc: p.doc.unwrap_or_default() }, source });
+                    out.push(LangDefHit { name: v.clone(), path: p.path, kind: p.kind, offset: p.name_start, doc: docinfo::DocInfo { signature: p.signature, doc: p.doc.unwrap_or_default() }, source });
                 }
             }
         }

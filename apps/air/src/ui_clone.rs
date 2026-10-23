@@ -25,7 +25,6 @@ impl App {
             tab: CloneTab::Url,
             gh_selected: None,
             url: String::new(),
-            dir: String::new(),
             dir_touched: false,
             parent,
             branch: String::new(),

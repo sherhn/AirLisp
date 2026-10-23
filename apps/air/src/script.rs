@@ -23,7 +23,6 @@ pub struct Script {
     wait_cond: Option<(Value, f64)>,
     shot: Option<(PathBuf, Arc<Mutex<Option<Arc<egui::ColorImage>>>>)>,
     pub failures: Vec<String>,
-    pub log: Vec<String>,
     total: usize,
     done: bool,
     started: f64,
@@ -33,7 +32,7 @@ pub fn load(path: &Path) -> Result<Script, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let v: Value = serde_json::from_str(&text).map_err(|e| format!("bad script JSON: {e}"))?;
     let arr = v.as_array().ok_or("script must be a JSON array")?;
-    Ok(Script { total: arr.len(), steps: arr.iter().cloned().collect(), pending: vec![], wait_frames: 3, wait_cond: None, shot: None, failures: vec![], log: vec![], done: false, started: 0.0 })
+    Ok(Script { total: arr.len(), steps: arr.iter().cloned().collect(), pending: vec![], wait_frames: 3, wait_cond: None, shot: None, failures: vec![], done: false, started: 0.0 })
 }
 
 pub fn save_png(path: &Path, img: &egui::ColorImage) -> Result<(), String> {

@@ -9,7 +9,7 @@ use crate::app::App;
 use crate::editor_view::Sev;
 use crate::fonts;
 use crate::i18n::{self, tr};
-use crate::icons::{self, Icon};
+use crate::icons::Icon;
 use crate::state::*;
 use crate::ui_panels::badge_color;
 use crate::widgets::{self, TextField};
@@ -758,11 +758,6 @@ impl App {
                                 }
                                 Err(e) => self.toast(format!("Cannot delete: {e}"), Sev::Error),
                             },
-                            ConfirmKind::Reload(i) => {
-                                if let Some(d) = self.docs.get_mut(i) {
-                                    let _ = d.reload();
-                                }
-                            }
                             ConfirmKind::Rollback(rel) => self.rollback_file(&rel),
                             ConfirmKind::RestoreLocal(id) => self.local_restore(id),
                             ConfirmKind::RestoreLocalFile(id, rel) => self.local_restore_file(id, &rel),

@@ -308,11 +308,6 @@ impl App {
         }
         &doc.git_marks
     }
-
-    pub fn git_dirty_count(&self) -> usize {
-        self.git.changes.len()
-    }
-
 }
 
 

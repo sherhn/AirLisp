@@ -68,7 +68,7 @@ impl App {
         if let Some(h) = self.run.handle.take() {
             h.kill();
         }
-        self.run = RunState { handle: None, title: name.to_string(), log: vec![], running: true, exit_code: None, file: None };
+        self.run = RunState { handle: None, title: name.to_string(), log: vec![], running: true, exit_code: None };
         self.bottom_tool = Some(BottomTool::Run);
         self.scenario = Some(ScenarioRun { name: name.to_string(), commands, next: 0, stop_on_error: sc.stop_on_error });
         self.scenario_step();

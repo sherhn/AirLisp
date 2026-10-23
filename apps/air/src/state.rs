@@ -78,7 +78,6 @@ pub struct GitState {
     pub busy: Option<String>,
     pub op_rx: Option<Receiver<(String, Result<String, String>)>>,
     pub tab: GitTab,
-    pub selected_commit: Option<usize>,
     /// Absolute path -> change kind for tree colouring; directories containing changes.
     pub kinds: HashMap<PathBuf, ide_core::git::ChangeKind>,
     pub dirty_dirs: HashSet<PathBuf>,
@@ -111,7 +110,6 @@ impl Default for GitState {
             busy: None,
             op_rx: None,
             tab: GitTab::Log,
-            selected_commit: None,
             kinds: HashMap::new(),
             dirty_dirs: HashSet::new(),
             available: true,
@@ -170,7 +168,7 @@ pub struct LogLine {
 
 #[derive(Clone, Debug)]
 pub enum Pending {
-    Complete { start: usize, prefix: String, doc_rev: u64 },
+    Complete { start: usize, prefix: String },
     Doc { title: String },
     ParamInfo { name: String },
     Macroexpand,
@@ -203,7 +201,6 @@ pub struct RunState {
     pub log: Vec<LogLine>,
     pub running: bool,
     pub exit_code: Option<i32>,
-    pub file: Option<PathBuf>,
 }
 
 pub struct CompileJob {
@@ -324,7 +321,6 @@ pub enum ConfirmKind {
     CloseAll,
     Exit,
     Delete(PathBuf),
-    Reload(usize),
     Rollback(String),
     RestoreLocal(u64),
     /// Put one file back into its state in a local commit: (commit id, relative path).
@@ -362,7 +358,6 @@ pub struct CloneState {
     /// Full name (`owner/repo`) of the repository picked on the GitHub tab.
     pub gh_selected: Option<String>,
     pub url: String,
-    pub dir: String,
     /// The user edited the directory by hand: stop deriving it from the repository name.
     pub dir_touched: bool,
     pub parent: String,
