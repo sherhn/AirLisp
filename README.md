@@ -7,7 +7,7 @@ a UI-independent engine, one command registry that drives menus, palettes and ke
 a headless CLI, and end-to-end tests that drive the real window.
 
 The core is the editor, projects, git, the terminal, search and Linux through WSL. **Languages come as modules** that
-you download from inside the IDE (Modules tab, Ctrl+Alt+P): Lisp, Python, C and C++, Assembler, Markdown,
+you download from inside the IDE (Modules tab, Ctrl+Alt+P): Lisp, Python, C and C++, Assembler, HTML, CSS, Markdown,
 reStructuredText, Shell and make. Runs on Windows, macOS and Linux. Common Lisp (SBCL) is the most complete module:
 REPL, compiler, structural editing; Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation.
 
@@ -30,6 +30,13 @@ run line for C), **Linux tool groups** for the project's WSL distribution (`gcc`
   configurations and the Lisp commands go away.
 * **Run per language.** *Run Current File* (the *Current File* run configuration) runs a file with the run command of
   the module of its language, in the project's Linux or on Windows; output and compiler messages land in Run and Problems.
+* **HTML and CSS.** Separate modules for `.html`, `.htm`, `.xhtml` and `.css`, with highlighting, completion, comments,
+  outline and folding. HTML indents and folds by tags, handles void and self-closing elements, and splits matching
+  tags onto separate lines on Enter. CSS highlights selectors, properties, colours, variables, functions and at-rules;
+  braces match, indent and fold. Names with hyphens (`background-color`, `aria-label`) complete as one word.
+  The HTML *Web page* template creates `index.html` and a linked `styles.css`; CSS has a standalone stylesheet template.
+  Embedded script/style bodies stay separate from HTML markup; embedded language highlighting and browser preview
+  are not implemented.
 * **Preview of Markdown and reStructuredText.** The Markdown and reStructuredText modules open their files in three modes,
   as in PyCharm: *Editor*, *Editor and Preview* (side by side, scrolled together in both directions) and *Preview*. The
   three buttons are at the right end of the breadcrumbs, and View > *Editor Only* / *Editor and Preview* / *Preview Only*
@@ -254,7 +261,7 @@ Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `pn
 
 Air - лопата, золото вы найдёте сами. IDE, написанная на Rust. Ядро: редактор, проекты, git, терминал, поиск и Linux через WSL. Языки
 подключаются модулями, которые скачиваются прямо из IDE (вкладка «Модули», Ctrl+Alt+P): Lisp, Python, C и C++,
-ассемблер, Markdown, reStructuredText, shell и make. Модуль Lisp самый полный: структурное редактирование, живой REPL
+ассемблер, HTML, CSS, Markdown, reStructuredText, shell и make. Модуль Lisp самый полный: структурное редактирование, живой REPL
 на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация, рефакторинг (rename). Вид: чёрный фон с зелёным
 (в духе Сбера) и синим свечением и «жидкое стекло»; тёмная и светлая темы, раскладка клавиш IntelliJ.
 **Своя тема.** Настройки > Внешний вид > «Своя» — третья тема: она берёт за основу тёмную или светлую палитру и даёт
@@ -274,6 +281,12 @@ Air - лопата, золото вы найдёте сами. IDE, написа
 GitHub (`registry/`), из адреса или папки в Настройки > Модули, либо из копии рядом с программой (работает без сети).
 «Запуск текущего файла» запускает файл командой его языка из модуля — в Linux проекта или в Windows. Если модуль Lisp
 выключен, REPL, ASDF и команды Lisp скрываются; WSL и остальное ядро от модулей не зависят.
+
+**HTML и CSS.** Отдельные модули с подсветкой, автодополнением, комментариями, структурой и сворачиванием.
+HTML учитывает парные, пустые и самозакрывающиеся теги; Enter между парными тегами создаёт строку с отступом.
+CSS поддерживает селекторы, свойства, цвета, переменные, функции и at-правила. Имена с дефисами (`background-color`,
+`aria-label`) дополняются целиком. Шаблон HTML создаёт страницу и подключённый CSS-файл, у CSS есть отдельный шаблон.
+Встроенные script/style отделены от разметки, но пока не подсвечиваются как JavaScript/CSS; браузерного предпросмотра HTML нет.
 
 **Просмотр Markdown и reStructuredText.** Файлы модулей Markdown и reStructuredText открываются в трёх режимах, как в
 PyCharm: «Только редактор», «Редактор и просмотр» (рядом, прокрутка синхронна в обе стороны) и «Только просмотр».

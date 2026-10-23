@@ -18,7 +18,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "tools" / "registry_src"
 OUT = ROOT / "registry"
-ORDER = ["lisp", "c_cpp", "python", "assembler", "markdown", "restructuredtext", "shell_make"]
+ORDER = ["lisp", "c_cpp", "python", "assembler", "html", "css", "markdown", "restructuredtext", "shell_make"]
 
 
 def load_modules():

@@ -1874,6 +1874,36 @@ mod tests {
     }
 
     #[test]
+    fn html_and_css_edit_with_their_own_indentation_and_comments() {
+        let mut html = with_lang("<main></main>", "html", "html");
+        html.set_caret(6, false);
+        html.insert_newline();
+        assert_eq!(html.text(), "<main>\n  \n</main>");
+        html.type_text("<img src='x'>");
+        html.insert_newline();
+        assert_eq!(html.text(), "<main>\n  <img src='x'>\n  \n</main>");
+        html.undo();
+        assert_eq!(html.text(), "<main>\n  <img src='x'>\n</main>");
+
+        let mut css = with_lang(".card {}", "css", "css");
+        css.set_caret(7, false);
+        css.insert_newline();
+        css.type_text("background-color: red;");
+        assert_eq!(css.text(), ".card {\n  background-color: red;\n}");
+        let pos = css.text().find("color").unwrap() + 5;
+        let (a, b) = css.identifier_range_at(pos);
+        assert_eq!(&css.text()[a..b], "background-color");
+
+        for (id, src, commented) in [("html", "<p>Hello</p>", "<!-- <p>Hello</p> -->"), ("css", "color: red;", "/* color: red; */")] {
+            let mut e = with_lang(src, id, id);
+            e.toggle_line_comment();
+            assert_eq!(e.text(), commented);
+            e.toggle_line_comment();
+            assert_eq!(e.text(), src);
+        }
+    }
+
+    #[test]
     fn python_indents_after_a_colon_and_comments_with_hash() {
         let mut e = with_lang("def f(x):", "python", "python");
         e.insert_newline();

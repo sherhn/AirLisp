@@ -140,6 +140,62 @@
       }
     },
     {
+      "id": "html",
+      "name": "HTML",
+      "version": "1.0.0",
+      "category": "Languages",
+      "summary": "Tags, attributes, entities and comments; tag indentation and folding, an element outline and a web page template.",
+      "cover": "cover.png",
+      "path": "modules/html",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 37236,
+          "sha256": "19237a7b044bd577c8c53d60d8b177d0e084305dc5a846aa4dfdfd7278c48af6"
+        },
+        {
+          "name": "cover.png",
+          "size": 109802,
+          "sha256": "abcc3bba8673b76dcf1b71566fce8706cd224c7a3903a2d7d3c83ffee56aae60"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "html",
+          "htm",
+          "xhtml"
+        ],
+        "files": []
+      }
+    },
+    {
+      "id": "css",
+      "name": "CSS",
+      "version": "1.0.0",
+      "category": "Languages",
+      "summary": "Selectors, properties, values, colours, variables and at-rules; brace indentation, folding and a stylesheet template.",
+      "cover": "cover.png",
+      "path": "modules/css",
+      "files": [
+        {
+          "name": "module.json",
+          "size": 16423,
+          "sha256": "5ea6ab5f941a4d9fff5c2a7d12b17c3252cc960c20f738ed81303ad7a2794712"
+        },
+        {
+          "name": "cover.png",
+          "size": 104843,
+          "sha256": "050754b5a2679cd5457f07b0e8ba7605f8f43d121c9fe9a0180c346763536de2"
+        }
+      ],
+      "detect": {
+        "extensions": [
+          "css"
+        ],
+        "files": []
+      }
+    },
+    {
       "id": "markdown",
       "name": "Markdown",
       "version": "1.1.0",

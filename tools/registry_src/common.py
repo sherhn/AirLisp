@@ -26,6 +26,11 @@ def region(begin, end, cls):
     return {"begin": begin, "end": end, "class": cls}
 
 
+def scoped(pattern, grammar, fallback="preproc"):
+    """Tokenize only inside a match; older engines colour the entire match with the fallback class."""
+    return {"match": pattern, "class": fallback, "grammar": grammar}
+
+
 def call(cls="function"):
     """A name followed by `(`: coloured as a function, the bracket stays for the bracket rule."""
     return match(r"\b([A-Za-z_]\w*)\(", captures={1: cls}, consume=1)

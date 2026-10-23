@@ -36,7 +36,7 @@ fn the_index_is_current_and_every_module_is_valid() {
     let src = Source::Dir(registry_dir());
     let index: Index = src.fetch_index().expect("index.json");
     let ids: Vec<&str> = index.modules.iter().map(|m| m.id.as_str()).collect();
-    assert_eq!(ids, ["lisp", "c-cpp", "python", "assembler", "markdown", "restructuredtext", "shell-make"]);
+    assert_eq!(ids, ["lisp", "c-cpp", "python", "assembler", "html", "css", "markdown", "restructuredtext", "shell-make"]);
     for e in &index.modules {
         assert!(e.files.iter().any(|f| f.name == "module.json"), "{}", e.id);
         for f in &e.files {
@@ -75,6 +75,105 @@ fn every_language_is_claimed_by_the_files_it_should() {
     assert_eq!(id("docker/Dockerfile", None), "config");
     assert_eq!(id("link.ld", None), "c");
     assert_eq!(id("notes.xyz", None), "plain");
+    assert_eq!(id("web/INDEX.HTML", None), "html");
+    assert_eq!(id("page.htm", None), "html");
+    assert_eq!(id("page.xhtml", None), "html");
+    assert_eq!(id("page", Some("<!DOCTYPE html>")), "html");
+    assert_eq!(id("web/styles.CSS", None), "css");
+    assert_eq!(id("styles.scss", None), "plain");
+}
+
+#[test]
+fn html_tags_attributes_and_prose_are_separate() {
+    let src = "<!DOCTYPE html>\n<!-- <fake> -->\n<my-card id=hero data-name=\"a > b\"\n aria-label='Привет' disabled>\nText class=plain, \"quotes\" &amp; &#169; &#xA9;\n</my-card>";
+    let h = hl("html", src);
+    assert!(has(&h, Class::Preproc, "<!DOCTYPE html>") && has(&h, Class::Comment, "<!-- <fake> -->"), "{h:?}");
+    assert!(has(&h, Class::SpecialForm, "my-card") && has(&h, Class::Keyword, "data-name"), "{h:?}");
+    assert!(has(&h, Class::String, "hero") && has(&h, Class::String, "\"a > b\"") && has(&h, Class::String, "'Привет'"), "{h:?}");
+    assert!(has(&h, Class::Keyword, "aria-label") && has(&h, Class::Keyword, "disabled"));
+    for entity in ["&amp;", "&#169;", "&#xA9;"] {
+        assert!(has(&h, Class::Constant, entity));
+    }
+    assert!(!h.iter().any(|(_, s)| s.contains("plain") || s.contains("quotes")), "page text is plain: {h:?}");
+    let lang = language("html");
+    assert_eq!(lang.outline(src).iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["my-card"]);
+    let sp = lang.highlight(src);
+    assert!(sp.windows(2).all(|w| w[0].end <= w[1].start));
+    assert!(has(&hl("html", "<input placeholder=\"unfinished"), Class::String, "\"unfinished"));
+    assert!(lang.words().iter().any(|(w, _)| w == "aria-label"));
+}
+
+#[test]
+fn html_raw_text_and_tag_folding() {
+    let lang = language("html");
+    let src = "<DIV>\n<script>\nconst x = '<fake>';\n</script>\n<style>\n.x::after { content: '<fake>'; }\n</style>\n<textarea><fake></textarea>\n<img src='x'>\n<my-icon />\n<section>\ntext\n</section>\n</DIV>";
+    let spans = lang.highlight(src);
+    let names: Vec<String> = lang.outline(src).into_iter().map(|d| d.name).collect();
+    assert_eq!(names, ["DIV", "script", "style", "textarea", "img", "my-icon", "section"]);
+    assert_eq!(lang.fold_regions(src, &spans), [(0, 13), (1, 3), (4, 6), (10, 12)]);
+    assert_eq!(lang.indent_for("<div>", ""), "  ");
+    assert_eq!(lang.indent_for("  <img src='x'>", ""), "  ");
+    assert_eq!(lang.indent_for("  <my-icon />", ""), "  ");
+    assert_eq!(lang.indent_for("  <p>Text</p>", ""), "  ");
+    assert_eq!(lang.indent_for("  <!-- <fake> -->", ""), "  ");
+    assert_eq!(lang.indent_for("  text", "</div>"), "");
+    assert_eq!(lang.indent_for("<div><section>", ""), "    ");
+    assert!(lang.split_tag_pair("<DIV title='>'>", "</div>"));
+    assert!(!lang.split_tag_pair("<br>", "</br>"));
+    assert!(!lang.split_tag_pair("<div>", "</span>"));
+    // An unfinished comment or raw-text element must not invent structure.
+    assert!(lang.outline("<!--\n<fake>").is_empty());
+    assert_eq!(lang.outline("<script>\n<fake>").len(), 1);
+}
+
+#[test]
+fn css_selectors_declarations_and_brackets() {
+    let src = "/* .fake { color: red; } */\n#abc, .card:hover::before {\n  --accent: #abc;\n  background-color: var(--accent);\n  width: calc(100% - 2rem);\n  content: \"}; /* text */\";\n  opacity: .5 !important;\n  background-image: url(data:image/png;base64,abc);\n}\n@media (max-width: 40rem) {\n  .card { padding: 1rem; }\n}\n";
+    let h = hl("css", src);
+    assert!(has(&h, Class::Type, "#abc") && has(&h, Class::Number, "#abc"), "ID and colour: {h:?}");
+    assert!(has(&h, Class::Builtin, ":hover") && has(&h, Class::Builtin, "::before"), "{h:?}");
+    assert!(has(&h, Class::Keyword, "background-color") && has(&h, Class::SpecialVar, "--accent"));
+    assert!(has(&h, Class::Builtin, "var") && has(&h, Class::Builtin, "calc"));
+    for n in ["100%", "2rem", ".5", "40rem", "1rem"] {
+        assert!(has(&h, Class::Number, n), "{n}: {h:?}");
+    }
+    assert!(has(&h, Class::String, "\"}; /* text */\"") && has(&h, Class::String, "url(data:image/png;base64,abc)"), "{h:?}");
+    assert!(has(&h, Class::SpecialForm, "!important") && has(&h, Class::Preproc, "@media"));
+    let lang = language("css");
+    let spans = lang.highlight(src);
+    assert!(spans.windows(2).all(|w| w[0].end <= w[1].start));
+    assert_eq!(lang.fold_regions(src, &spans), [(1, 8), (9, 11)]);
+    let at = src.find("var(").unwrap() + 3;
+    assert_eq!(lang.matching_bracket(src, &spans, at), Some((at, at + "(--accent".len())));
+    assert_eq!(spans.iter().find(|s| s.start == at).unwrap().depth, 1);
+    assert_eq!(lang.outline(src).iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["#abc, .card:hover::before", "@media (max-width: 40rem)", ".card"]);
+    assert_eq!(lang.indent_for(".card {", ""), "  ");
+    assert_eq!(lang.indent_for("  color: red;", "}"), "");
+    assert!(lang.words().iter().any(|(w, _)| w == "background-color"));
+}
+
+#[test]
+fn web_modules_detect_projects_and_ship_usable_templates() {
+    let mods = manifests();
+    let rules: Vec<_> = mods.iter().map(|m| (m.id.clone(), m.detect.clone())).collect();
+    let paths = [std::path::Path::new("web/index.HTML"), std::path::Path::new("assets/styles.CSS")];
+    let (exts, names) = ide_core::modules::detect::scan_files(paths);
+    assert_eq!(ide_core::modules::detect::needed_in(&exts, &names, &rules), ["html", "css"]);
+    for id in ["html", "css"] {
+        let m = mods.iter().find(|m| m.id == id).unwrap();
+        for t in &m.templates {
+            assert!(t.files.contains_key(&t.open));
+            for (path, content) in &t.files {
+                let language_id = if path.ends_with(".css") { "css" } else { "html" };
+                let l = language(language_id);
+                assert!(!l.highlight(content).is_empty());
+                assert!(!l.outline(content).is_empty());
+            }
+        }
+    }
+    let html = mods.iter().find(|m| m.id == "html").unwrap();
+    assert!(html.templates[0].files["index.html"].contains("href=\"styles.css\""));
+    assert!(html.templates[0].files.contains_key("styles.css"));
 }
 
 #[test]
