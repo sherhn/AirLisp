@@ -264,11 +264,6 @@ impl App {
         if self.project.as_ref().is_some_and(|p| p.root != root) {
             self.leave_project();
         }
-        // a project of an older version keeps its own files in `.airlisp`
-        let moved = ide_core::workspace::migrate_project_dir(&root);
-        if moved && let Some(repo) = ide_core::git::find_repo(&root) {
-            ide_core::localvcs::LocalVcs::ensure_git_ignored(&repo);
-        }
         let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| root.to_string_lossy().into_owned());
         let (tx, rx) = mpsc::channel();
         let r2 = root.clone();

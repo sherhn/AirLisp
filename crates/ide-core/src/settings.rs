@@ -233,17 +233,10 @@ impl Settings {
     }
 
     pub fn load() -> Settings {
-        let Some(dir) = Self::config_dir() else { return Settings::default() };
-        let file = dir.join("settings.json");
-        // the IDE used to be called AirLisp: its settings are picked up once, and saved under the new name
-        if !file.exists()
-            && std::env::var_os("AIR_CONFIG_DIR").is_none()
-            && let Some(old) = dirs::config_dir().map(|d| d.join("AirLisp").join("settings.json"))
-            && old.exists()
-        {
-            return Self::load_from(&old);
+        match Self::config_dir() {
+            Some(dir) => Self::load_from(&dir.join("settings.json")),
+            None => Settings::default(),
         }
-        Self::load_from(&file)
     }
 
     pub fn save_to(&self, path: &Path) -> io::Result<()> {

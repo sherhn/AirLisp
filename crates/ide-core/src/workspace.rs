@@ -172,13 +172,6 @@ pub fn create_project(parent: &Path, name: &str, files: &std::collections::BTree
     Ok(root)
 }
 
-/// The folder an older version kept a project's own files in (local commits, settings) was `.airlisp`; it is `.air`
-/// now. Moves the old one over once. Returns true when it did.
-pub fn migrate_project_dir(root: &Path) -> bool {
-    let (old, new) = (root.join(".airlisp"), root.join(".air"));
-    old.is_dir() && !new.exists() && fs::rename(&old, &new).is_ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -379,21 +372,6 @@ mod ignore_tests {
         let idx = crate::index::ProjectIndex::build(d.path());
         assert!(idx.find_definitions("v").is_empty() && idx.find_definitions("nm").is_empty());
         assert_eq!(idx.find_definitions("c").len(), 1);
-    }
-
-    #[test]
-    fn old_project_folder_is_moved_once() {
-        let d = TempDir::new("migrate");
-        assert!(!migrate_project_dir(d.path()), "nothing to move");
-        fs::create_dir_all(d.path().join(".airlisp/local")).unwrap();
-        fs::write(d.path().join(".airlisp/local/store.json"), "{}").unwrap();
-        assert!(migrate_project_dir(d.path()));
-        assert!(d.path().join(".air/local/store.json").exists() && !d.path().join(".airlisp").exists());
-        assert!(!migrate_project_dir(d.path()), "second time: nothing to do");
-        // both exist: the new one wins, the old one is left alone
-        fs::create_dir_all(d.path().join(".airlisp")).unwrap();
-        assert!(!migrate_project_dir(d.path()));
-        assert!(d.path().join(".airlisp").exists());
     }
 
     #[test]
