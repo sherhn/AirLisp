@@ -14,6 +14,7 @@
 
   {"op": "log", "value": "Find Usages (Alt+F7)"},
   {"op": "key", "value": "Alt+F7"},
+  {"op": "wait", "what": "find_done"},
   {"op": "assert_find_results", "min": 2},
   {"op": "assert_bottom", "value": "find"},
   {"op": "screenshot", "path": "${SHOTS}/${NAME}_usages.png"},
