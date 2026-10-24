@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag `vX.Y.Z` (the version in Cargo.toml) to publish a GitHub release.
-# `vX.Y.Z-rc1` makes a pre-release. Run by hand (workflow_dispatch) to only build the archives.
+# `vX.Y.Z-rc1` makes a pre-release. A manual run builds installers without publishing.
 on:
   push:
     tags: ["v*"]
@@ -15,8 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - { os: windows-latest, artifact: windows-x64 }
+          - { os: ubuntu-22.04, artifact: linux-x64 }
+          - { os: macos-15, artifact: macos-arm64 }
+          - { os: macos-15-intel, artifact: macos-x64 }
     runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v4
       - name: The tag matches the version in Cargo.toml
@@ -31,8 +37,11 @@ jobs:
         with: { python-version: "3.12" }
       - name: Linux system libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev
-      - name: Install SBCL (it is bundled into the archive)
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgl1-mesa-dev libwayland-dev libx11-dev dpkg-dev desktop-file-utils
+      - name: Windows installer tools
+        if: runner.os == 'Windows'
+        run: choco install nsis 7zip -y --no-progress
+      - name: Install SBCL (bundled into the installer)
         shell: bash
         run: |
           case "${{ runner.os }}" in
@@ -40,14 +49,33 @@ jobs:
             macOS) brew install sbcl ;;
             Windows) choco install sbcl -y ;;
           esac
-      - name: Build the archive
-        run: python tools/package.py
+      - name: Packaging tests
+        run: python -m unittest discover -s tools -p test_installers.py
+      - name: Build installers and portable archives
+        run: python tools/package.py --installers
+      - name: Verify installation and bundled tools
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) python tools/verify_install.py target/dist/*-Setup.exe ;;
+            macOS) python tools/verify_install.py target/dist/*.dmg ;;
+            Linux)
+              sudo apt-get install -y ./target/dist/*.deb
+              python tools/verify_install.py target/dist/*.deb
+              air-cli help
+              sudo apt-get remove -y air-ide
+              ;;
+          esac
       - uses: actions/upload-artifact@v4
         with:
-          name: air-${{ runner.os }}
+          name: air-${{ matrix.artifact }}
           path: |
             target/dist/*.zip
             target/dist/*.tar.gz
+            target/dist/*-Setup.exe
+            target/dist/*.dmg
+            target/dist/*.deb
+            target/dist/*.sha256
           if-no-files-found: error
 
   release:
@@ -64,6 +92,23 @@ jobs:
       - name: Checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS.txt
+      - name: Installer download instructions
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY' > RELEASE_NOTES.md
+          import os
+          from pathlib import Path
+          from urllib.parse import quote
+          base = f"https://github.com/{os.environ['GH_REPO']}/releases/download/{quote(os.environ['GITHUB_REF_NAME'])}"
+          print("Download **one installer for your system**. You do not need Rust, a source checkout, or individual files from this repository.\n")
+          for pattern, label in [('*-Setup.exe', 'Windows x64'), ('*macos-arm64.dmg', 'macOS: Apple Silicon'), ('*macos-x64.dmg', 'macOS: Intel'), ('*.deb', 'Ubuntu / Debian x64')]:
+              for path in sorted(Path('dist').glob(pattern)):
+                  print(f"- **{label}**: [{path.name}]({base}/{quote(path.name)})")
+          print("\nWindows: run Setup. macOS: open the disk image and drag Air to Applications. Ubuntu / Debian: open the .deb in your software installer, or use `sudo apt install ./Air-*.deb`.\n")
+          print("The IDE, CLI, offline language modules and bundled runtime are included; Windows also includes Git. Project-specific compilers and interpreters are separate tools.\n")
+          print("These builds do not yet have a Windows publisher signature or Apple notarization. macOS may require approval in System Settings > Privacy & Security. Portable archives are also attached for users who prefer them.")
+          PY
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,4 +116,4 @@ jobs:
         run: |
           flags=(--generate-notes)
           [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Air ${GITHUB_REF_NAME#v}" "${flags[@]}"
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Air ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md "${flags[@]}"
