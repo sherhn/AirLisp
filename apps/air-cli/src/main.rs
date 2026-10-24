@@ -219,6 +219,12 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
 }
 
 fn main() -> ExitCode {
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(path) = ide_core::bundle::tool_path(&executable, std::env::var_os("PATH").as_deref())
+    {
+        // Apply the optional bundle before starting any worker threads or child processes.
+        unsafe { std::env::set_var("PATH", path) };
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
         Ok(code) => code,

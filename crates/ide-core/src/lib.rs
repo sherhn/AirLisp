@@ -2,6 +2,7 @@
 
 pub mod changes;
 pub mod build;
+pub mod bundle;
 pub mod clone;
 pub mod cmdscript;
 pub mod commands;

@@ -90,6 +90,12 @@ fn parse_args() -> Args {
 }
 
 fn main() -> eframe::Result {
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(path) = ide_core::bundle::tool_path(&executable, std::env::var_os("PATH").as_deref())
+    {
+        // Startup is still single-threaded; no threads or child processes can read PATH yet.
+        unsafe { std::env::set_var("PATH", path) };
+    }
     let args = parse_args();
     let settings = Settings::load();
     let (w, h) = args.size.unwrap_or((1280.0, 800.0));
