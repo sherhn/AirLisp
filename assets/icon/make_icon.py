@@ -1,7 +1,7 @@
 """Generates the Air app icon (PNG sizes + .ico). Run: python assets/icon/make_icon.py
 
-The mark: a letter A made of liquid glass - two legs and a crossbar that is a stream of air - on a black tile that
-glows green in one corner and blue in the other. The look is drawn with tools/glass.py.
+The mark: a white A on an opaque, pure-black background. Only the lower ends
+carry a soft green-to-blue tint; the rest of the letter stays white.
 """
 import math
 import os
@@ -9,7 +9,7 @@ import pathlib
 import sys
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent / "tools"))
 import glass as g  # noqa: E402
@@ -43,8 +43,9 @@ def letter_mask(w, h):
         y = 0.625 - 0.06 * math.sin(t * math.pi)
         pts.append(P(x, y))
     bar = stroke * 0.5
-    d.line(pts, fill=255, width=int(bar), joint="curve")
-    for c in (pts[0], pts[-1]):
+    d.line(pts, fill=255, width=int(bar))
+    # Overlapping round samples avoid thin seams at the curved crossbar joins.
+    for c in pts:
         r = bar / 2
         d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=255)
     return np.asarray(big.resize((w, h), Image.LANCZOS), np.float32) / 255.0
@@ -52,36 +53,19 @@ def letter_mask(w, h):
 
 def build():
     w = h = S
-    tile = g.rounded_mask(w, h, (S * 0.035, S * 0.035, S * 0.965, S * 0.965), S * 0.215)
-    # the ground: black with two orbs of light
-    ground = g.vgradient(w, h, (12, 21, 19), (6, 9, 15))
-    ground = g.over(ground, g.glow(w, h, S * 0.22, S * 0.16, S * 0.85, g.GREEN, 0.78))
-    ground = g.over(ground, g.glow(w, h, S * 0.86, S * 0.90, S * 0.78, g.BLUE, 0.80))
-    ground = g.over(ground, g.glow(w, h, S * 0.62, S * 0.40, S * 0.36, g.TEAL, 0.16))
-    canvas = ground.copy()
-
+    canvas = g.new(w, h, color=(0, 0, 0))
     a = letter_mask(w, h)
-    # soft light spilling out of the letter
-    spill = g.blur(g.layer(w, h, g.GREEN, a * 0.5), S * 0.045)
-    canvas = g.over(canvas, spill)
-    # the letter is a pane of frosted glass (the glows behind it shine through) with colour poured into it...
-    canvas = g.glass(canvas, a, tint_alpha=0.07, frost=S * 0.014, rim=0.0, highlight=0.0, dark_edge=0.0)
-    ink = g.diagonal(w, h, (30, 232, 112), (62, 112, 255), 50)
-    ink[..., 3] = a * 0.66
-    canvas = g.over(canvas, ink)
-    # ...and light on its edge and across its top
-    canvas = g.glass(canvas, a, tint_alpha=0.0, frost=0.6, rim=0.60, highlight=0.32, dark_edge=0.25, rim_width=max(2, int(S * 0.004)))
-    # a drop of light on the apex
-    canvas = g.bubble(canvas, S * 0.50, S * 0.235, S * 0.030, strength=0.9)
-
-    # the tile's own rim
-    edge = g.ring_from_mask(tile, max(2, int(S * 0.006)))
     ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-    light = np.clip(1 - (xs / w * 0.8 + ys / h) / 1.1, 0, 1) ** 1.3
-    canvas = g.over(canvas, g.layer(w, h, g.WHITE, edge * (0.10 + light * 0.34)))
-    out = canvas.copy()
-    out[..., 3] = tile
-    return g.to_image(out)
+    # Fade colour in only below the crossbar, keeping most of the A pure white.
+    fade = np.clip((ys / h - 0.64) / 0.22, 0, 1)
+    fade = (fade * fade * (3 - 2 * fade) * 0.32)[..., None]
+    horizontal = np.clip((xs / w - 0.28) / 0.44, 0, 1)[..., None]
+    green = np.array(g.GREEN, np.float32) / 255.0
+    blue = np.array(g.BLUE, np.float32) / 255.0
+    tint = green * (1 - horizontal) + blue * horizontal
+    ink = g.layer(w, h, g.WHITE, a)
+    ink[..., :3] = 1 - fade + tint * fade
+    return g.to_image(g.over(canvas, ink))
 
 
 def main():

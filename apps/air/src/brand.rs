@@ -62,10 +62,9 @@ mod tests {
         assert_eq!(px.len(), 256 * 256 * 4);
         let (w, h, _) = decode_png(LOGO_128).expect("128 logo");
         assert_eq!((w, h), (128, 128));
-        // corners are transparent (rounded tile), the centre is opaque
-        assert_eq!(px[3], 0);
-        let centre = (128 * 256 + 128) * 4 + 3;
-        assert_eq!(px[centre], 255);
+        // The icon has an opaque, pure-black background, including its corners.
+        assert_eq!(&px[..4], &[0, 0, 0, 255]);
+        assert!(px.chunks_exact(4).all(|pixel| pixel[3] == 255));
     }
 
     #[test]
