@@ -499,7 +499,7 @@ impl App {
         {
             loop {
                 self.untitled_counter += 1;
-                let path = dir.join(format!("scratch-{}.lisp", self.untitled_counter));
+                let path = dir.join(format!("scratch-{}.txt", self.untitled_counter));
                 if !path.exists() {
                     if std::fs::write(&path, "").is_ok() {
                         self.open_file(&path);

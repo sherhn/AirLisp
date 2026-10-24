@@ -249,7 +249,7 @@ impl App {
         match path {
             Some(p) if is_lisp_file(p) => self.lisp_language(),
             Some(p) => Some(self.mods.langs.for_path(p, first_line)),
-            None => self.lisp_language(),
+            None => Some(self.mods.langs.plain()),
         }
     }
 
@@ -504,6 +504,17 @@ mod tests {
     use ide_core::settings::{CustomTool, Settings};
 
     use crate::app::App;
+
+    #[test]
+    fn documents_without_a_path_use_plain_text_even_with_lisp_enabled() {
+        let mut app = App::new(Settings::default());
+        app.mods.lisp = true;
+        let mut doc = crate::doc::Doc::untitled(1);
+        app.assign_language(&mut doc);
+        assert!(!doc.ed.is_lisp());
+        assert!(app.language_for(Some(std::path::Path::new("main.lisp")), None).is_none());
+        assert_eq!(app.language_for(None, None).unwrap().id(), "plain");
+    }
 
     fn packages(app: &App, force: &[&str]) -> Vec<String> {
         let force: Vec<String> = force.iter().map(|s| s.to_string()).collect();

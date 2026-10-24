@@ -260,7 +260,7 @@ impl App {
                     (Icon::Hammer, pal.accent)
                 } else if matches!(self.run_config, RunConfig::Scenario(_)) {
                     (Icon::Script, pal.blue)
-                } else if self.lisp_enabled() {
+                } else if matches!(self.run_config, RunConfig::Load(_) | RunConfig::Test(_)) || self.doc().is_some_and(|d| d.ed.is_lisp()) {
                     (Icon::Lisp, pal.keyword_form)
                 } else {
                     (Icon::Play, pal.ok)
@@ -439,7 +439,7 @@ impl App {
             }
             let ir = Rect::from_min_size(Pos2::new(r.min.x + 14.0, r.center().y - 8.0), Vec2::splat(16.0));
             let is_diff = self.docs[i].diff.is_some();
-            let is_lisp = !is_diff && self.docs[i].path.as_deref().is_none_or(lisp_syntax::dialect::is_lisp_file);
+            let is_lisp = !is_diff && self.docs[i].ed.is_lisp();
             let (tab_icon, tab_icon_color) = if self.docs[i].page.is_some() {
                 (Icon::Puzzle, pal.accent)
             } else if is_diff {
@@ -638,7 +638,7 @@ impl App {
                         self.run_command(ctx, id);
                     }
                 }
-                if self.lisp_enabled() {
+                if self.lisp_enabled() && (self.doc().is_some_and(|d| d.ed.is_lisp()) || self.repl.session.is_some()) {
                 let (txt, color) = if self.repl.starting {
                     (tr("REPL starting...").to_string(), pal.warning)
                 } else if self.repl.ready {

@@ -109,6 +109,10 @@ impl App {
         }
         let pal = self.pal;
         let Popup::Settings { mut lisp_path, mut detected, mut filter, mut page } = std::mem::replace(&mut self.popup, Popup::None) else { return };
+        let lisp_enabled = self.lisp_enabled();
+        if page == 2 && !lisp_enabled {
+            page = 0;
+        }
         let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
         let mut changed_theme = false;
         let mut redetect = false;
@@ -122,8 +126,8 @@ impl App {
 
                 // ---------------------------------------------------------------- sidebar
                 ui.painter().text(pos2(full.min.x + 28.0, full.min.y + 38.0), Align2::LEFT_CENTER, tr("Settings"), fonts::semibold(18.0), pal.text);
-                for (i, (name, icon)) in PAGES.iter().enumerate() {
-                    let r = Rect::from_min_size(pos2(full.min.x + 12.0, full.min.y + 78.0 + i as f32 * 40.0), vec2(SIDEBAR_W - 24.0, 38.0));
+                for (row, (i, (name, icon))) in PAGES.iter().enumerate().filter(|(i, _)| *i != 2 || lisp_enabled).enumerate() {
+                    let r = Rect::from_min_size(pos2(full.min.x + 12.0, full.min.y + 78.0 + row as f32 * 40.0), vec2(SIDEBAR_W - 24.0, 38.0));
                     let resp = ui.interact(r, egui::Id::unique(("settings_page", i)), Sense::click());
                     widgets::row_background(ui, &pal, r.expand2(vec2(8.0, 1.0)), i == page, resp.hovered());
                     let c = if i == page { pal.accent } else { pal.text_dim };

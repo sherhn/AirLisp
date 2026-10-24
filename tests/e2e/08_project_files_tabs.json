@@ -9,7 +9,8 @@
   {"op": "text", "value": "util"},
   {"op": "key", "value": "Enter"},
   {"op": "assert_popup", "value": "none"},
-  {"op": "assert_active_file", "value": "util.lisp"},
+  {"op": "assert_active_file", "value": "util"},
+  {"op": "assert_language", "value": "plain"},
   {"op": "assert_tabs", "value": 1},
 
   {"op": "log", "value": "typing, saving with Ctrl+S"},
@@ -18,7 +19,7 @@
   {"op": "assert_modified", "value": true},
   {"op": "key", "value": "Ctrl+S"},
   {"op": "assert_modified", "value": false},
-  {"op": "assert_file_contains", "path": "${PROJ}/util.lisp", "value": "(defun util-fn ())"},
+  {"op": "assert_file_contains", "path": "${PROJ}/util", "value": "(defun util-fn ())"},
 
   {"op": "log", "value": "tabs: several files, switching, closing"},
   {"op": "open", "path": "${PROJ}/src/nav.lisp"},

@@ -1055,7 +1055,12 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.add_space(14.0);
                         let (r, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
-                        icons::paint(ui.painter(), r, Icon::Lisp, pal.keyword_form);
+                        let (icon, color) = if self.lisp_enabled() && lisp_syntax::dialect::is_lisp_file(&h.path) {
+                            (Icon::Lisp, pal.keyword_form)
+                        } else {
+                            (Icon::File, pal.text_dim)
+                        };
+                        icons::paint(ui.painter(), r, icon, color);
                         ui.label(RichText::new(rel).font(fonts::semibold(13.0)));
                     });
                 }

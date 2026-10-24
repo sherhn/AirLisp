@@ -106,18 +106,20 @@ impl Doc {
     }
 
     pub fn untitled(n: usize) -> Doc {
+        let mut ed = Editor::new("", Dialect::CommonLisp);
+        ed.set_language(Some(std::sync::Arc::new(air_lang::Language::plain())));
         Doc {
             id: next_id(),
             diff: None,
             page: None,
             path: None,
-            ed: Editor::new("", Dialect::CommonLisp),
+            ed,
             view: ViewState::default(),
             disk_mtime: None,
             conflict: false,
             autosave_rev: 0,
             autosave_at: 0.0,
-            untitled_name: format!("untitled-{n}.lisp"),
+            untitled_name: format!("untitled-{n}.txt"),
             compiler_markers: vec![],
             compiled_rev: 0,
             check_markers: vec![],
@@ -313,6 +315,7 @@ mod tests {
     #[test]
     fn markers_report_unbalanced_brackets() {
         let mut d = Doc::untitled(1);
+        d.set_language(None);
         d.ed.insert_text_raw("(defun f (");
         let m = d.markers();
         assert!(m.iter().any(|m| m.sev == Sev::Error));
@@ -321,7 +324,8 @@ mod tests {
     #[test]
     fn untitled_names_and_save_as() {
         let mut d = Doc::untitled(3);
-        assert_eq!(d.name(), "untitled-3.lisp");
+        assert_eq!(d.name(), "untitled-3.txt");
+        assert!(!d.ed.is_lisp());
         assert!(d.save().is_err());
         let p = std::env::temp_dir().join(format!("air-saveas-{}.scm", std::process::id()));
         d.ed.insert_text_raw("(define x 1)");

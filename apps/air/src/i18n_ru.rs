@@ -206,7 +206,7 @@ pub const RU: &[(&str, &str)] = &[
     ("New File", "Новый файл"),
     ("New Directory", "Новая папка"),
     ("directory name", "имя папки"),
-    ("file name, e.g. utils.lisp", "имя файла, например utils.lisp"),
+    ("file name (include an extension to choose a language)", "имя файла (укажите расширение для выбора языка)"),
     ("in {}", "в {}"),
     ("Local Commit", "Локальный коммит"),
     ("Message (optional)", "Сообщение (необязательно)"),

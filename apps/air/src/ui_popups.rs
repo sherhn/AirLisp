@@ -324,7 +324,7 @@ impl App {
                 let (mut ok, mut cancel) = (enter, esc);
                 let rel = self.project_root().map(|r| ide_core::workspace::relative(r, &dir)).unwrap_or_default();
                 self.dialog_card(ctx, "new_file", if is_dir { tr("New Directory") } else { tr("New File") }, 440.0, |ui| {
-                    let r = self.text_field(ui, &mut input, if is_dir { tr("directory name") } else { tr("file name, e.g. utils.lisp") });
+                    let r = self.text_field(ui, &mut input, if is_dir { tr("directory name") } else { tr("file name (include an extension to choose a language)") });
                     widgets::focus_once(ui, &r, &mut just_opened);
                     ui.add_space(8.0);
                     ui.label(RichText::new(i18n::fmt("in {}", &[&(if rel.is_empty() { "." } else { &rel })])).color(self.pal.text_dim).size(12.0));
@@ -335,10 +335,7 @@ impl App {
                 if cancel {
                     self.editor_focus = true;
                 } else if ok && !input.trim().is_empty() {
-                    let mut name = input.trim().to_string();
-                    if !is_dir && !name.contains('.') {
-                        name.push_str(".lisp");
-                    }
+                    let name = input.trim().to_string();
                     let path = dir.join(&name);
                     let res = if is_dir { ide_core::workspace::create_dir(&path) } else { ide_core::workspace::create_file(&path, "") };
                     match res {

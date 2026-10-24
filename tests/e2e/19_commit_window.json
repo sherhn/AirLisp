@@ -13,7 +13,7 @@
   {"op": "key", "value": "Alt+Insert"},
   {"op": "assert_popup", "value": "new_file"},
   {"op": "frames", "value": 3},
-  {"op": "text", "value": "fresh"},
+  {"op": "text", "value": "fresh.lisp"},
   {"op": "key", "value": "Enter"},
   {"op": "frames", "value": 4},
   {"op": "set_text", "value": "(print 1)\\n"},
