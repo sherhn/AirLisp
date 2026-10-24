@@ -3,9 +3,27 @@ from pathlib import Path
 import unittest
 
 from installers import desktop_entry, reset_directory, uninstall_manifest
+from windows_manifest import APPLICATION, SETTINGS, utf8_manifest
+import xml.etree.ElementTree as ET
 
 
 class InstallerSafetyTests(unittest.TestCase):
+    def test_utf8_runtime_manifest_keeps_existing_privileges_and_compatibility(self):
+        original = b'''<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+          <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges>
+            <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+          </requestedPrivileges></security></trustInfo>
+          <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1"><application/></compatibility>
+        </assembly>'''
+        result = utf8_manifest(original)
+        root = ET.fromstring(result)
+        self.assertEqual(root.find(f'.//{{{APPLICATION}}}requestedExecutionLevel').attrib['level'], 'asInvoker')
+        self.assertIsNotNone(root.find('{urn:schemas-microsoft-com:compatibility.v1}compatibility'))
+        setting = f'{{{APPLICATION}}}application/{{{APPLICATION}}}windowsSettings/{{{SETTINGS}}}activeCodePage'
+        self.assertEqual(root.find(setting).text, 'UTF-8')
+        self.assertEqual(len(ET.fromstring(utf8_manifest(result)).findall(f'.//{{{SETTINGS}}}activeCodePage')), 1)
+        self.assertEqual(ET.fromstring(utf8_manifest(None)).find(setting).text, 'UTF-8')
+
     def test_staging_cleanup_cannot_remove_its_parent_or_an_outside_directory(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

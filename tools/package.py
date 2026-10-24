@@ -128,6 +128,9 @@ def main():
     shutil.copy2(sbcl_exe, dist / "lisp" / f"sbcl{EXE}")
     shutil.copy2(sbcl_core, dist / "lisp" / "sbcl.core")
     shutil.copytree(sbcl_contrib, dist / "lisp" / "contrib")
+    if os.name == "nt":
+        from windows_manifest import enable_utf8
+        enable_utf8(dist / "lisp/sbcl.exe")
     sbcl_ver = subprocess.run([str(sbcl_exe), "--version"], capture_output=True, text=True).stdout.strip() or "unknown"
 
     for f in (ROOT / "assets" / "licenses").glob("*"):
