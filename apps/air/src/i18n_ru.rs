@@ -442,6 +442,7 @@ pub const RU: &[(&str, &str)] = &[
     ("Check again", "Проверить снова"),
     ("Checking...", "Проверка..."),
     ("Development environment", "Среда разработки"),
+    ("Contains files with changes", "Внутри есть файлы с изменениями"),
     ("Run development tools and the terminal", "Запускать инструменты разработки и терминал"),
     ("In Linux: {} through WSL", "В Linux: {} через WSL"),
     ("Windows", "Windows"),

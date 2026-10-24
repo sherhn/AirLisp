@@ -206,6 +206,7 @@ impl App {
                     pal.text
                 };
                 ui.painter().text(Pos2::new(x + 42.0, r.center().y), egui::Align2::LEFT_CENTER, &row.name, font.clone(), color);
+                let resp = if dirty_dir { resp.on_hover_text(tr("Contains files with changes")) } else { resp };
                 if resp.clicked() {
                     select = Some(row.path.clone());
                     if row.is_dir {

@@ -101,7 +101,8 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
   File Structure, Go to Declaration (Ctrl+B / Ctrl+click), Back/Forward, Find Usages, Find in Files.
 * **Refactoring** - Rename symbol across the project (token based: strings and comments untouched).
 * **Project** - project tree with file operations, project templates from modules, git branch in the toolbar.
-  New files keep the name you enter, including names without an extension; scratch files use `.txt`.
+  Blue file names indicate Git modifications; a blue folder name means it contains changed files. Folder icon colours
+  come from the theme. New files keep the name you enter, including names without an extension; scratch files use `.txt`.
 * **Git** - branch switcher, update/commit/push in the toolbar, commit dialog (Ctrl+K, Ctrl+Enter to commit),
   Git tool window (changes with checkboxes, log), diff viewer, change markers in the gutter, file status colours in
   the tree and tabs, rollback. Uses the `git` executable.
@@ -274,7 +275,8 @@ Air - лопата, золото вы найдёте сами. Модульна�
 остаются при переключении на другую тему и обратно; View > «Переключить тёмную/светлую тему» уходит из своей темы на
 противоположную её основе палитру.
 Сборка: `cargo run --release -p air`. Для REPL модуля Lisp нужен SBCL в `PATH` (в сборке `tools/package.py` он уже есть).
-Новый файл сохраняет введённое имя, в том числе без расширения; временные файлы создаются с `.txt`.
+Синие имена файлов обозначают изменения Git, синие имена папок — наличие изменённых файлов внутри. Цвет значка папки
+задаётся темой. Новый файл сохраняет введённое имя, в том числе без расширения; временные файлы создаются с `.txt`.
 
 **Модули.** Модуль — папка с `module.json` и обложкой: языки (грамматика данными: подсветка, структура, сворачивание,
 скобки, отступы), команды запуска, группы Linux-инструментов для WSL, правила определения (проекту с `.py` или `Makefile`
