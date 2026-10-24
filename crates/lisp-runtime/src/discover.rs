@@ -157,12 +157,23 @@ pub fn candidates(configured: &str) -> Vec<PathBuf> {
     v
 }
 
-/// Directory of the SBCL that ships with Air: `AIR_BUNDLE_DIR`, else `lisp/` next to the executable.
+/// Directory of the SBCL that ships with Air: `AIR_BUNDLE_DIR`, else the installed bundle.
 pub fn bundle_dir() -> Option<PathBuf> {
     if let Ok(d) = std::env::var("AIR_BUNDLE_DIR") {
         return Some(PathBuf::from(d));
     }
-    std::env::current_exe().ok()?.parent().map(|p| p.join("lisp"))
+    runtime_dir_for(&std::env::current_exe().ok()?)
+}
+
+fn runtime_dir_for(executable: &Path) -> Option<PathBuf> {
+    let directory = executable.parent()?;
+    #[cfg(target_os = "macos")]
+    if directory.file_name().is_some_and(|name| name == "MacOS")
+        && directory.parent()?.file_name().is_some_and(|name| name == "Contents")
+    {
+        return Some(directory.parent()?.join("Resources/lisp"));
+    }
+    Some(directory.join("lisp"))
 }
 
 /// Find SBCL: the explicit setting, `AIR_SBCL`, the bundled one, `PATH`, then well-known install locations.
@@ -193,6 +204,19 @@ pub fn apply_env(cmd: &mut Command, imp: &Implementation) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_is_next_to_portable_executables() {
+        assert_eq!(runtime_dir_for(Path::new("portable/air")), Some(PathBuf::from("portable/lisp")));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn app_bundles_keep_runtime_data_in_resources() {
+        for executable in ["Air.app/Contents/MacOS/air", "Air.app/Contents/MacOS/air-cli"] {
+            assert_eq!(runtime_dir_for(Path::new(executable)), Some(PathBuf::from("Air.app/Contents/Resources/lisp")));
+        }
+    }
 
     #[test]
     fn wsl_implementations_translate_paths_and_tag_the_process() {

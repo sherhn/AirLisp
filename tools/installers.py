@@ -170,7 +170,8 @@ def macos_libraries(contents):
     frameworks = contents / "Frameworks"
     frameworks.mkdir()
     binaries = contents / "MacOS"
-    pending = [(binaries / p, binaries / p) for p in ("air", "air-cli", "lisp/sbcl")]
+    executables = [binaries / "air", binaries / "air-cli", contents / "Resources/lisp/sbcl"]
+    pending = [(p, p) for p in executables]
     copied = {}
     while pending:
         source, destination = pending.pop(0)
@@ -205,7 +206,10 @@ def macos_libraries(contents):
             subprocess.run(["install_name_tool", "-change", dependency, f"@loader_path/{relative}", str(destination)], check=True)
         if destination.parent == frameworks:
             subprocess.run(["install_name_tool", "-id", f"@rpath/{destination.name}", str(destination)], check=True)
-        subprocess.run(["codesign", "--force", "--sign", "-", str(destination)], check=True)
+        # Signing a bundle's main executable signs the whole bundle. Do it last,
+        # after its helper executables and private libraries have been signed.
+        if destination != binaries / "air":
+            subprocess.run(["codesign", "--force", "--sign", "-", str(destination)], check=True)
 
 
 def macos(dist, version, architecture):
@@ -214,9 +218,16 @@ def macos(dist, version, architecture):
         work = Path(temp)
         image = work / "image"
         contents = image / "Air.app/Contents"
-        shutil.copytree(dist, contents / "MacOS")
+        binaries = contents / "MacOS"
+        binaries.mkdir(parents=True)
         resources = contents / "Resources"
         resources.mkdir()
+        for source in dist.iterdir():
+            target = (binaries if source.name in ("air", "air-cli") else resources) / source.name
+            if source.is_dir():
+                shutil.copytree(source, target)
+            else:
+                shutil.copy2(source, target)
         iconset = work / "Air.iconset"
         iconset.mkdir()
         for size in (16, 32, 128, 256, 512):
@@ -233,7 +244,7 @@ def macos(dist, version, architecture):
         }
         (contents / "Info.plist").write_bytes(plistlib.dumps(info))
         macos_libraries(contents)
-        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(contents.parent)], check=True)
+        subprocess.run(["codesign", "--force", "--sign", "-", str(contents.parent)], check=True)
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(contents.parent)], check=True)
         (image / "Applications").symlink_to("/Applications", target_is_directory=True)
         (image / "Install.txt").write_text("Drag Air.app to Applications, then open Air from Applications.\n", encoding="utf-8")

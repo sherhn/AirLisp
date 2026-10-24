@@ -93,6 +93,15 @@ pub struct Card {
 /// The registry that is shipped next to the program (and, when running from the sources, the one in the repository).
 pub fn bundled_registry() -> Option<PathBuf> {
     let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("registry")));
+    #[cfg(target_os = "macos")]
+    let beside = std::env::current_exe().ok().and_then(|e| {
+        let directory = e.parent()?;
+        if directory.file_name().is_some_and(|name| name == "MacOS") && directory.parent()?.file_name().is_some_and(|name| name == "Contents") {
+            Some(directory.parent()?.join("Resources/registry"))
+        } else {
+            beside
+        }
+    });
     let sources = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../registry");
     [beside, Some(sources)].into_iter().flatten().find(|p| p.join("index.json").is_file())
 }

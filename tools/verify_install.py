@@ -31,12 +31,13 @@ def run_setup(setup, destination):
     subprocess.run(command, check=True, text=True, capture_output=True, timeout=120)
 
 
-def check_payload(payload, work, gui=False):
+def check_payload(payload, work, gui=False, resources=None):
     windows = platform.system() == "Windows"
     suffix = ".exe" if windows else ""
     cli = payload / f"air-cli{suffix}"
-    assert (payload / "registry/index.json").is_file()
-    assert (payload / "lisp" / f"sbcl{suffix}").is_file()
+    resources = resources or payload
+    assert (resources / "registry/index.json").is_file()
+    assert (resources / "lisp" / f"sbcl{suffix}").is_file()
     env = dict(os.environ)
     for name in ("AIR_SBCL", "AIR_BUNDLE_DIR", "SBCL_HOME", "AIR_REGISTRY", "AIR_PRELOAD_MODULES"):
         env.pop(name, None)
@@ -47,7 +48,7 @@ def check_payload(payload, work, gui=False):
         env["PATH"] = str(Path(os.environ["SystemRoot"]) / "System32")
     assert "air-cli - headless Air engine" in run(cli, "help", env=env)
     detected = run(cli, "which", env=env).replace("\\", "/").lower()
-    assert str(payload / "lisp").replace("\\", "/").lower() in detected, detected
+    assert str(resources / "lisp").replace("\\", "/").lower() in detected, detected
     assert "42" in run(cli, "eval", "(+ 40 2)", env=env)
     run(cli, "eval", "(require :asdf) (asdf:asdf-version)", env=env)
     if windows:
@@ -78,7 +79,7 @@ def check_payload(payload, work, gui=False):
         ]
         script = work / "script.json"
         script.write_text(json.dumps(steps))
-        env["AIR_REGISTRY"] = str(payload / "registry")
+        env["AIR_REGISTRY"] = str(resources / "registry")
         env["AIR_PRELOAD_MODULES"] = ""
         output = run(payload / f"air{suffix}", "--script", script, "--no-restore", env=env)
         assert "SCRIPT OK" in output, output
@@ -156,7 +157,7 @@ def main():
             try:
                 app = mount / "Air.app"
                 run("codesign", "--verify", "--deep", "--strict", app)
-                check_payload(app / "Contents/MacOS", work)
+                check_payload(app / "Contents/MacOS", work, resources=app / "Contents/Resources")
             finally:
                 run("hdiutil", "detach", mount)
         print("PASS: disk image, app signature, relocated payload and bundled runtime")
