@@ -1,4 +1,4 @@
-//! Running Lisp inside WSL: what the Linux (WSL) settings page knows (WSL, distributions, SBCL in them) and the
+//! Running development tools inside WSL: what the Linux (WSL) settings page knows (WSL, distributions, tools) and the
 //! setup actions behind its buttons. Checks run on background threads and installs as child processes;
 //! [`App::poll_wsl`] collects their results every frame. Nothing here removes or changes an existing distribution.
 
@@ -507,19 +507,20 @@ impl App {
 
     // ------------------------------------------------------------------ switching
 
-    /// Run Lisp, the REPL and the terminal inside `distro` from now on.
+    /// Run development tools and the terminal inside `distro` from now on. SBCL is optional.
     pub fn wsl_use(&mut self, distro: &str) {
-        let Some(path) = self.wsl.sbcl_path(distro) else {
-            self.toast(tr("Finish the setup first: the distribution needs SBCL"), Sev::Weak);
+        if !self.wsl.wsl_installed() || !self.wsl.distros().iter().any(|d| d == distro) {
+            self.toast(tr("Finish the setup first: install a Linux distribution"), Sev::Weak);
             return;
-        };
+        }
+        let path = self.wsl.sbcl_path(distro).unwrap_or_default();
         let mount = self.wsl.sbcl.get(distro).and_then(|r| r.as_ref().ok()).and_then(|c| c.mount_root.clone()).unwrap_or_default();
         self.settings.run_env = RunEnv::Wsl;
         self.settings.wsl_distro = distro.to_string();
         self.settings.wsl_sbcl = path;
         self.settings.wsl_mount_root = mount;
         self.lisp_environment_changed();
-        self.toast(i18n::fmt("Lisp now runs in {} (WSL)", &[&distro]), Sev::Weak);
+        self.toast(i18n::fmt("Development tools now run in {} (WSL)", &[&distro]), Sev::Weak);
     }
 
     pub fn use_windows(&mut self) {
@@ -528,7 +529,7 @@ impl App {
         }
         self.settings.run_env = RunEnv::Windows;
         self.lisp_environment_changed();
-        self.toast(tr("Lisp now runs on Windows"), Sev::Weak);
+        self.toast(tr("Development tools now run on Windows"), Sev::Weak);
     }
 
     /// The Lisp changed: pick it up, and start the next REPL there.
@@ -636,7 +637,7 @@ impl App {
             SetupTask::InstallWsl => fail(tr("WSL was not installed").to_string()),
             SetupTask::InstallDistro(n) | SetupTask::ImportFile(n) if ok => {
                 self.wsl.selected = n.clone();
-                Ok(i18n::fmt("{} is installed. Next: SBCL.", &[&n]))
+                Ok(i18n::fmt("{} is installed. Choose your developer tools below.", &[&n]))
             }
             SetupTask::InstallDistro(n) | SetupTask::ImportFile(n) => fail(i18n::fmt("{} was not installed", &[&n])),
             SetupTask::InstallSbcl(d) if ok => Ok(i18n::fmt("SBCL is installed in {}.", &[&d])),

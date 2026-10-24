@@ -1,5 +1,5 @@
-//! The Linux (WSL) settings page: where Lisp runs, and a step-by-step setup - WSL itself, a Linux distribution,
-//! SBCL inside it - with the progress and output of whatever is being installed.
+//! The Linux (WSL) settings page: the development environment, distributions and optional language tools,
+//! with the progress and output of whatever is being installed.
 
 use std::time::Duration;
 
@@ -57,7 +57,7 @@ fn gb(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
 }
 
-/// The four setup steps as one bar made of segments: done ones are full, the running one fills with its progress
+/// The setup steps as one bar made of segments: done ones are full, the running one fills with its progress
 /// (or slides while its total is unknown). `running`: the index of the step being installed.
 fn draw_overview(ui: &mut egui::Ui, pal: &Palette, steps: &[(&str, bool)], running: Option<usize>, fraction: Option<Option<f32>>) {
     let done = steps.iter().filter(|(_, d)| *d).count();
@@ -119,8 +119,9 @@ impl App {
         let sbcl = self.wsl.sbcl.get(&selected).cloned();
         let checking_sbcl = self.wsl.checking_sbcl.as_deref() == Some(selected.as_str());
         let ready = self.wsl.sbcl_path(&selected).is_some();
+        let distro_ready = installed && distros.contains(&selected);
         let wsl_on = self.settings.run_env == RunEnv::Wsl;
-        let in_use = wsl_on && self.settings.wsl_distro == selected && ready;
+        let in_use = wsl_on && self.settings.wsl_distro == selected && distro_ready;
         let free = self.wsl.free;
         let probing = self.wsl.probing();
         let mut act: Option<Act> = None;
@@ -130,7 +131,7 @@ impl App {
         let tools_ready = matches!(self.wsl.tools.get(&selected), Some(Ok(v)) if lisp_runtime::wsl::missing_core(v).is_empty());
 
         // ---------------------------------------------------------------- intro
-        ui.label(RichText::new(tr("Work as on Linux without a virtual machine: WSL runs a real Linux next to Windows, and Air starts SBCL, the REPL and the terminal inside it. Your files stay where they are.")).color(pal.text_dim).size(12.5));
+        ui.label(RichText::new(tr("Work in Linux through WSL: Air runs your project's tools and terminal inside a Linux distribution. Your files stay where they are.")).color(pal.text_dim).size(12.5));
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if widgets::secondary_button(ui, &pal, tr("Check again")).clicked() {
@@ -143,14 +144,12 @@ impl App {
         ui.add_space(14.0);
 
         // ---------------------------------------------------------------- the whole setup at a glance
-        // four steps; the running one fills as it goes
-        let steps = [(tr("WSL"), installed), (tr("Distribution"), !distros.is_empty()), (tr("SBCL"), ready), (tr("Dev tools"), tools_ready)];
+        let steps = [(tr("WSL"), installed), (tr("Distribution"), distro_ready), (tr("Dev tools"), tools_ready)];
         let running_step = running.as_ref().and_then(|t| match t {
             SetupTask::InstallWsl => Some(0),
             SetupTask::InstallDistro(_) | SetupTask::ImportFile(_) => Some(1),
-            SetupTask::InstallSbcl(_) => Some(2),
-            SetupTask::InstallTools(_) => Some(3),
-            SetupTask::GitSetup(_) => None,
+            SetupTask::InstallTools(_) => Some(2),
+            SetupTask::InstallSbcl(_) | SetupTask::GitSetup(_) => None,
         });
         group(ui, &pal, tr("Setup progress"), |ui, _rows| draw_overview(ui, &pal, &steps, running_step, task_progress.map(|(p, _)| p.fraction)));
 
@@ -220,9 +219,9 @@ impl App {
         }
 
         // ---------------------------------------------------------------- mode
-        group(ui, &pal, tr("Where Lisp runs"), |ui, rows| {
-            let desc = format!("{}. {}", if wsl_on { i18n::fmt("In Linux: {} through WSL", &[&self.settings.wsl_distro]) } else { tr("On Windows, with SBCL for Windows").to_string() }, tr("A project can choose for itself in the status bar"));
-            rows.row(ui, &pal, tr("Run Lisp, the REPL and the terminal"), &desc, 250.0, |ui| {
+        group(ui, &pal, tr("Development environment"), |ui, rows| {
+            let desc = format!("{}. {}", if wsl_on { i18n::fmt("In Linux: {} through WSL", &[&self.settings.wsl_distro]) } else { tr("On Windows").to_string() }, tr("A project can choose for itself in the status bar"));
+            rows.row(ui, &pal, tr("Run development tools and the terminal"), &desc, 250.0, |ui| {
                 if let Some(i) = widgets::segmented(ui, &pal, &[tr("Windows"), tr("Linux (WSL)")], usize::from(wsl_on)) {
                     act = Some(if i == 0 { Act::UseWindows } else { Act::UseLinux });
                 }
@@ -340,54 +339,59 @@ impl App {
                 });
                 ui.add_space(12.0);
             }
+        });
 
-            // 3. SBCL
-            let desc3 = if selected.is_empty() {
-                tr("Install a distribution first (step 2).").to_string()
-            } else if checking_sbcl {
-                i18n::fmt("Looking for SBCL in {}...", &[&selected])
-            } else {
-                match &sbcl {
-                    Some(Ok(c)) if c.path.is_some() => i18n::fmt("{0} at {1}", &[&c.version.clone().unwrap_or_else(|| "SBCL".into()), &c.path.clone().unwrap_or_default()]),
-                    Some(Ok(_)) => i18n::fmt("SBCL is not installed in {}.", &[&selected]),
-                    Some(Err(e)) => i18n::fmt("Could not check {0}: {1}", &[&selected, &crate::ui_chrome::elide(e, 140)]),
-                    None => tr("Not checked yet.").to_string(),
-                }
-            };
-            rows.row(ui, &pal, tr("3. SBCL in Linux"), &desc3, 190.0, |ui| {
-                if selected.is_empty() {
-                    return;
-                }
-                if checking_sbcl {
-                    spinner(ui, &pal);
-                } else if ready {
-                    status_ok(ui, &pal, tr("Ready"));
-                } else if matches!(sbcl, Some(Ok(_))) {
-                    ui.add_enabled_ui(!busy_task, |ui| {
-                        if widgets::primary_button(ui, &pal, tr("Install SBCL")).clicked() {
-                            act = Some(Act::InstallSbcl(selected.clone()));
-                        }
-                    });
-                } else if widgets::secondary_button(ui, &pal, tr("Check again")).clicked() {
-                    act = Some(Act::CheckSbcl(selected.clone()));
-                }
+        // Optional tools of the Lisp module, separate from the common Linux setup.
+        if self.lisp_enabled() {
+            group(ui, &pal, tr("Lisp module (optional)"), |ui, rows| {
+                let desc3 = if selected.is_empty() {
+                    tr("Install a distribution first (step 2).").to_string()
+                } else if checking_sbcl {
+                    i18n::fmt("Looking for SBCL in {}...", &[&selected])
+                } else {
+                    match &sbcl {
+                        Some(Ok(c)) if c.path.is_some() => i18n::fmt("{0} at {1}", &[&c.version.clone().unwrap_or_else(|| "SBCL".into()), &c.path.clone().unwrap_or_default()]),
+                        Some(Ok(_)) => i18n::fmt("SBCL is not installed in {}.", &[&selected]),
+                        Some(Err(e)) => i18n::fmt("Could not check {0}: {1}", &[&selected, &crate::ui_chrome::elide(e, 140)]),
+                        None => tr("Not checked yet.").to_string(),
+                    }
+                };
+                rows.row(ui, &pal, tr("SBCL in Linux"), &desc3, 190.0, |ui| {
+                    if selected.is_empty() {
+                        return;
+                    }
+                    if checking_sbcl {
+                        spinner(ui, &pal);
+                    } else if ready {
+                        status_ok(ui, &pal, tr("Ready"));
+                    } else if matches!(sbcl, Some(Ok(_))) {
+                        ui.add_enabled_ui(!busy_task, |ui| {
+                            if widgets::primary_button(ui, &pal, tr("Install SBCL")).clicked() {
+                                act = Some(Act::InstallSbcl(selected.clone()));
+                            }
+                        });
+                    } else if widgets::secondary_button(ui, &pal, tr("Check again")).clicked() {
+                        act = Some(Act::CheckSbcl(selected.clone()));
+                    }
+                });
             });
+        }
 
-            // 4. use it
+        group(ui, &pal, tr("Use Linux"), |ui, rows| {
             if !selected.is_empty() {
-                let desc4 = if in_use { tr("SBCL, the REPL and the terminal run in this distribution.").to_string() } else { i18n::fmt("Switch Lisp, the REPL and the terminal to {}.", &[&selected]) };
-                rows.row(ui, &pal, tr("4. Run Lisp in Linux"), &desc4, 190.0, |ui| {
+                let desc4 = if in_use { tr("Development tools and the terminal run in this distribution.").to_string() } else { i18n::fmt("Switch development tools and the terminal to {}.", &[&selected]) };
+                rows.row(ui, &pal, tr("Run in Linux"), &desc4, 190.0, |ui| {
                     if in_use {
                         status_ok(ui, &pal, tr("In use"));
                     } else {
-                        ui.add_enabled_ui(ready, |ui| {
+                        ui.add_enabled_ui(distro_ready, |ui| {
                             if widgets::primary_button(ui, &pal, &i18n::fmt("Use {}", &[&selected])).clicked() {
                                 act = Some(Act::Use(selected.clone()));
                             }
                         });
                     }
                 });
-                rows.row(ui, &pal, tr("Linux user (optional)"), tr("On its first start a new distribution asks for a Linux user name and password. Until then Air runs Lisp as root."), 190.0, |ui| {
+                rows.row(ui, &pal, tr("Linux user (optional)"), tr("On its first start a new distribution asks for a Linux user name and password. Until then Air runs tools as root."), 190.0, |ui| {
                     if widgets::secondary_button(ui, &pal, tr("Open Linux window")).clicked() {
                         act = Some(Act::OpenWindow(selected.clone()));
                     }
@@ -413,13 +417,13 @@ impl App {
                         }
                     });
                 });
-                ui.label(RichText::new(tr("A project is built in Linux when you choose it in the status bar (or open it from \\\\wsl.localhost). Its terminal, make targets and Lisp then run in the distribution; the files can stay on Windows.")).color(pal.text_dim).size(11.5));
+                ui.label(RichText::new(tr("A project is built in Linux when you choose it in the status bar (or open it from \\\\wsl.localhost). Its terminal, run commands and build tools then run in the distribution; the files can stay on Windows.")).color(pal.text_dim).size(11.5));
                 ui.add_space(10.0);
             });
         }
 
         // ---------------------------------------------------------------- advanced
-        if installed {
+        if installed && self.lisp_enabled() {
             let mut changed = false;
             group(ui, &pal, tr("Advanced"), |ui, rows| {
                 rows.row(ui, &pal, tr("SBCL in Linux"), tr("Command or absolute path inside the distribution; empty means sbcl from its PATH"), 10.0, |_| {});
@@ -441,10 +445,10 @@ impl App {
             }
             Some(Act::UseWindows) => self.use_windows(),
             Some(Act::UseLinux) => {
-                if ready {
+                if distro_ready {
                     self.wsl_use(&selected);
                 } else {
-                    self.toast(tr("Finish the setup below first: Linux needs a distribution with SBCL"), Sev::Weak);
+                    self.toast(tr("Finish the setup first: install a Linux distribution"), Sev::Weak);
                 }
             }
             Some(Act::InstallWsl) => self.wsl_install_wsl(),

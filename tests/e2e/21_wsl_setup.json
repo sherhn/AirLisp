@@ -33,7 +33,13 @@
   {"op": "assert_wsl", "distros": 1, "selected": "Ubuntu-24.04", "sbcl": "missing", "outcome_contains": "Ubuntu-24.04"},
   {"op": "screenshot", "path": "${SHOTS}/${NAME}_4_distro_ready.png"},
 
-  {"op": "log", "value": "step 3: install SBCL inside it"},
+  {"op": "log", "value": "Linux works before installing SBCL, even with the Lisp module enabled"},
+  {"op": "wsl_action", "value": "use", "arg": "Ubuntu-24.04"},
+  {"op": "assert_wsl", "run_env": "wsl", "sbcl": "missing"},
+  {"op": "wsl_action", "value": "use_windows"},
+  {"op": "assert_wsl", "run_env": "windows"},
+
+  {"op": "log", "value": "optional Lisp tools: install SBCL inside it"},
   {"op": "wsl_action", "value": "install_sbcl", "arg": "Ubuntu-24.04"},
   {"op": "wait", "what": "wsl_progress", "value": 0.5, "timeout": 30},
   {"op": "assert_wsl_progress", "stage": "Install", "min": 0.5, "max": 0.97},
@@ -43,7 +49,7 @@
   {"op": "frames", "value": 4},
   {"op": "assert_wsl", "sbcl": "found", "outcome_contains": "SBCL"},
 
-  {"op": "log", "value": "step 4: run Lisp in Linux"},
+  {"op": "log", "value": "run development tools in Linux"},
   {"op": "wsl_action", "value": "use", "arg": "Ubuntu-24.04"},
   {"op": "frames", "value": 4},
   {"op": "assert_wsl", "run_env": "wsl"},

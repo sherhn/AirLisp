@@ -154,7 +154,7 @@ Air's own files except the last login name. For the UI tests `AIR_GITHUB_API`, `
 
 ## Linux on Windows (WSL)
 
-Settings > **Linux (WSL)** runs SBCL, the REPL, Run/Compile and the terminal inside a Linux distribution of the
+Settings > **Linux (WSL)** runs development tools, project commands and the terminal inside a Linux distribution of the
 Windows Subsystem for Linux - Linux without managing a virtual machine. The page checks what is there and walks
 through the setup, each step one button:
 
@@ -162,11 +162,12 @@ through the setup, each step one button:
 2. **Install a distribution** - Ubuntu 24.04 LTS by default or any from `wsl --list --online`, optionally into a folder
    on another drive (free space is shown); or **from a file**: a `.wsl` image or a root file system `.tar`.
    An Ubuntu *desktop* `.iso` is an installer for a PC or a VM and is refused with an explanation.
-3. **Install SBCL** inside it (as root, with apt, dnf, zypper, pacman or apk).
+3. **Choose developer tools** for your languages and projects. With the Lisp module enabled, SBCL is offered separately;
+   it is optional and is not required to switch to Linux.
 4. **Use it.** The status bar then shows `Linux: <distro>`; Settings > Linux (WSL) > Windows switches back.
 
 Your project stays where it is: Windows paths are translated (`C:\x` -> `/mnt/c/x`, `\\wsl.localhost\Ubuntu\home`
--> `/home`) for everything handed to Lisp, and paths Lisp reports (go to definition) come back. Processes started
+-> `/home`) for commands and tools, and paths reported by tools come back. Processes started
 in Linux are tagged so Stop really ends them. Air never removes or changes an installed distribution.
 For the UI tests `AIR_FAKE_WSL` (see `tests/fake_wsl.py`) replaces `wsl.exe`, so they never touch the real WSL.
 
@@ -178,7 +179,7 @@ there - `python3`, `gcc`, `nasm` - when they are missing), not only one with a m
 
 * **Choose it per project.** Opening a project with a makefile (or shell scripts) offers "Use Linux"; the status
   bar shows `Windows` / `Linux: <distro>` and switches with a click. The choice is kept in `.air/project.json`,
-  which git never sees. The terminal, the make targets, Lisp and the REPL of that project then run in the distribution.
+  which git never sees. The terminal, run commands and build tools of that project then run in the distribution.
 * **Or keep the project in Linux.** Get from Version Control > *Linux: <distro>* clones with the distribution's own git
   into `~/projects/<name>` and opens it as `\\wsl.localhost\<distro>\home\...`; git for such a project always runs
   inside Linux (Linux file modes, symlinks and line endings, no "dubious ownership"). Cloning into a Windows folder
@@ -316,14 +317,15 @@ PyCharm: «Только редактор», «Редактор и просмот
 Credential Manager), пароль Air не видит. Есть также вход сохранённым логином и по токену.
 
 **Linux без виртуальной машины.** В Настройки > Linux (WSL) можно по шагам установить WSL, дистрибутив (Ubuntu 24.04
-по умолчанию, или из файла `.wsl` / `.tar`) и SBCL внутри него, а затем одной кнопкой перевести SBCL, REPL, запуск,
-компиляцию и терминал в Linux. Файлы проекта остаются на месте: пути переводятся автоматически. Образ Ubuntu Desktop
+по умолчанию, или из файла `.wsl` / `.tar`), выбрать инструменты для своих языков и перевести запуск,
+сборку и терминал в Linux. SBCL предлагается отдельно при включённом модуле Lisp и не нужен для переключения в Linux.
+Файлы проекта остаются на месте: пути переводятся автоматически. Образ Ubuntu Desktop
 `.iso` для WSL не подходит: это установщик для ПК или виртуальной машины.
 
 **Linux-проекты (C, ассемблер, make — например, ОС вроде os-pi).** Проект можно собирать и запускать в Linux, работая в
 Windows: при открытии проекта с makefile Air предложит «Использовать Linux», а в строке состояния можно
 переключить «Windows / Linux: <дистрибутив>» (выбор хранится в `.air/project.json`, git его не видит). Терминал,
-цели make, Lisp и REPL проекта работают в дистрибутиве; цели make (`all`, `run`, `debug`, `clean`, тесты) — это
+команды запуска и инструменты сборки проекта работают в дистрибутиве; цели make (`all`, `run`, `debug`, `clean`, тесты) — это
 конфигурации запуска, ошибки gcc/ld/nasm попадают в Problems и в редактор. Клонировать можно прямо в Linux
 (`~/projects`, git дистрибутива) или в папку Windows с окончаниями строк Linux. На странице Linux (WSL) одной кнопкой
 ставятся инструменты разработчика (C/C++ с cmake и ninja, clang/clangd, valgrind, strace, git, curl, python3/pip, jq, ripgrep, doxygen, nasm и QEMU — около 230 МБ в Ubuntu 24.04), а git в Linux настраивается на ваши имя, почту и вход
