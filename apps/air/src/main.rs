@@ -1,4 +1,4 @@
-//! Air - an IDE for Lisp.
+//! Air - a modular IDE for any language.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 

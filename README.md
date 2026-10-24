@@ -2,14 +2,14 @@
 
 <img src="assets/icon/air-128.png" width="96" align="right" alt="Air icon">
 
-Air is a shovel; the gold is yours to find. An IDE written in Rust (egui) and built the PhotoCraft way:
+Air is a shovel; the gold is yours to find. A modular IDE for any language, written in Rust (egui) and built the PhotoCraft way:
 a UI-independent engine, one command registry that drives menus, palettes and key bindings,
 a headless CLI, and end-to-end tests that drive the real window.
 
 The core is the editor, projects, git, the terminal, search and Linux through WSL. **Languages come as modules** that
-you download from inside the IDE (Modules tab, Ctrl+Alt+P): Lisp, Python, C and C++, Assembler, HTML, CSS, Markdown,
-reStructuredText, Shell and make. Runs on Windows, macOS and Linux. Common Lisp (SBCL) is the most complete module:
-REPL, compiler, structural editing; Scheme, Clojure and Emacs Lisp files get highlighting, structure and indentation.
+you download from inside the IDE (Modules tab, Ctrl+Alt+P): Python, C and C++, Assembler, HTML, CSS, Markdown,
+reStructuredText, Shell, make and Lisp. Runs on Windows, macOS and Linux. Each module adds its language's editing
+and tool support; no language is required to use the IDE.
 
 ## Modules
 
@@ -68,14 +68,14 @@ Covers and the icon are drawn by `tools/glass.py` and `tools/covers.py`.
 
 The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
 
-* **Editor** - own text engine: Lisp-aware indentation (SLIME/Emacs rules), auto-pairs and overtyping,
+* **Editor** - own text engine: language-specific indentation from modules, auto-pairs and overtyping,
   smart Enter, rainbow brackets, matching-bracket highlight, undo/redo with coalescing, multi-line
   Tab/Shift+Tab, line duplicate/move/join, comment toggle, extend/shrink selection (Ctrl+W).
-* **Structural editing** - slurp/barf (both directions), raise, splice, wrap, kill sexp, sexp navigation.
-* **Live REPL** - an SBCL image driven over a structured protocol: eval the form under the caret
+* **Lisp module: structural editing** - slurp/barf (both directions), raise, splice, wrap, kill sexp, sexp navigation.
+* **Lisp module: live REPL** - an SBCL image driven over a structured protocol: eval the form under the caret
   (Ctrl+Enter), errors with backtraces, package tracking, completion/arglist/docs/macroexpand/definition
   lookup straight from the running image.
-* **Run & compile** - Shift+F10 runs the file, Ctrl+F9 compiles with the real compiler and maps
+* **Run & compile** - Shift+F10 runs the file with its module's command; the Lisp module adds Ctrl+F9 compilation and maps
   warnings/errors back to source ranges (Problems tool window + squiggles + error stripe).
 * **Documentation on hover** - rest the pointer on a name and a popup shows its arguments and what its author wrote: for
   Lisp from the project's own definition (lambda list and docstring) or, with the REPL running, from the image itself
@@ -100,7 +100,7 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
 * **Navigation** - Search Everywhere (Double Shift), Go to File/Symbol/Line, Recent Files,
   File Structure, Go to Declaration (Ctrl+B / Ctrl+click), Back/Forward, Find Usages, Find in Files.
 * **Refactoring** - Rename symbol across the project (token based: strings and comments untouched).
-* **Project** - project tree with file operations, ASDF project scaffolding, git branch in the toolbar.
+* **Project** - project tree with file operations, project templates from modules, git branch in the toolbar.
 * **Git** - branch switcher, update/commit/push in the toolbar, commit dialog (Ctrl+K, Ctrl+Enter to commit),
   Git tool window (changes with checkboxes, log), diff viewer, change markers in the gutter, file status colours in
   the tree and tabs, rollback. Uses the `git` executable.
@@ -110,8 +110,8 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
   and any local commit, restore or delete checkpoints. Works in projects without git too.
 * **Big projects** - tested on 110 000 files and a 6 MB source file: `.gitignore`-aware tree (ignored entries are
   dimmed, excluded from search and indexing), cached outline and line index, background search and git status.
-* **Terminal, folding, run configurations** - a built-in terminal, code folding of forms (Ctrl+-/Ctrl+=),
-  load/test ASDF systems from the run configuration picker.
+* **Terminal, folding, run configurations** - a built-in terminal, language-specific code folding (Ctrl+-/Ctrl+=),
+  file commands, make targets and run scenarios; the Lisp module also adds load/test ASDF systems.
 * **No manual saving** - files are saved automatically a second after the last edit, when the window loses focus, before running, when a tab is closed and on exit (Ctrl+S still works). New files without a project are scratch files kept in the settings folder.
 * **Branch graph** - the Git log draws all branches as coloured lanes with merges and branch/tag labels.
 * **Code overview** - a minimap next to the scrollbar shows the whole file with changed lines, problems and search hits; click or drag to scroll.
@@ -119,8 +119,8 @@ The bullets about Lisp, the REPL and ASDF belong to the Lisp module.
   project stays (its tabs, search results, history, problems, terminal).
 * **Get from Version Control** - File > Get from Version Control (or the welcome screen): paste a GitHub URL or `owner/repo`,
   pick a folder, optional branch / shallow clone, live progress; the repository is cloned and opened as a project.
-* **Works out of the box** - the distribution (`python tools/package.py`) bundles SBCL (public domain/BSD, license included),
-  so the REPL and Run work without installing anything.
+* **Distribution** - `python tools/package.py` bundles the module registry for offline installation and SBCL
+  (public domain/BSD, license included) for the optional Lisp module. Other modules use their language's tools.
 * **Modern look** - a black ground with soft green and blue glows, "liquid glass" cards and dialogs (translucent, with a light
   rim and a sheen), a green in the spirit of Sber's as the accent and a blue as its partner. Lucide icons (ISC), a sidebar
   Settings dialog, dark/light themes, custom window frame (no OS title bar), Inter + JetBrains Mono fonts.
@@ -208,8 +208,8 @@ there - `python3`, `gcc`, `nasm` - when they are missing), not only one with a m
   and is installed with every package manager Air knows (apt, dnf, zypper, pacman, apk), one package at a time, so
   one that cannot be installed is skipped and does not stop the rest. Names are limited to letters, digits and `. + - _ :`.
   A banner for a project that cannot be built without a tool (`gcc`, `make`...) installs that group whole, ticked or not.
-* **C, assembly, shell and makefiles are not Lisp**: they get their own highlighting, bracket matching, brace
-  indentation, folding and comment markers, and never show false Lisp errors.
+* **Language-specific editing**: modules provide highlighting, bracket matching, indentation, folding,
+  comment markers and syntax checks appropriate to each language.
 
 ## Copying from the consoles
 
@@ -237,7 +237,7 @@ cargo run --release -p air            # the IDE
 cargo run --release -p air-cli -- help
 ```
 
-Requires Rust (stable) and, for the REPL/run features, SBCL (bundled in packaged builds; otherwise on `PATH`
+Requires Rust (stable) and the tools used by your language modules. The Lisp module's REPL/run features use SBCL (bundled in packaged builds; otherwise on `PATH`
 or set `AIR_SBCL` / Settings > Lisp & REPL). Linux needs the usual windowing libs
 (`libxkbcommon`, `libgl`, wayland/x11 headers).
 
@@ -259,10 +259,10 @@ Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `pn
 
 ## Русский
 
-Air - лопата, золото вы найдёте сами. IDE, написанная на Rust. Ядро: редактор, проекты, git, терминал, поиск и Linux через WSL. Языки
-подключаются модулями, которые скачиваются прямо из IDE (вкладка «Модули», Ctrl+Alt+P): Lisp, Python, C и C++,
-ассемблер, HTML, CSS, Markdown, reStructuredText, shell и make. Модуль Lisp самый полный: структурное редактирование, живой REPL
-на SBCL, запуск и компиляция с привязкой ошибок к коду, навигация, рефакторинг (rename). Вид: чёрный фон с зелёным
+Air - лопата, золото вы найдёте сами. Модульная IDE для любых языков, написанная на Rust. Ядро: редактор, проекты, git, терминал, поиск и Linux через WSL. Языки
+подключаются модулями, которые скачиваются прямо из IDE (вкладка «Модули», Ctrl+Alt+P): Python, C и C++,
+ассемблер, HTML, CSS, Markdown, reStructuredText, shell, make и Lisp. Для работы IDE не требуется какой-либо язык.
+Вид: чёрный фон с зелёным
 (в духе Сбера) и синим свечением и «жидкое стекло»; тёмная и светлая темы, раскладка клавиш IntelliJ.
 **Своя тема.** Настройки > Внешний вид > «Своя» — третья тема: она берёт за основу тёмную или светлую палитру и даёт
 изменить любой её цвет: окна и панели, стекло и свечение, редактор (курсор, выделение, найденное, комментарии-маркеры),
@@ -271,7 +271,7 @@ Air - лопата, золото вы найдёте сами. IDE, написа
 палитры; результат виден на образце кода и во всём окне. Изменённые цвета хранятся в `settings.json` (`custom_theme`) и
 остаются при переключении на другую тему и обратно; View > «Переключить тёмную/светлую тему» уходит из своей темы на
 противоположную её основе палитру.
-Сборка: `cargo run --release -p air`. Для REPL нужен SBCL в `PATH` (в сборке `tools/package.py` он уже есть).
+Сборка: `cargo run --release -p air`. Для REPL модуля Lisp нужен SBCL в `PATH` (в сборке `tools/package.py` он уже есть).
 
 **Модули.** Модуль — папка с `module.json` и обложкой: языки (грамматика данными: подсветка, структура, сворачивание,
 скобки, отступы), команды запуска, группы Linux-инструментов для WSL, правила определения (проекту с `.py` или `Makefile`
@@ -325,7 +325,7 @@ Windows: при открытии проекта с makefile Air предложи
 конфигурации запуска, ошибки gcc/ld/nasm попадают в Problems и в редактор. Клонировать можно прямо в Linux
 (`~/projects`, git дистрибутива) или в папку Windows с окончаниями строк Linux. На странице Linux (WSL) одной кнопкой
 ставятся инструменты разработчика (C/C++ с cmake и ninja, clang/clangd, valgrind, strace, git, curl, python3/pip, jq, ripgrep, doxygen, nasm и QEMU — около 230 МБ в Ubuntu 24.04), а git в Linux настраивается на ваши имя, почту и вход
-в GitHub из Windows. Файлы C, ассемблера, shell и makefile подсвечиваются по-своему и не дают ложных Lisp-ошибок.
+в GitHub из Windows. Подсветка и проверка синтаксиса учитывают язык файла и его модуль.
 Если в дистрибутиве нет этих инструментов, сверху появляется плашка «Установить инструменты сборки», а `make` в терминале
 или в Run объясняет причину (`make: Permission denied`, код 127 значит «не установлен»), с полосой прогресса установки.
 

@@ -137,7 +137,7 @@ def main():
         sys.exit("no registry/index.json: run `python tools/build_registry.py --covers` first")
     shutil.copytree(registry, dist / "registry")
     (dist / "START_HERE.txt").write_text(
-        "Air - an IDE written in Rust\n\n"
+        "Air - a modular IDE for any language, written in Rust\n\n"
         f"Run {'air.exe' if os.name == 'nt' else './air'}. Nothing else has to be installed:\n"
         "the languages come as modules - open the Modules tab (Ctrl+Alt+P) and install what you work with\n"
         "(Lisp, Python, C/C++, Assembler, Markdown, reStructuredText, Shell and make). The folder 'registry'\n"

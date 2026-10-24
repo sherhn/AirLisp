@@ -29,7 +29,7 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
-      VALUE "FileDescription", "Air - an IDE for Lisp"
+      VALUE "FileDescription", "{description}"
       VALUE "ProductName", "Air"
       VALUE "InternalName", "air"
       VALUE "OriginalFilename", "air.exe"
@@ -44,6 +44,7 @@ END
 "#,
         icon = icon.display().to_string().replace('\\', "/"),
         version = env::var("CARGO_PKG_VERSION").unwrap_or_default(),
+        description = env::var("CARGO_PKG_DESCRIPTION").unwrap(),
     );
     let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("air.rc");
     fs::write(&path, rc).expect("write the resource script");

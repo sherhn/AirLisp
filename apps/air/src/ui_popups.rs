@@ -634,9 +634,9 @@ impl App {
                             ui.label(RichText::new("Air").font(fonts::semibold(24.0)));
                             ui.label(RichText::new(i18n::fmt("Version {}", &[&env!("CARGO_PKG_VERSION")])).color(pal.text_dim));
                             ui.add_space(12.0);
-                            ui.label(tr("An IDE for Lisp, written in Rust."));
+                            ui.label(tr("A modular IDE for any language, written in Rust."));
                             ui.add_space(4.0);
-                            ui.label(RichText::new(tr("Structural editing, a live SBCL REPL, Git, refactoring\nand navigation, in the spirit of JetBrains IDEs.")).color(pal.text_dim).size(12.5));
+                            ui.label(RichText::new(tr("An editor, Git, terminal, search and navigation.\nLanguages and tools connect through modules.")).color(pal.text_dim).size(12.5));
                             ui.add_space(6.0);
                             ui.label(RichText::new(tr("Fonts: JetBrains Mono and Inter (SIL OFL 1.1)")).color(pal.text_dim).size(11.5));
                             ui.add_space(16.0);

@@ -1,6 +1,6 @@
 [package]
 name = "ide-core"
-description = "Editor model, command registry, keymap, project model and search for the Lisp IDE"
+description = "Editor model, command registry, keymap, project model and search for the Air IDE"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

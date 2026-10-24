@@ -1,6 +1,6 @@
 [package]
 name = "air"
-description = "Air - a JetBrains-style IDE for Lisp"
+description = "Air - a modular IDE for any language"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
