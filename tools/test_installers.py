@@ -1,0 +1,47 @@
+import tempfile
+from pathlib import Path
+import unittest
+
+from installers import desktop_entry, reset_directory, uninstall_manifest
+
+
+class InstallerSafetyTests(unittest.TestCase):
+    def test_staging_cleanup_cannot_remove_its_parent_or_an_outside_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            allowed = root / "staging"
+            allowed.mkdir()
+            protected = root / "protected.txt"
+            protected.write_text("keep")
+            for path in (allowed, root, root / "outside", allowed / "../outside"):
+                with self.assertRaises(ValueError):
+                    reset_directory(path, allowed)
+            self.assertEqual(protected.read_text(), "keep")
+            child = allowed / "payload"
+            child.mkdir()
+            (child / "old").write_text("old")
+            reset_directory(child, allowed)
+            self.assertEqual(list(child.iterdir()), [])
+
+    def test_uninstall_targets_only_shipped_files_with_no_recursive_deletion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "registry").mkdir()
+            (root / "air.exe").write_bytes(b"app")
+            (root / "registry/module$1.json").write_text("{}")
+            commands = uninstall_manifest(root).splitlines()
+            self.assertIn('Delete "$INSTDIR\\air.exe"', commands)
+            self.assertIn('Delete "$INSTDIR\\registry\\module$$1.json"', commands)
+            self.assertIn('RMDir "$INSTDIR\\registry"', commands)
+            self.assertFalse(any("/r" in c.lower() or "*" in c or "$APPDATA" in c for c in commands))
+            self.assertGreater(commands.index('RMDir "$INSTDIR\\registry"'), commands.index('Delete "$INSTDIR\\registry\\module$$1.json"'))
+
+    def test_desktop_launcher_opens_files_without_a_shell(self):
+        desktop = desktop_entry()
+        self.assertIn("Exec=/opt/air/air %F\n", desktop)
+        self.assertIn("Terminal=false\n", desktop)
+        self.assertNotIn("sh -c", desktop)
+
+
+if __name__ == "__main__":
+    unittest.main()

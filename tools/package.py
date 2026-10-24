@@ -3,11 +3,13 @@
 the app, the CLI, a bundled SBCL (REPL, compiler, ASDF), the registry of modules and all licence notices.
 
 Usage:
-  python tools/package.py [--sbcl-dir DIR] [--no-zip] [--skip-build]
+  python tools/package.py [--installers] [--sbcl-dir DIR] [--no-zip] [--skip-build]
 
 --sbcl-dir  folder with sbcl[.exe], sbcl.core and contrib/, or an SBCL install prefix (bin/, lib/sbcl/);
             default: the sbcl found on PATH.
 Result: target/dist/Air-<version>-<os>-<arch>[.zip on Windows, .tar.gz elsewhere]
+--installers also creates a Windows Setup.exe, macOS .dmg or Debian/Ubuntu .deb.
+Windows installers include Portable Git; --git-dir can reuse an extracted copy.
 """
 import argparse
 import json
@@ -100,17 +102,20 @@ def main():
     ap.add_argument("--sbcl-dir")
     ap.add_argument("--no-zip", action="store_true")
     ap.add_argument("--skip-build", action="store_true")
+    ap.add_argument("--installers", action="store_true")
+    ap.add_argument("--makensis", help="path to the NSIS compiler on Windows")
+    ap.add_argument("--git-dir", help="an extracted Portable Git distribution (Windows)")
     a = ap.parse_args()
 
     if not a.skip_build:
-        subprocess.run(["cargo", "build", "--release", "-p", "air", "-p", "air-cli"], cwd=ROOT, check=True)
+        subprocess.run(["cargo", "build", "--locked", "--release", "-p", "air", "-p", "air-cli"], cwd=ROOT, check=True)
     sbcl_exe, sbcl_core, sbcl_contrib = find_sbcl(a.sbcl_dir)
     ver = version()
     arch = {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64"}.get(platform.machine().lower(), platform.machine().lower())
     name = f"Air-{ver}-{'macos' if platform.system() == 'Darwin' else platform.system().lower()}-{arch}"
     dist = ROOT / "target" / "dist" / name
-    if dist.exists():
-        shutil.rmtree(dist)
+    from installers import reset_directory
+    dist = reset_directory(dist, ROOT / "target/dist")
     (dist / "lisp").mkdir(parents=True)
     (dist / "licenses").mkdir()
 
@@ -129,7 +134,11 @@ def main():
         shutil.copy2(f, dist / "licenses" / f.name)
     for f in (ROOT / "assets" / "fonts").glob("*-OFL.txt"):
         shutil.copy2(f, dist / "licenses" / f.name)
-    (dist / "THIRD_PARTY_NOTICES.md").write_text(notices(sbcl_ver), encoding="utf-8")
+    third_party = notices(sbcl_ver)
+    if a.installers and os.name == "nt":
+        from installers import bundle_windows_git
+        third_party += bundle_windows_git(dist, arch, a.git_dir)
+    (dist / "THIRD_PARTY_NOTICES.md").write_text(third_party, encoding="utf-8")
     shutil.copy2(ROOT / "README.md", dist / "README.md")
     # the modules (languages, run commands, project templates, covers) that can be installed without a network
     registry = ROOT / "registry"
@@ -143,11 +152,12 @@ def main():
         "(Lisp, Python, C/C++, Assembler, Markdown, reStructuredText, Shell and make). The folder 'registry'\n"
         "holds them, so this works offline too; the list is also read from the published registry.\n"
         "The Lisp module's REPL, compiler and ASDF come from the bundled SBCL in the 'lisp' folder.\n"
-        "Git features and 'Get from Version Control' use the git on your PATH (https://git-scm.com).\n\n"
-        f"{sbcl_ver} is bundled; its licence is in licenses/SBCL-COPYING.txt.\n"
+        + ("Git is included. An existing Git on your PATH takes priority.\n\n" if (dist / "git").is_dir()
+           else "Git features and 'Get from Version Control' use the git on your PATH (https://git-scm.com).\n\n")
+        + f"{sbcl_ver} is bundled; its licence is in licenses/SBCL-COPYING.txt.\n"
         + (
-            "\nThe build is not signed. If macOS refuses to open it, run once in this folder:\n"
-            "  xattr -dr com.apple.quarantine .\n"
+            "\nThe build has no Apple Developer ID signature or notarization.\n"
+            "After copying Air.app to Applications, macOS may require approval in System Settings > Privacy & Security.\n"
             if platform.system() == "Darwin"
             else ""
         ),
@@ -175,6 +185,10 @@ def main():
             with tarfile.open(archive, "w:gz", compresslevel=9) as t:
                 t.add(dist, arcname=name, filter=anonymous)
         print(f"archive: {archive}  ({archive.stat().st_size / 1e6:.0f} MB)")
+
+    if a.installers:
+        from installers import build
+        build(dist, ver, arch, a.makensis)
 
 
 if __name__ == "__main__":

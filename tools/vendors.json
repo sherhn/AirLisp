@@ -1,0 +1,8 @@
+{
+  "git-windows-x64": {
+    "version": "2.56.0.3",
+    "url": "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.3/PortableGit-2.56.0.3-64-bit.7z.exe",
+    "sha256": "4fc27b779829a36df77911e3f4dea09c66c790dd6c5f7dfa3b6a5479f1fe354f",
+    "source": "https://github.com/git-for-windows/git/releases/tag/v2.56.0.windows.3"
+  }
+}

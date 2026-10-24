@@ -11,6 +11,30 @@ you download from inside the IDE (Modules tab, Ctrl+Alt+P): Python, C and C++, A
 reStructuredText, Shell, make and Lisp. Runs on Windows, macOS and Linux. Each module adds its language's editing
 and tool support; no language is required to use the IDE.
 
+## Download and install
+
+Download **one installer for your system** from [Releases](https://github.com/sherhn/AirLisp/releases).
+You do not need Rust, a repository checkout or individual files from GitHub.
+
+| System | File | Install |
+|---|---|---|
+| Windows 10/11 x64 | `Air-<version>-windows-x64-Setup.exe` | Run Setup; Air is added to the Start menu and Installed apps. No administrator rights needed. |
+| macOS 15+, Apple Silicon | `Air-<version>-macos-arm64.dmg` | Open the image and drag Air to Applications. |
+| macOS 15+, Intel | `Air-<version>-macos-x64.dmg` | Open the image and drag Air to Applications. |
+| Ubuntu 22.04+ / Debian 12+ x64 | `Air-<version>-linux-x64.deb` | Open in the software installer, or `sudo apt install ./Air-*-linux-x64.deb`. |
+
+The installers contain the IDE, CLI, language module registry (including covers and templates), bundled runtime and
+licence notices. Modules can be installed from inside the IDE offline. Windows also includes Portable Git and does
+not require a separate Visual C++ runtime. Existing Git on your PATH takes priority. Project-specific compilers and
+interpreters are separate tools; on Linux the package manager installs the desktop libraries and Git automatically.
+
+Windows updates use the same installation location and keep your settings and projects. Uninstall from Installed apps;
+only files shipped by the installer are removed. On macOS drag Air out of Applications to uninstall; on Ubuntu/Debian
+use `sudo apt remove air-ide`. Settings are kept separately from the application on all platforms.
+
+Builds do not yet have a Windows publisher signature or Apple notarization. macOS may require approval in
+System Settings > Privacy & Security. Portable `.zip` / `.tar.gz` distributions remain available as an alternative.
+
 ## Modules
 
 A module is a folder with a `module.json` and a cover picture. It can bring **languages** (a grammar written as data:
@@ -249,10 +273,27 @@ or set `AIR_SBCL` / Settings > Lisp & REPL). Linux needs the usual windowing lib
 ```
 cargo test --workspace          # unit + integration tests (REPL tests use a real SBCL when installed)
 python tests/run_e2e.py         # drives the real window with scripts in tests/e2e/*.json
+python -m unittest discover -s tools -p test_installers.py
 ```
 
 The e2e harness (`--script file.json`) injects keyboard/mouse events through egui's input path,
 asserts on application state and takes screenshots *of the app window only*.
+
+## Building installers
+
+`python tools/package.py --installers` builds native installers and portable archives in `target/dist/`.
+In addition to Rust and SBCL, the build machine needs NSIS and 7-Zip on Windows, `dpkg-dev` and
+`desktop-file-utils` on Ubuntu/Debian, or the Xcode command-line tools on macOS. NSIS can be supplied with
+`--makensis PATH`; `SEVENZIP` selects a portable 7-Zip executable. `--git-dir DIR` reuses an extracted Portable Git.
+Downloaded Git archives are pinned by SHA-256 in `tools/vendors.json` and cached under `target/vendor/`.
+`--skip-build` reuses release binaries and `--no-zip` omits the portable archive.
+
+The Release workflow builds Windows, Linux and both Mac architectures, runs installer checks, and attaches the
+installers to the release when a matching `vX.Y.Z` tag is pushed. A manual workflow run only produces build artifacts.
+`python tools/verify_install.py <installer>` checks the installed payload; run the Windows check on a clean account,
+because it exercises real install, upgrade and uninstall operations and refuses to replace an existing installation.
+Windows checks cover offline modules, bundled Git and SBCL, Unicode paths and preservation of user files/settings.
+Mac builds relocate non-system libraries into the app, then check its ad-hoc signature and runtime from the disk image.
 
 ## Dependencies
 
@@ -261,6 +302,14 @@ Only `eframe`/`egui` (emilk), `rfd`, `serde`/`serde_json`, `ignore`, `dirs`, `pn
 `deny.toml` pins the policy (crates.io only, no git sources).
 
 ## Русский
+
+**Установка:** скачайте один установщик из [Releases](https://github.com/sherhn/AirLisp/releases).
+Для Windows — `*-Setup.exe`, для macOS — `.dmg` своей архитектуры (Apple Silicon или Intel), для Ubuntu/Debian — `.deb`.
+Rust, исходники и отдельные файлы из репозитория не нужны. В комплекте IDE, CLI, модули языков и ресурсы;
+Windows-сборка также содержит Git. Модули устанавливаются из IDE и без интернета. На Windows установка не требует
+прав администратора, создаёт ярлыки и пункт удаления; обновление и удаление сохраняют настройки и проекты.
+Установщики пока без подписи издателя и нотариального заверения Apple; macOS может попросить разрешение в
+«Системные настройки → Конфиденциальность и безопасность».
 
 Air - лопата, золото вы найдёте сами. Модульная IDE для любых языков, написанная на Rust. Ядро: редактор, проекты, git, терминал, поиск и Linux через WSL. Языки
 подключаются модулями, которые скачиваются прямо из IDE (вкладка «Модули», Ctrl+Alt+P): Python, C и C++,
