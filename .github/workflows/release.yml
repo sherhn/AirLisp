@@ -55,6 +55,13 @@ jobs:
         run: python -m unittest discover -s tools -p test_installers.py
       - name: Build installers and portable archives
         run: python tools/package.py --installers
+      # Hosted Windows runners expose OpenGL 1.1. Install a software driver only
+      # on the test machine, after packaging, so the real GUI smoke test can run.
+      - name: Software OpenGL for the Windows GUI smoke test
+        if: runner.os == 'Windows'
+        uses: ssciwr/setup-mesa-dist-win@6657792673a5d162d5f244db991ba45b4b68989f # v2
+        with:
+          version: '26.0.3'
       - name: Verify installation and bundled tools
         shell: bash
         run: |
